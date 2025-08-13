@@ -1,0 +1,19 @@
+services:
+  api:
+    build:
+      context: .
+    container_name: mamaopeai_rag_api_v2
+    ports:
+      - "8050:8050"
+    env_file:
+      - .env  
+    environment:
+      - ENV=development
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/static-athlete-443111-n4-717c9df24355.json
+      - LOG_LEVEL=info
+    volumes:
+      - .:/app  # Mount current directory to /app in container for hot reloading
+      - /app/venv  # Exclude the virtual environment directory
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8050", "--reload"]
+    restart: unless-stopped
+    

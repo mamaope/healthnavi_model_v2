@@ -1,0 +1,10 @@
+__pycache__/
+rag_venv/
+venv/
+.env
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+terraform.plan
+terraform.tfstate.*
