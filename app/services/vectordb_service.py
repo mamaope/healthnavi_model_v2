@@ -271,22 +271,40 @@ def retrieve_context(query: str, patient_data: str, retriever) -> tuple[str, lis
            
         # Combine results with source tracking
         contexts = []
-        actual_sources = set()  # Use set to avoid duplicates
+        actual_sources = set()  #  set to avoid duplicates
         source_content_map = {}  # Track which content comes from which source
         
         for doc in filtered_documents:
             source = doc.metadata.get('filename', 'Unknown source')
             source = source.replace('.pdf', '')
-            actual_sources.add(source)
+            
+            # Extract additional metadata for better citation
+            page_info = doc.metadata.get('page_number', '')
+            section_info = doc.metadata.get('section', '')
+            
+            # Format source with additional metadata if available
+            if page_info or section_info:
+                citation_source = f"{source}"
+                if page_info:
+                    citation_source += f", page {page_info}"
+                if section_info:
+                    citation_source += f", section {section_info}"
+            else:
+                citation_source = source
+                
+            actual_sources.add(citation_source)
             content = doc.page_content
             
             # Store content by source for reference
-            if source not in source_content_map:
-                source_content_map[source] = []
-            source_content_map[source].append(content)
+            if citation_source not in source_content_map:
+                source_content_map[citation_source] = []
+            source_content_map[citation_source].append(content)
             
-            # Format context with clear source attribution
-            contexts.append(f"[SOURCE: {source}]\n{content}\n")
+            # Format context with clear source attribution and metadata
+            if page_info or section_info:
+                contexts.append(f"[SOURCE: {citation_source}]\n{content}\n")
+            else:
+                contexts.append(f"[SOURCE: {citation_source}]\n{content}\n")
 
         # Debug: Print actual sources extracted from knowledge base
         print(f"DEBUG - Actual KB sources extracted: {list(actual_sources)}")
