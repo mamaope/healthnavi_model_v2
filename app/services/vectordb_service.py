@@ -7,6 +7,7 @@ import tarfile
 import faiss
 import app.auth
 import re
+import traceback
 from langchain_community.vectorstores import FAISS
 from langchain.embeddings.base import Embeddings
 from langchain.schema import Document
@@ -275,22 +276,43 @@ def retrieve_context(query: str, patient_data: str, retriever) -> tuple[str, lis
         source_content_map = {}  # Track which content comes from which source
         
         for doc in filtered_documents:
-            source = doc.metadata.get('filename', 'Unknown source')
-            source = source.replace('.pdf', '')
+            # Initialize variables
+            page_info = ""
+            section_info = ""
             
-            # Extract additional metadata for better citation
-            page_info = doc.metadata.get('page_number', '')
-            section_info = doc.metadata.get('section', '')
-            
-            # Format source with additional metadata if available
-            if page_info or section_info:
-                citation_source = f"{source}"
-                if page_info:
-                    citation_source += f", page {page_info}"
-                if section_info:
-                    citation_source += f", section {section_info}"
+            # Check if this is from the drug database
+            if doc.metadata.get('source') == 'drug_database':
+                # Use drug URL and name for drug database sources
+                drug_name = doc.metadata.get('drug_name', 'Unknown drug')
+                drug_url = doc.metadata.get('drug_url', '')
+                chunk_type = doc.metadata.get('chunk_type', '')
+                
+                if drug_url:
+                    citation_source = f"{drug_name} - {drug_url}"
+                else:
+                    citation_source = f"{drug_name} (Drug Database)"
+                    
+                # Add chunk type info for better specificity
+                if chunk_type:
+                    citation_source += f" ({chunk_type})"
             else:
-                citation_source = source
+                # Handle regular PDF sources
+                source = doc.metadata.get('filename', 'Unknown source')
+                source = source.replace('.pdf', '')
+                
+                # Extract additional metadata for better citation
+                page_info = doc.metadata.get('page_number', '')
+                section_info = doc.metadata.get('section', '')
+                
+                # Format source with additional metadata if available
+                if page_info or section_info:
+                    citation_source = f"{source}"
+                    if page_info:
+                        citation_source += f", page {page_info}"
+                    if section_info:
+                        citation_source += f", section {section_info}"
+                else:
+                    citation_source = source
                 
             actual_sources.add(citation_source)
             content = doc.page_content
@@ -301,10 +323,7 @@ def retrieve_context(query: str, patient_data: str, retriever) -> tuple[str, lis
             source_content_map[citation_source].append(content)
             
             # Format context with clear source attribution and metadata
-            if page_info or section_info:
-                contexts.append(f"[SOURCE: {citation_source}]\n{content}\n")
-            else:
-                contexts.append(f"[SOURCE: {citation_source}]\n{content}\n")
+            contexts.append(f"[SOURCE: {citation_source}]\n{content}\n")
 
         # Debug: Print actual sources extracted from knowledge base
         print(f"DEBUG - Actual KB sources extracted: {list(actual_sources)}")
@@ -312,7 +331,10 @@ def retrieve_context(query: str, patient_data: str, retriever) -> tuple[str, lis
         # Create a summary of sources and their key content types
         source_summary = []
         for source in actual_sources:
-            source_summary.append(f"- {source}: Contains relevant clinical guidelines and criteria")
+            if "drug_overview" in source or "side_effects" in source or "safety" in source or "pharmacology" in source:
+                source_summary.append(f"- {source}: Contains drug information from official database")
+            else:
+                source_summary.append(f"- {source}: Contains relevant clinical guidelines and criteria")
 
         final_context = "\n".join(contexts)
         if source_summary:
@@ -321,7 +343,6 @@ def retrieve_context(query: str, patient_data: str, retriever) -> tuple[str, lis
         return final_context, list(actual_sources)
     except Exception as e:
         print(f"Retrieval error: {e}")
-        import traceback
         print(f"Traceback: {traceback.format_exc()}")
         return f"An error occurred during retrieval: {str(e)}", []
     
