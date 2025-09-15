@@ -2,16 +2,24 @@ import os
 import json
 import asyncio
 import time
+import logging
 import re
 from fastapi import HTTPException
 from vertexai.generative_models import GenerativeModel, GenerationConfig
-from app.services.vectordb_service import retrieve_context
+from app.services.vectorstore_manager import search_all_collections
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_not_exception_type
 import app.auth
 from dotenv import load_dotenv
 from typing import Dict, Tuple
 from google.api_core import exceptions
-from tenacity import retry, stop_after_attempt, wait_exponential
 from enum import Enum
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -216,117 +224,50 @@ Rules:
 {{"query_type": "general_query"}}
 """
 
-async def classify_query_with_llm(query: str, patient_data: str) -> QueryType:
-    """Classify the query using an LLM to determine the user's intent."""
-    try:
-        full_query = f"{query} {patient_data}".strip()
+async def classify_query(query: str, patient_data: str) -> QueryType:
+    """Classify the query using rules to determine the user's intent."""
+    full_query = f"{query} {patient_data}".lower().strip()
 
-        prompt = QUERY_CLASSIFICATION_PROMPT.format(full_query=full_query)
-        
-        model = GenerativeModel("gemini-2.5-flash") 
-        generation_config = GenerationConfig(
-            temperature=0.0,
-            response_mime_type="application/json",
-        )
-        
-        response = await model.generate_content_async(prompt, generation_config=generation_config)
-        
-        if not response.text:
-             return QueryType.GENERAL_QUERY
+    # Rule for drug information
+    drug_keywords = [
+        "side effects of", "contraindications for", "dosing of", 
+        "interactions of"
+    ]
+    if any(keyword in full_query for keyword in drug_keywords):
+        # More specific check for drug names can be added if a list is available
+        return QueryType.DRUG_INFORMATION
 
+    # Rule for differential diagnosis
+    diagnosis_keywords = [
+        "differential diagnosis", "ddx", "patient with", "case of",
+        "year-old", "y/o", "presents with"
+    ]
+    if any(keyword in full_query for keyword in diagnosis_keywords):
+        return QueryType.DIFFERENTIAL_DIAGNOSIS
 
-
-        # Clean and parse the JSON response more robustly
-        response_text = response.text.strip()
-        
-        # Remove markdown code blocks if present
-        if response_text.startswith("```"):
-            lines = response_text.split('\n')
-            # Handle both ```json and ``` formats
-            start_idx = 1
-            end_idx = -1 if lines[-1].strip() == '```' else len(lines)
-            response_text = '\n'.join(lines[start_idx:end_idx]).strip()
-            
-        # Try direct JSON parsing first
-        try:
-            response_json = json.loads(response_text)
-        except json.JSONDecodeError:
-            # Extract JSON using more flexible regex
-            import re
-            # Look for any valid JSON object with query_type
-            json_patterns = [
-                r'\{[^}]*"query_type"\s*:\s*"[^"]*"[^}]*\}',  
-                r'\{\s*"query_type"\s*:\s*"[^"]*"\s*\}',      
-                r'"query_type"\s*:\s*"([^"]*)"'               
-            ]
-            
-            response_json = None
-            for pattern in json_patterns:
-                match = re.search(pattern, response_text)
-                if match:
-                    if pattern == json_patterns[2]:  
-                        response_json = {"query_type": match.group(1)}
-                    else:
-                        try:
-                            response_json = json.loads(match.group())
-                        except json.JSONDecodeError:
-                            continue
-                    break
-            
-            if response_json is None:
-                raise json.JSONDecodeError("Could not extract valid JSON", response_text, 0)
-        
-        query_type_str = response_json.get("query_type")
-        
-        if query_type_str in [item.value for item in QueryType]:
-            return QueryType(query_type_str)
-        else:
-            return QueryType.GENERAL_QUERY 
-            
-    except (json.JSONDecodeError, KeyError, exceptions.GoogleAPIError) as e:
-        # Default to general query when classification fails
-        return QueryType.GENERAL_QUERY
+    # Default to general query
+    return QueryType.GENERAL_QUERY
 
 def is_diagnosis_complete(response: str) -> bool:
     response_lower = response.lower().strip()
-    return "question:" not in response_lower    
+    return "question:" not in response_lower
 
-def validate_citations(response: str, actual_sources: list[str]) -> str:
-    """Validate that all citations in the response reference actual sources from the knowledge base."""
-    if not actual_sources:
-        return response
-    
-    # Create a set of valid source names
-    valid_sources = {source.lower() for source in actual_sources}
-    
-    # Find all citation patterns in the response
-    import re
-    citation_pattern = r'\[Source:\s*([^\]]+)\]'
-    
-    def validate_citation(match):
-        cited_source = match.group(1).strip()
-        # Check if the cited source exists in our knowledge base
-        if not any(cited_source.lower() in valid_source for valid_source in valid_sources):
-            # If source not found, remove the citation but keep the text
-            return ""
-        return match.group(0)
-    
-    # Replace invalid citations
-    validated_response = re.sub(citation_pattern, validate_citation, response)
-    
-    return validated_response
-
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-async def generate_response(query: str, chat_history: str, patient_data: str, retriever):
+@retry(
+    stop=stop_after_attempt(3), 
+    wait=wait_exponential(multiplier=1, min=4, max=10),
+    reraise=True,
+    retry=retry_if_not_exception_type(HTTPException)
+)
+async def generate_response(query: str, chat_history: str, patient_data: str):
     """Generate a response using the LLM and retrieved context, with different prompts based on query type."""
     try:
         start_time = time.time()
 
         # Detect query type to determine appropriate prompt
-        query_type = await classify_query_with_llm(query, patient_data)
+        query_type = await classify_query(query, patient_data)
         
-        # Retrieve context and actual sources
-        context, actual_sources = retrieve_context(query, patient_data, retriever)
+        # Retrieve context and actual sources from both collections
+        context, actual_sources = search_all_collections(query, patient_data, k=5)
         
         # Format sources for display
         sources_text = ", ".join(actual_sources) if actual_sources else "No sources available"
@@ -362,21 +303,21 @@ async def generate_response(query: str, chat_history: str, patient_data: str, re
         
         response_text = response.text
         
-        # Validate citations to ensure they only reference actual sources
-        validated_response = validate_citations(response_text, actual_sources)
-        
         if query_type == QueryType.DRUG_INFORMATION or query_type == QueryType.GENERAL_QUERY:
             diagnosis_complete = True
         else:
-            diagnosis_complete = is_diagnosis_complete(validated_response)
+            diagnosis_complete = is_diagnosis_complete(response_text)
         
-        return validated_response, diagnosis_complete
+        return response_text, diagnosis_complete
     
     except exceptions.ResourceExhausted:
+        logger.error("Google API resource exhausted")
         raise HTTPException(status_code=429, detail="Rate limit exceeded or resource unavailable, please try again later.")
     except exceptions.GoogleAPIError as e:
+        logger.error(f"Google API error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Model error: {str(e)}")
     except Exception as e:
+        logger.error(f"Unexpected error in generate_response: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")

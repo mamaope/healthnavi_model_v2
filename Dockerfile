@@ -3,11 +3,6 @@ FROM python:3.11-slim as builder
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies required for faiss-cpu
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential swig g++ \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
-
 # Install dependencies in a virtual environment
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
@@ -31,7 +26,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY . .
 
 # Make sure the credentials file has the right permissions
-RUN if [ -f "/static-athlete-443111-n4-717c9df24355.json" ]; then chmod 600 static-athlete-443111-n4-717c9df24355.json; fi
+RUN if [ -f "/regal-autonomy-454806-d1-edf68610c57a.json" ]; then chmod 600 static-athlete-443111-n4-717c9df24355.json; fi
 EXPOSE 8050
 
 # Run the uvicorn application server
