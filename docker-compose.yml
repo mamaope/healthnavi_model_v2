@@ -9,7 +9,7 @@ services:
       - .env  
     environment:
       - ENV=development
-      - GOOGLE_APPLICATION_CREDENTIALS=/app/static-athlete-443111-n4-717c9df24355.json
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/regal-autonomy-454806-d1-edf68610c57a.json
       - LOG_LEVEL=info
     volumes:
       - .:/app  # Mount current directory to /app in container for hot reloading

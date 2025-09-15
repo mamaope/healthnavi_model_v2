@@ -1,33 +1,49 @@
 import app.auth
+import logging
 from fastapi import FastAPI
 from app.routers import diagnosis
 from app.services.vectorstore_manager import initialize_vectorstore
 from fastapi.middleware.cors import CORSMiddleware
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
+
 # Initialize FastAPI app
 app = FastAPI(
-    title="MamaOpe AI RAG API", 
-    description="API for conversational diagnosis using FAISS vector store and Gemini as base model."
+    title="HealthNavi AI CDSS API",
+    description="API for conversational clinical decision support using RAG."
 )
 
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Allows all origins
     allow_credentials=True,
-    allow_methods=["*"], 
-    allow_headers=["*"],  
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
 )
 
 @app.on_event("startup")
 async def startup_event():
-    global vectorstore
-    print("Starting up MamaOpe AI RAG API...")
-    initialize_vectorstore()
-    print("Startup complete")
+    """
+    Initialise the vector store at start up.
+    """
+    logger.info("Starting up HealthNavi AI API...")
 
+    try:
+        initialize_vectorstore()
+        logger.info("Startup complete.")
+    except Exception as e:
+        logger.error(f"FATAL: Could not initialize vector store. Shutting down. Error: {e}")
+        raise
+        
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to the MamaOpe AI RAG API!"}
+    return {"message": "Welcome to the HealthNavi AI CDSS API!"}
 
 app.include_router(diagnosis.router, prefix="/api/v2", tags=["Diagnosis"])
 
