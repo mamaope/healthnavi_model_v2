@@ -8,3 +8,5 @@ terraform.tfstate
 terraform.tfstate.backup
 terraform.plan
 terraform.tfstate.*
+lambda_package/
+.DS_Store
