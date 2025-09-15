@@ -46,7 +46,7 @@ async def startup_event():
 def read_root():
     return {"message": "Welcome to the HealthNavi AI CDSS API!"}
 
-app.include_router(diagnosis.router, prefix="/diagnose", tags=["Diagnosis"])
+app.include_router(diagnosis.router, tags=["Diagnosis"])
 
 if __name__ == "__main__":
     import uvicorn
