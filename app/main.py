@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="HealthNavi AI CDSS API",
     description="API for conversational clinical decision support using RAG."
+    root_path="/api/v2"
 )
 
 # Configure CORS
@@ -45,7 +46,7 @@ async def startup_event():
 def read_root():
     return {"message": "Welcome to the HealthNavi AI CDSS API!"}
 
-app.include_router(diagnosis.router, prefix="/api/v2", tags=["Diagnosis"])
+app.include_router(diagnosis.router, tags=["Diagnosis"])
 
 if __name__ == "__main__":
     import uvicorn
