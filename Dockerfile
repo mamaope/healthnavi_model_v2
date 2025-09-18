@@ -29,5 +29,5 @@ COPY . .
 RUN if [ -f "/regal-autonomy-454806-d1-edf68610c57a.json" ]; then chmod 600 static-athlete-443111-n4-717c9df24355.json; fi
 EXPOSE 8050
 
-# Run the uvicorn application server
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8050"]
+# Run Alembic migrations, then start the uvicorn application server
+CMD alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8050
