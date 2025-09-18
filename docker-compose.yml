@@ -16,6 +16,8 @@ services:
       - /app/venv  # Exclude the virtual environment directory
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8050", "--reload"]
     restart: unless-stopped
+    depends_on:
+      - db
 
   db:
     image: postgres:15
