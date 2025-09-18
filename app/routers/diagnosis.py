@@ -1,5 +1,6 @@
 import logging
 from fastapi import APIRouter, HTTPException, Depends
+from app.auth import get_current_active_user
 from app.models.schemas import DiagnosisInput, DiagnosisResponse
 from app.services.vectorstore_manager import initialize_vectorstore
 from app.services.conversational_service import generate_response
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.post("/diagnose", response_model=DiagnosisResponse)
-async def diagnose(data: DiagnosisInput):
+async def diagnose(data: DiagnosisInput, current_user=Depends(get_current_active_user)):
     try:
         query = data.patient_data
         response, diagnosis_complete = await generate_response(
