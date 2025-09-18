@@ -37,8 +37,11 @@
                 <p class="subtitle">AI Clinical Decision Support</p>
             </div>
 
-            <!-- Chat Area -->
-            <div class="chat-area">
+
+
+
+            <!-- Chat Area (always visible, input disabled if not logged in) -->
+            <div class="chat-area" id="chatArea">
                 <div class="chat-messages" id="chatMessages">
                     <div class="welcome-message">
                         <p>How can I help you?</p>
@@ -48,6 +51,39 @@
                             </button>
                         </div>
                     </div>
+                </div>
+                <div id="authActions" class="auth-actions">
+                    <button class="main-btn" onclick="showLoginOverlay()">Login</button>
+                    <button class="main-btn secondary" onclick="showRegisterOverlay()">Register</button>
+                </div>
+            </div>
+
+            <!-- Auth Overlays -->
+            <div id="loginOverlay" class="overlay" style="display:none;">
+                <div class="overlay-content">
+                    <button class="close-btn" onclick="closeAuthOverlay()">&times;</button>
+                    <form id="loginForm" class="auth-form" onsubmit="loginUser(event)">
+                        <h2>Login</h2>
+                        <input type="text" id="loginUsername" placeholder="Username" required />
+                        <input type="password" id="loginPassword" placeholder="Password" required />
+                        <button type="submit">Login</button>
+                        <div id="loginError" class="auth-error"></div>
+                    </form>
+                </div>
+            </div>
+            <div id="registerOverlay" class="overlay" style="display:none;">
+                <div class="overlay-content">
+                    <button class="close-btn" onclick="closeAuthOverlay()">&times;</button>
+                    <form id="registerForm" class="auth-form" onsubmit="registerUser(event)">
+                        <h2>Register</h2>
+                        <input type="text" id="registerUsername" placeholder="Username" required />
+                        <input type="text" id="registerFullName" placeholder="Full Name" />
+                        <input type="email" id="registerEmail" placeholder="Email" required />
+                        <input type="password" id="registerPassword" placeholder="Password" required />
+                        <button type="submit">Register</button>
+                        <div id="registerError" class="auth-error"></div>
+                        <div id="registerSuccess" class="auth-success"></div>
+                    </form>
                 </div>
             </div>
 
@@ -74,8 +110,9 @@
                         id="messageInput" 
                         placeholder="How can I help you?"
                         rows="1"
+                        disabled
                     ></textarea>
-                    <button id="sendButton" onclick="sendMessage()">
+                    <button id="sendButton" onclick="sendMessage()" disabled>
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="m22 2-7 20-4-9-9-4 20-7z"></path>
                         </svg>
@@ -101,6 +138,24 @@
         </div>
     </div>
 
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:400,600&display=swap">
+    <style>
+        body { font-family: 'Inter', Arial, sans-serif; background: #f7f9fb; }
+        .auth-actions { text-align: center; margin: 24px 0 0 0; }
+        .main-btn { background: #007bff; color: #fff; border: none; border-radius: 6px; padding: 10px 28px; font-size: 1rem; font-weight: 600; margin: 0 8px; cursor: pointer; transition: background 0.2s; }
+        .main-btn.secondary { background: #6c757d; }
+        .main-btn:hover { background: #0056b3; }
+        .overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .overlay-content { background: #fff; padding: 32px 28px 24px 28px; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.12); min-width: 320px; position: relative; }
+        .close-btn { position: absolute; top: 12px; right: 16px; background: none; border: none; font-size: 2rem; color: #888; cursor: pointer; }
+        .auth-form { display: flex; flex-direction: column; gap: 14px; }
+        .auth-form input { padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 1rem; }
+        .auth-form button[type="submit"] { background: #007bff; color: #fff; border: none; border-radius: 6px; padding: 10px 0; font-size: 1rem; font-weight: 600; cursor: pointer; margin-top: 8px; }
+        .auth-form button[type="submit"]:hover { background: #0056b3; }
+        .auth-error { color: #dc3545; font-size: 0.95rem; min-height: 18px; }
+        .auth-success { color: #28a745; font-size: 0.95rem; min-height: 18px; }
+        @media (max-width: 600px) { .overlay-content { min-width: 90vw; } }
+    </style>
     <script src="script.js"></script>
 </body>
 </html> 

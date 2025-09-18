@@ -1,4 +1,8 @@
-import app.auth
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
+from datetime import timedelta
+from sqlalchemy.orm import Session
+from app.routers.auth import router as auth_router
 import logging
 from fastapi import FastAPI
 from app.routers import diagnosis
@@ -46,7 +50,11 @@ async def startup_event():
 def read_root():
     return {"message": "Welcome to the HealthNavi AI CDSS API!"}
 
+
 app.include_router(diagnosis.router, tags=["Diagnosis"])
+app.include_router(auth_router, tags=["Auth"])
+
+
 
 if __name__ == "__main__":
     import uvicorn

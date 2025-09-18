@@ -1,5 +1,94 @@
+
 const API_URL = 'http://localhost:8050';
 let chatHistory = [];
+
+let accessToken = null;
+
+// Overlay auth UI logic
+window.showLoginOverlay = function() {
+    document.getElementById('loginOverlay').style.display = 'flex';
+    document.getElementById('registerOverlay').style.display = 'none';
+    // Autofocus username
+    setTimeout(() => {
+        const input = document.getElementById('loginUsername');
+        if (input) input.focus();
+    }, 100);
+}
+window.showRegisterOverlay = function() {
+    document.getElementById('registerOverlay').style.display = 'flex';
+    document.getElementById('loginOverlay').style.display = 'none';
+    setTimeout(() => {
+        const input = document.getElementById('registerUsername');
+        if (input) input.focus();
+    }, 100);
+}
+window.closeAuthOverlay = function() {
+    document.getElementById('loginOverlay').style.display = 'none';
+    document.getElementById('registerOverlay').style.display = 'none';
+}
+
+// Registration handler
+window.registerUser = async function(event) {
+    event.preventDefault();
+    const username = document.getElementById('registerUsername').value.trim();
+    const fullName = document.getElementById('registerFullName').value.trim();
+    const email = document.getElementById('registerEmail').value.trim();
+    const password = document.getElementById('registerPassword').value;
+    const errorDiv = document.getElementById('registerError');
+    const successDiv = document.getElementById('registerSuccess');
+    errorDiv.textContent = '';
+    successDiv.textContent = '';
+    try {
+        const res = await fetch(`${API_URL}/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, full_name: fullName, email, password })
+        });
+        if (!res.ok) {
+            const data = await res.json();
+            throw new Error(data.detail || 'Registration failed');
+        }
+        successDiv.textContent = 'Registration successful! You can now log in.';
+        document.getElementById('registerForm').reset();
+        // Optionally, auto-switch to login overlay
+        setTimeout(() => {
+            showLoginOverlay();
+        }, 1200);
+    } catch (err) {
+        errorDiv.textContent = err.message;
+    }
+}
+
+// Login handler
+window.loginUser = async function(event) {
+    event.preventDefault();
+    const username = document.getElementById('loginUsername').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    const errorDiv = document.getElementById('loginError');
+    errorDiv.textContent = '';
+    try {
+        const res = await fetch(`${API_URL}/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+        if (!res.ok) {
+            const data = await res.json();
+            throw new Error(data.detail || 'Login failed');
+        }
+        const data = await res.json();
+        accessToken = data.access_token;
+        // Enable chat input and hide auth actions
+        document.getElementById('messageInput').disabled = false;
+        document.getElementById('sendButton').disabled = false;
+        document.getElementById('authActions').style.display = 'none';
+        closeAuthOverlay();
+        // Optionally, clear login form
+        document.getElementById('loginForm').reset();
+    } catch (err) {
+        errorDiv.textContent = err.message;
+    }
+}
 
 // Initialize chat
 document.addEventListener('DOMContentLoaded', function() {
@@ -55,6 +144,12 @@ async function sendMessage() {
     const message = messageInput.value.trim();
     if (!message) return;
     
+
+    // If not authenticated, do nothing
+    if (!accessToken) {
+        addMessage('error', 'You must be logged in to send messages.');
+        return;
+    }
     // Disable input and show loading
     messageInput.disabled = true;
     sendButton.disabled = true;
@@ -75,11 +170,14 @@ async function sendMessage() {
         };
         
         // Call diagnosis API
+
+        const headers = { 'Content-Type': 'application/json' };
+        if (accessToken) {
+            headers['Authorization'] = `Bearer ${accessToken}`;
+        }
         const response = await fetch(`${API_URL}/api/v2/diagnose`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers,
             body: JSON.stringify(requestBody)
         });
         
@@ -330,21 +428,50 @@ function loadSampleCase() {
     messageInput.focus();
 }
 
-// Add spinner styles
-const style = document.createElement('style');
-style.textContent = `
-    .spinner {
-        width: 16px;
-        height: 16px;
-        border: 2px solid #ffffff;
-        border-top: 2px solid transparent;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
+
+// Add spinner styles (if not already present)
+if (!document.getElementById('spinner-style')) {
+    const style = document.createElement('style');
+    style.id = 'spinner-style';
+    style.textContent = `
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #ffffff;
+            border-top: 2px solid transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+// On load, ensure chat input is disabled and auth actions are visible
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('messageInput').disabled = true;
+    document.getElementById('sendButton').disabled = true;
+    document.getElementById('authActions').style.display = '';
+    // Allow pressing Enter to submit login/register forms
+    const loginForm = document.getElementById('loginForm');
+    if (loginForm) {
+        loginForm.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                loginUser(e);
+            }
+        });
     }
-    
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
+    const registerForm = document.getElementById('registerForm');
+    if (registerForm) {
+        registerForm.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                registerUser(e);
+            }
+        });
     }
-`;
-document.head.appendChild(style); 
+});
