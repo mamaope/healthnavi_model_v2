@@ -1,36 +1,78 @@
 services:
   api:
     build:
-      context: .
-    container_name: mamaopeai_rag_api_v2
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: healthnavi_cdss_api
     ports:
       - "8050:8050"
-    env_file:
-      - .env  
     environment:
-      - ENV=development
-      - GOOGLE_APPLICATION_CREDENTIALS=/app/regal-autonomy-454806-d1-edf68610c57a.json
-      - LOG_LEVEL=info
+      - ENV=${ENV:-development}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - SECRET_KEY=${SECRET_KEY:-K8mN2pQ7rS9tU1vW3xY5zA6bC8dE0fG2hI4jK6lM9nP1qR3sT5uV7wX9yZ}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-B2cD4eF6gH8iJ0kL2mN4pQ6rS8tU0vW2xY4zA6bC8dE0fG2hI4jK6lM}
+      - DB_USER=${DB_USER:-healthnavi_user}
+      - DB_PASSWORD=${DB_PASSWORD:-SecurePass123!}
+      - DB_HOST=${DB_HOST:-db}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME:-healthnavi_cdss}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://healthnavi_user:SecurePass123!@db:5432/healthnavi_cdss}
+      # Email Configuration
+      - SMTP_SERVER=${SMTP_SERVER:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_USE_TLS=${SMTP_USE_TLS:-true}
+      - SMTP_USE_SSL=${SMTP_USE_SSL:-false}
+      - FROM_EMAIL=${FROM_EMAIL:-noreply@healthnavi.ai}
+      - FROM_NAME=${FROM_NAME:-HealthNavi AI CDSS}
+      - BASE_URL=${BASE_URL:-http://localhost:8050}
     volumes:
-      - .:/app  # Mount current directory to /app in container for hot reloading
-      - /app/venv  # Exclude the virtual environment directory
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8050"
+      - ./backend:/app
+      - /app/venv
+      - ./logs:/app/logs
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8050 --reload"
     restart: unless-stopped
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8050/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   db:
     image: postgres:15
-    container_name: healthnavy_user_postgres
+    container_name: healthnavi_cdss_postgres
     environment:
-      POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: healthnavi_cdss
+      POSTGRES_USER: healthnavi_user
+      POSTGRES_PASSWORD: SecurePass123!
     ports:
-      - "5437:5432"
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
     restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U healthnavi_user -d healthnavi_cdss"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    image: nginx:alpine
+    container_name: healthnavi_cdss_frontend
+    ports:
+      - "3000:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf
+    restart: unless-stopped
+    depends_on:
+      - api
 
 volumes:
   postgres_data:

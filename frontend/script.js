@@ -1,114 +1,246 @@
-
-const API_URL = 'http://localhost:8050';
+const API_URL = '';
 let chatHistory = [];
-
 let accessToken = null;
+let currentUser = null;
 
 // Overlay auth UI logic
 window.showLoginOverlay = function() {
     document.getElementById('loginOverlay').style.display = 'flex';
     document.getElementById('registerOverlay').style.display = 'none';
-    // Autofocus username
+    // Autofocus email field
     setTimeout(() => {
-        const input = document.getElementById('loginUsername');
+        const input = document.getElementById('loginEmail');
         if (input) input.focus();
     }, 100);
 }
+
 window.showRegisterOverlay = function() {
     document.getElementById('registerOverlay').style.display = 'flex';
     document.getElementById('loginOverlay').style.display = 'none';
     setTimeout(() => {
-        const input = document.getElementById('registerUsername');
+        const input = document.getElementById('registerFirstName');
         if (input) input.focus();
     }, 100);
 }
+
 window.closeAuthOverlay = function() {
     document.getElementById('loginOverlay').style.display = 'none';
     document.getElementById('registerOverlay').style.display = 'none';
 }
 
-// Registration handler
+// Enhanced registration handler with new API structure
 window.registerUser = async function(event) {
     event.preventDefault();
-    const username = document.getElementById('registerUsername').value.trim();
-    const fullName = document.getElementById('registerFullName').value.trim();
+    
+    const firstName = document.getElementById('registerFirstName').value.trim();
+    const lastName = document.getElementById('registerLastName').value.trim();
     const email = document.getElementById('registerEmail').value.trim();
     const password = document.getElementById('registerPassword').value;
+    const confirmPassword = document.getElementById('registerConfirmPassword').value;
+    
     const errorDiv = document.getElementById('registerError');
     const successDiv = document.getElementById('registerSuccess');
+    const submitBtn = document.getElementById('registerSubmitBtn');
+    
+    // Clear previous messages
     errorDiv.textContent = '';
     successDiv.textContent = '';
+    
+    // Client-side validation
+    if (!firstName || !lastName || !email || !password) {
+        errorDiv.textContent = 'All fields are required';
+        return;
+    }
+    
+    if (password !== confirmPassword) {
+        errorDiv.textContent = 'Passwords do not match';
+        return;
+    }
+    
+    if (password.length < 8) {
+        errorDiv.textContent = 'Password must be at least 8 characters long';
+        return;
+    }
+    
+    // Show loading state
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Creating Account...';
+    
     try {
-        const res = await fetch(`${API_URL}/register`, {
+        const response = await fetch(`${API_URL}/auth/register`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, full_name: fullName, email, password })
+            headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+                first_name: firstName,
+                last_name: lastName,
+                email: email,
+                password: password
+            })
         });
-        if (!res.ok) {
-            const data = await res.json();
-            throw new Error(data.detail || 'Registration failed');
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            successDiv.textContent = data.data.message || 'Registration successful! Please check your email to activate your account.';
+            document.getElementById('registerForm').reset();
+            
+            // Auto-switch to login overlay after success
+            setTimeout(() => {
+                showLoginOverlay();
+            }, 2000);
+        } else {
+            // Handle API errors
+            const errorMessage = data.metadata.errors.length > 0 
+                ? data.metadata.errors.join(', ')
+                : data.data.message || 'Registration failed';
+            errorDiv.textContent = errorMessage;
         }
-        successDiv.textContent = 'Registration successful! You can now log in.';
-        document.getElementById('registerForm').reset();
-        // Optionally, auto-switch to login overlay
-        setTimeout(() => {
-            showLoginOverlay();
-        }, 1200);
+        
     } catch (err) {
-        errorDiv.textContent = err.message;
+        console.error('Registration error:', err);
+        errorDiv.textContent = 'Network error. Please try again.';
+    } finally {
+        // Reset button state
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Create Account';
     }
 }
 
-// Login handler
+// Enhanced login handler with new API structure
 window.loginUser = async function(event) {
     event.preventDefault();
-    const username = document.getElementById('loginUsername').value.trim();
+    
+    const email = document.getElementById('loginEmail').value.trim();
     const password = document.getElementById('loginPassword').value;
+    
     const errorDiv = document.getElementById('loginError');
+    const submitBtn = document.getElementById('loginSubmitBtn');
+    
+    // Clear previous messages
     errorDiv.textContent = '';
-    try {
-        const res = await fetch(`${API_URL}/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password })
-        });
-        if (!res.ok) {
-            const data = await res.json();
-            throw new Error(data.detail || 'Login failed');
-        }
-        const data = await res.json();
-        accessToken = data.access_token;
-        // Enable chat input and hide auth actions
-        document.getElementById('messageInput').disabled = false;
-        document.getElementById('sendButton').disabled = false;
-        document.getElementById('authActions').style.display = 'none';
-        closeAuthOverlay();
-        // Optionally, clear login form
-        document.getElementById('loginForm').reset();
-    } catch (err) {
-        errorDiv.textContent = err.message;
+    
+    // Client-side validation
+    if (!email || !password) {
+        errorDiv.textContent = 'Email and password are required';
+        return;
     }
+    
+    // Show loading state
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Signing In...';
+    
+    try {
+        const response = await fetch(`${API_URL}/auth/login`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+                email: email,
+                password: password
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Store token and user data
+            accessToken = data.data.token;
+            currentUser = data.data.user;
+            
+            // Update UI
+            document.getElementById('messageInput').disabled = false;
+            document.getElementById('sendButton').disabled = false;
+            document.getElementById('authActions').style.display = 'none';
+            
+            // Show welcome message
+            addMessage('ai', `Welcome back, ${currentUser.first_name}! How can I help you today?`);
+            
+            closeAuthOverlay();
+            document.getElementById('loginForm').reset();
+            
+            // Update user info display if exists
+            updateUserDisplay();
+            
+        } else {
+            // Handle API errors
+            const errorMessage = data.metadata.errors.length > 0 
+                ? data.metadata.errors.join(', ')
+                : data.data.message || 'Login failed';
+            errorDiv.textContent = errorMessage;
+            
+            // Show attempts left if available
+            if (data.metadata.attemptsLeft !== undefined) {
+                errorDiv.textContent += ` (${data.metadata.attemptsLeft} attempts remaining)`;
+            }
+        }
+        
+    } catch (err) {
+        console.error('Login error:', err);
+        errorDiv.textContent = 'Network error. Please try again.';
+    } finally {
+        // Reset button state
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Sign In';
+    }
+}
+
+// Update user display in UI
+function updateUserDisplay() {
+    const userDisplay = document.getElementById('userDisplay');
+    if (userDisplay && currentUser) {
+        userDisplay.innerHTML = `
+            <div class="user-info">
+                <span class="user-name">${currentUser.first_name} ${currentUser.last_name}</span>
+                <span class="user-email">${currentUser.email}</span>
+            </div>
+            <button onclick="logout()" class="logout-btn">Logout</button>
+        `;
+        userDisplay.style.display = 'flex';
+    }
+}
+
+// Logout function
+window.logout = function() {
+    accessToken = null;
+    currentUser = null;
+    
+    // Reset UI
+    document.getElementById('messageInput').disabled = true;
+    document.getElementById('sendButton').disabled = true;
+    document.getElementById('authActions').style.display = '';
+    
+    // Hide user display
+    const userDisplay = document.getElementById('userDisplay');
+    if (userDisplay) {
+        userDisplay.style.display = 'none';
+    }
+    
+    // Clear chat
+    clearChat();
+    
+    // Show login overlay
+    showLoginOverlay();
 }
 
 // Initialize chat
 document.addEventListener('DOMContentLoaded', function() {
     const messageInput = document.getElementById('messageInput');
     
-    // Auto-resize textarea - ensure all text is visible
+    // Auto-resize textarea
     messageInput.addEventListener('input', function() {
-        // Reset height to auto to get the correct scrollHeight
         this.style.height = 'auto';
-        
-        // Calculate the required height based on content
         const scrollHeight = this.scrollHeight;
         const minHeight = 24;
         const maxHeight = 120;
         
-        // Set height to show all content, respecting min/max bounds
         const newHeight = Math.max(minHeight, Math.min(scrollHeight, maxHeight));
         this.style.height = newHeight + 'px';
         
-        // If content exceeds max height, show scrollbar
         if (scrollHeight > maxHeight) {
             this.style.overflowY = 'auto';
         } else {
@@ -124,7 +256,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
-    // Ensure proper sizing when focused
+    // Focus handling
     messageInput.addEventListener('focus', function() {
         if (this.value) {
             this.style.height = 'auto';
@@ -144,12 +276,12 @@ async function sendMessage() {
     const message = messageInput.value.trim();
     if (!message) return;
     
-
-    // If not authenticated, do nothing
+    // Check authentication
     if (!accessToken) {
         addMessage('error', 'You must be logged in to send messages.');
         return;
     }
+    
     // Disable input and show loading
     messageInput.disabled = true;
     sendButton.disabled = true;
@@ -159,8 +291,8 @@ async function sendMessage() {
     addMessage('user', message);
     messageInput.value = '';
     messageInput.style.height = 'auto';
-    messageInput.style.height = '24px'; // Reset to minimum height
-    messageInput.style.overflowY = 'hidden'; // Reset overflow
+    messageInput.style.height = '24px';
+    messageInput.style.overflowY = 'hidden';
     
     try {
         // Prepare API request
@@ -169,13 +301,16 @@ async function sendMessage() {
             chat_history: formatChatHistory()
         };
         
-        // Call diagnosis API
-
-        const headers = { 'Content-Type': 'application/json' };
+        const headers = { 
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        };
+        
         if (accessToken) {
             headers['Authorization'] = `Bearer ${accessToken}`;
         }
-        const response = await fetch(`${API_URL}/api/v2/diagnose`, {
+        
+        const response = await fetch(`${API_URL}/diagnosis/diagnose`, {
             method: 'POST',
             headers,
             body: JSON.stringify(requestBody)
@@ -188,12 +323,12 @@ async function sendMessage() {
         const data = await response.json();
         
         // Add AI response to chat
-        addMessage('ai', data.model_response, data.diagnosis_complete);
+        addMessage('ai', data.response || data.model_response, data.diagnosis_complete);
         
         // Update chat history
         chatHistory.push({
             user: message,
-            ai: data.model_response
+            ai: data.response || data.model_response
         });
         
     } catch (error) {
@@ -238,12 +373,10 @@ function addMessage(type, content, diagnosisComplete = false) {
     
     // Smooth scroll to the new message
     if (type === 'ai') {
-        // For AI responses, scroll to show the full response
         setTimeout(() => {
             messageDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }, 100);
     } else {
-        // For user messages, scroll to bottom
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
     
@@ -428,7 +561,6 @@ function loadSampleCase() {
     messageInput.focus();
 }
 
-
 // Add spinner styles (if not already present)
 if (!document.getElementById('spinner-style')) {
     const style = document.createElement('style');
@@ -455,6 +587,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('messageInput').disabled = true;
     document.getElementById('sendButton').disabled = true;
     document.getElementById('authActions').style.display = '';
+    
     // Allow pressing Enter to submit login/register forms
     const loginForm = document.getElementById('loginForm');
     if (loginForm) {
