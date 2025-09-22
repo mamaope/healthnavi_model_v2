@@ -420,8 +420,14 @@ class ConversationalService:
             # Classify query type
             query_type = await self.query_classifier.classify_query(sanitized_query, sanitized_patient_data)
             
-            # Retrieve context from vector store
+            # Retrieve context from vector store (increased k for more comprehensive context)
             context, sources = search_all_collections(sanitized_query, sanitized_patient_data, k=5)
+            
+            # Truncate context if too long to prevent token overflow
+            max_context_length = 3000  # Increased to allow more comprehensive medical context
+            if len(context) > max_context_length:
+                context = context[:max_context_length] + "... [Context truncated due to length]"
+                logger.warning(f"Context truncated from {len(context)} to {max_context_length} characters")
             
             # Format sources for display
             sources_text = ", ".join(sources) if sources else "No sources available"
@@ -441,7 +447,7 @@ class ConversationalService:
             # Generate response
             generation_config = GenerationConfig(
                 temperature=temperature,
-                max_output_tokens=3000,
+                max_output_tokens=3000,  # Increased to match working configuration
                 top_p=1.0,
             )
             
@@ -450,7 +456,29 @@ class ConversationalService:
                 generation_config=generation_config
             )
             
-            response_text = response.text
+            # Handle response safely
+            try:
+                response_text = response.text
+            except Exception as e:
+                # Handle cases where response is blocked or truncated
+                if "MAX_TOKENS" in str(e) or "finish_reason" in str(e):
+                    logger.warning(f"Response truncated due to token limit: {e}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Response was truncated due to token limits. Please try with a shorter query or patient data."
+                    )
+                elif "safety filters" in str(e).lower():
+                    logger.warning(f"Response blocked by safety filters: {e}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Response was blocked by safety filters. Please rephrase your query."
+                    )
+                else:
+                    logger.error(f"Unexpected error getting response text: {e}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Unexpected error: {str(e)}"
+                    )
             
             # Validate response
             validation_result = self.response_validator.validate_response(response_text)

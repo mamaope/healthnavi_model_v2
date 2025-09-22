@@ -1,15 +1,9 @@
-"""
-Vector Database Service for HealthNavi AI CDSS.
-
-This module provides integration with Zilliz Cloud (Milvus) for medical knowledge retrieval.
-"""
-
 import os
-import logging
-from typing import List, Tuple, Dict, Any, Optional
+from typing import List, Dict, Tuple
 from dotenv import load_dotenv
 from pymilvus import MilvusClient
 import openai
+import logging
 
 logging.basicConfig(
     level=logging.INFO,
@@ -19,7 +13,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 load_dotenv()
-
 
 class ZillizService:
     """Service for interacting with Zilliz Cloud."""
@@ -118,14 +111,6 @@ class ZillizService:
             logger.error(f"Error during search in '{self.collection_name}': {e}")
             return f"An error occurred during search: {str(e)}", []
 
-    def search_all_collections(self, query: str, patient_data: str, k: int = 8) -> Tuple[str, List[str]]:
-        """
-        Performs a search across the medical knowledge collection.
-        Combines query and patient data for richer context.
-        """
-        full_search_query = f"{query}\n{patient_data}".strip()
-        return self.search_medical_knowledge(full_search_query, k)
-
     def load_collection(self):
         """Loads the collection into memory for faster searches."""
         try:
@@ -135,6 +120,4 @@ class ZillizService:
             logger.error(f"Failed to load collection '{self.collection_name}': {e}")
             raise
 
-
-# Global service instance
 vectordb_service = ZillizService()
