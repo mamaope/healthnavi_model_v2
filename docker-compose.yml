@@ -17,6 +17,10 @@ services:
       - DB_PORT=${DB_PORT:-5432}
       - DB_NAME=${DB_NAME:-healthnavi_cdss}
       - DATABASE_URL=${DATABASE_URL:-postgresql://healthnavi_user:SecurePass123!@db:5432/healthnavi_cdss}
+      # Google Cloud Configuration
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/regal-autonomy-454806-d1-edf68610c57a.json
+      - GOOGLE_CLOUD_PROJECT=regal-autonomy-454806-d1
+      - GOOGLE_CLOUD_LOCATION=us-central1
       # Email Configuration
       - SMTP_SERVER=${SMTP_SERVER:-smtp.gmail.com}
       - SMTP_PORT=${SMTP_PORT:-587}
@@ -27,11 +31,32 @@ services:
       - FROM_EMAIL=${FROM_EMAIL:-noreply@healthnavi.ai}
       - FROM_NAME=${FROM_NAME:-HealthNavi AI CDSS}
       - BASE_URL=${BASE_URL:-http://localhost:8050}
+      # Vector Database Configuration (Zilliz/Milvus)
+      - MILVUS_URI=${MILVUS_URI:-}
+      - MILVUS_TOKEN=${MILVUS_TOKEN:-}
+      - MILVUS_DB_NAME=${MILVUS_DB_NAME:-default}
+      - MILVUS_COLLECTION_NAME=${MILVUS_COLLECTION_NAME:-medical_knowledge}
+      - MILVUS_DRUG_COLLECTION_NAME=${MILVUS_DRUG_COLLECTION_NAME:-drug_knowledge}
+      - MILVUS_EMBEDDING_MODEL=${MILVUS_EMBEDDING_MODEL:-bge-m3}
+      - EMBEDDING_DEVICE=${EMBEDDING_DEVICE:-cpu}
+      - DRUG_COLLECTION=${DRUG_COLLECTION:-drug_database_builtin}
+      # Azure OpenAI Configuration
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT:-}
+      - AZURE_OPENAI_REGION=${AZURE_OPENAI_REGION:-eastus}
+      - MODEL_NAME=${MODEL_NAME:-text-embedding-3-large}
+      - DEPLOYMENT=${DEPLOYMENT:-text-embedding-3-large}
+      - API_VERSION=${API_VERSION:-2024-02-01}
+      # AWS S3 Configuration
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_S3_BUCKET=${AWS_S3_BUCKET:-}
     volumes:
       - ./backend:/app
       - /app/venv
       - ./logs:/app/logs
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8050 --reload"
+    command: sh -c "alembic upgrade head && uvicorn healthnavi.main:app --host 0.0.0.0 --port 8050 --reload"
     restart: unless-stopped
     depends_on:
       db:

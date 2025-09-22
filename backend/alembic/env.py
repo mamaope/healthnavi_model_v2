@@ -18,7 +18,7 @@ if os.path.exists(dotenv_path):
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-from app.models.user import Base
+from healthnavi.models.user import Base
 target_metadata = Base.metadata
 
 # Construct the database URL from environment variables

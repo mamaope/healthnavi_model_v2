@@ -4,6 +4,13 @@
 
 **HealthNavi AI CDSS** is a secure, HIPAA/GDPR/ISO 13485 compliant AI-powered Clinical Decision Support System that uses Retrieval-Augmented Generation (RAG) to assist healthcare professionals with medical decision-making.
 
+## 📚 Documentation
+
+- **[Complete API Documentation](API_DOCUMENTATION.md)** - Comprehensive API reference with examples
+- **[Quick API Reference](QUICK_API_REFERENCE.md)** - Fast reference for developers
+- **[Database Configuration](DATABASE_CONFIGURATION.md)** - Database setup and migration guide
+- **[Security Guide](SECURITY.md)** - Security implementation details
+
 ## 🔒 Security Features
 
 ### **Medical Software Security Standards**
