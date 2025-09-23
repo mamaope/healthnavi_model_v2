@@ -3,11 +3,13 @@ FROM python:3.11-slim as builder
 # Set working directory
 WORKDIR /app
 
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     && rm -rf /var/lib/apt/lists/*
+
 
 # Install dependencies in a virtual environment
 RUN python -m venv /opt/venv
@@ -40,7 +42,7 @@ COPY . .
 ENV PYTHONPATH=/app/src
 
 # Make sure the credentials file has the right permissions
-RUN if [ -f "google-credentials.json" ]; then chmod 600 google-credentials.json; fi
+RUN if [ -f "regal-autonomy-454806-d1-edf68610c57a.json" ]; then chmod 600 regal-autonomy-454806-d1-edf68610c57a.json; fi
 
 EXPOSE 8050
 

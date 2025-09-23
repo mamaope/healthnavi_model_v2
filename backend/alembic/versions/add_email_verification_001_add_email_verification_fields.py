@@ -5,13 +5,14 @@ Revises: add_user_roles_001
 Create Date: 2025-09-22 10:30:00.000000
 
 """
+from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'add_email_verification_001'
-down_revision = 'add_user_roles_001'
+revision: str = 'add_email_verification_001'
+down_revision: Union[str, Sequence[str], None] = 'add_user_roles_001'
 branch_labels = None
 depends_on = None
 
