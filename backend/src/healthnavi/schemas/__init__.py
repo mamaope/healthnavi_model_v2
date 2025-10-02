@@ -52,6 +52,7 @@ class DiagnosisInput(BaseModel):
     """Input schema for diagnosis requests."""
     patient_data: str = Field(..., min_length=10, max_length=10000, description="Patient data for diagnosis")
     chat_history: Optional[str] = Field(default="", max_length=50000, description="Previous conversation history")
+    session_id: Optional[int] = Field(None, description="Chat session ID to store the conversation")
 
 
 class DiagnosisResponse(BaseModel):
@@ -59,6 +60,66 @@ class DiagnosisResponse(BaseModel):
     model_response: str = Field(..., description="AI model response")
     diagnosis_complete: bool = Field(..., description="Whether diagnosis is complete")
     updated_chat_history: str = Field(..., description="Updated conversation history")
+    session_id: Optional[int] = Field(None, description="Chat session ID if conversation was stored")
+    message_id: Optional[int] = Field(None, description="Message ID of the AI response if stored")
+
+
+# Chat Session Management Schemas
+class ChatSessionCreate(BaseModel):
+    """Schema for creating a new chat session."""
+    session_name: Optional[str] = Field(None, max_length=255, description="Name for the chat session")
+    patient_summary: Optional[str] = Field(None, max_length=1000, description="Brief patient summary")
+
+
+class ChatSessionUpdate(BaseModel):
+    """Schema for updating a chat session."""
+    session_name: Optional[str] = Field(None, max_length=255, description="Name for the chat session")
+    patient_summary: Optional[str] = Field(None, max_length=1000, description="Brief patient summary")
+    is_active: Optional[bool] = Field(None, description="Whether the session is active")
+
+
+class ChatSessionResponse(BaseModel):
+    """Schema for chat session responses."""
+    id: int
+    user_id: int
+    session_name: Optional[str]
+    patient_summary: Optional[str]
+    is_active: bool
+    created_at: Optional[str]
+    updated_at: Optional[str]
+    message_count: Optional[int] = Field(default=0, description="Number of messages in the session")
+
+
+class ChatMessageCreate(BaseModel):
+    """Schema for creating a new chat message."""
+    content: str = Field(..., min_length=1, max_length=10000, description="Message content")
+    message_type: str = Field(..., description="Type of message: 'user', 'assistant', or 'system'")
+    patient_data: Optional[str] = Field(None, max_length=10000, description="Patient data associated with the message")
+    diagnosis_complete: Optional[bool] = Field(default=False, description="Whether diagnosis is complete")
+
+
+class ChatMessageResponse(BaseModel):
+    """Schema for chat message responses."""
+    id: int
+    session_id: int
+    message_type: str
+    content: str
+    patient_data: Optional[str]
+    diagnosis_complete: bool
+    created_at: Optional[str]
+
+
+class ChatSessionWithMessages(ChatSessionResponse):
+    """Schema for chat session with messages."""
+    messages: List[ChatMessageResponse] = Field(default_factory=list, description="Messages in the session")
+
+
+class ChatSessionListResponse(BaseModel):
+    """Schema for listing chat sessions."""
+    sessions: List[ChatSessionResponse]
+    total: int
+    page: int
+    per_page: int
 
 
 class UserCreate(BaseModel):

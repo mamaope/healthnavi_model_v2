@@ -3,10 +3,10 @@ User model for HealthNavi AI CDSS.
 """
 
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship
 from datetime import datetime
 
-Base = declarative_base()
+from .base import Base
 
 
 class User(Base):
@@ -24,6 +24,9 @@ class User(Base):
     role = Column(String(20), default="user", nullable=False)
     created_at = Column(String, nullable=True)  # Will store ISO datetime string
     updated_at = Column(String, nullable=True)  # Will store ISO datetime string
+    
+    # Relationship to diagnosis sessions
+    diagnosis_sessions = relationship("DiagnosisSession", back_populates="user", cascade="all, delete-orphan")
     
     @property
     def created_at_str(self) -> str:

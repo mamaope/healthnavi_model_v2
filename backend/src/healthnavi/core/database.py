@@ -90,7 +90,8 @@ def get_db_transaction():
 def create_tables():
     """Create all database tables."""
     try:
-        from healthnavi.models.base import Base
+        # Import all models to ensure they are registered with SQLAlchemy
+        from healthnavi.models import Base, User, DiagnosisSession, ChatMessage
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created successfully")
     except SQLAlchemyError as e:

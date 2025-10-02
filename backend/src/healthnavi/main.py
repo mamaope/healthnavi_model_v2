@@ -12,7 +12,7 @@ import time
 from healthnavi.core.config import get_config
 from healthnavi.core.response_utils import create_success_response, create_error_response, ResponseTimer
 from healthnavi.schemas import StandardResponse
-from healthnavi.api.v1 import auth, diagnosis
+from healthnavi.api.v1 import auth, diagnosis, chat_sessions
 
 config = get_config()
 logger = logging.getLogger(__name__)
@@ -147,6 +147,7 @@ async def health_check():
 # Include API routers
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(diagnosis.router, prefix="/diagnosis", tags=["Diagnosis"])
+app.include_router(chat_sessions.router, prefix="/chat", tags=["Chat Sessions"])
 
 
 if __name__ == "__main__":
