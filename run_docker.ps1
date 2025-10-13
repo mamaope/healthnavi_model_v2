@@ -68,3 +68,6 @@ Write-Host ""
 Write-Host "✅ HealthNavi AI CDSS is now running!" -ForegroundColor Green
 Write-Host "   Open http://localhost:3000 in your browser to access the application" -ForegroundColor Yellow
 
+
+
+

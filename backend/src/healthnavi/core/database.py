@@ -7,7 +7,7 @@ transaction handling, and audit logging following medical software standards.
 
 import logging
 from typing import Generator, Optional
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
@@ -108,7 +108,7 @@ def check_database_connection() -> bool:
     """
     try:
         with engine.connect() as connection:
-            connection.execute("SELECT 1")
+            connection.execute(text("SELECT 1"))
         logger.info("Database connection check successful")
         return True
     except SQLAlchemyError as e:

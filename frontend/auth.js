@@ -1,7 +1,7 @@
 // HealthNavi AI Authentication Application
 class HealthNaviAuth {
     constructor() {
-        this.API_URL = '/api'; // API calls are proxied through nginx
+        this.API_URL = 'http://localhost:8050/api/v2'; // Direct connection to backend
         this.currentTab = 'login';
         
         this.init();

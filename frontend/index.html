@@ -11,6 +11,42 @@
 </head>
 <body>
     <div class="app-container" id="appContainer">
+        <!-- Sidebar for Authenticated Users (Hidden by default) -->
+        <aside class="sidebar" id="sidebar" style="display: none;">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">
+                    <h2 class="welcome-logo">
+                        <span class="logo-health">Health</span><span class="logo-navy">Navy</span>
+                    </h2>
+                </div>
+                <button class="btn-new-chat" onclick="startNewChat()">
+                    <i class="fas fa-plus"></i>
+                    <span>New Chat</span>
+                </button>
+            </div>
+            
+            <div class="sidebar-content">
+                <div class="sessions-header">
+                    <h3>Sessions</h3>
+                </div>
+                <div class="sessions-list" id="sessionsList">
+                    <!-- Sessions will be dynamically loaded here -->
+                    <div class="empty-state" id="emptySessionsState">
+                        <i class="fas fa-comments"></i>
+                        <p>No conversations yet</p>
+                        <small>Start a new chat to begin</small>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="sidebar-footer">
+                <button class="btn-logout btn-logout-full" onclick="logout()" title="Logout">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span>Sign Out</span>
+                </button>
+            </div>
+        </aside>
+
         <!-- Landing Page for Unauthenticated Users -->
         <div class="landing-page" id="landingPage">
             <!-- Header -->
@@ -19,10 +55,67 @@
                     <h2 class="welcome-logo">
                         <span class="logo-health">Health</span><span class="logo-navy">Navy</span>
                     </h2>
-                </div>
+                    </div>
                 <div class="header-actions">
+                    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme" title="Toggle light/dark theme">
+                        <div class="theme-toggle-slider">
+                            <i class="theme-toggle-icon fas fa-sun" id="themeIcon"></i>
+                        </div>
+                    </button>
                     <button class="btn btn-outline" onclick="showAuthModal('login')">Sign In</button>
                     <button class="btn btn-primary" onclick="showAuthModal('register')">Get Started</button>
+                </div>
+                
+                <!-- User Profile (Shown when authenticated) -->
+                <div class="header-user-profile" id="headerUserProfile" style="display: none;">
+                    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme" title="Toggle light/dark theme">
+                        <div class="theme-toggle-slider">
+                            <i class="theme-toggle-icon fas fa-sun" id="headerThemeIcon"></i>
+                        </div>
+                    </button>
+                    
+                    <div class="header-user-menu">
+                        <button class="header-user-button" onclick="toggleUserMenu()" aria-label="User menu" aria-expanded="false" aria-haspopup="true">
+                            <div class="header-user-avatar">
+                                <i class="fas fa-user-md"></i>
+                            </div>
+                            <div class="header-user-info">
+                                <span class="header-user-name" id="headerUserName">User</span>
+                                <span class="header-user-role" id="headerUserRole">Healthcare Professional</span>
+                            </div>
+                            <i class="fas fa-chevron-down header-dropdown-icon"></i>
+                        </button>
+                        
+                        <div class="user-dropdown-menu" id="userDropdownMenu" style="display: none;">
+                            <div class="user-dropdown-header">
+                                <div class="user-dropdown-avatar">
+                                    <i class="fas fa-user-md"></i>
+                                </div>
+                                <div class="user-dropdown-info">
+                                    <div class="user-dropdown-name" id="dropdownUserName">User</div>
+                                    <div class="user-dropdown-email" id="dropdownUserEmail">user@example.com</div>
+                                </div>
+                            </div>
+                            <div class="user-dropdown-divider"></div>
+                            <a href="#" class="user-dropdown-item" onclick="showProfile(); return false;">
+                                <i class="fas fa-user"></i>
+                                <span>My Profile</span>
+                            </a>
+                            <a href="#" class="user-dropdown-item" onclick="showSettings(); return false;">
+                                <i class="fas fa-cog"></i>
+                                <span>Settings</span>
+                            </a>
+                            <a href="#" class="user-dropdown-item" onclick="showHelp(); return false;">
+                                <i class="fas fa-question-circle"></i>
+                                <span>Help & Support</span>
+                            </a>
+                            <div class="user-dropdown-divider"></div>
+                            <a href="#" class="user-dropdown-item user-dropdown-item-danger" onclick="logout(); return false;">
+                                <i class="fas fa-sign-out-alt"></i>
+                                <span>Sign Out</span>
+                            </a>
+                        </div>
+                    </div>
                 </div>
             </header>
 
@@ -39,12 +132,12 @@
                                 <p>I can help you with differential diagnosis, drug information, clinical guidelines, and treatment recommendations.</p>
                             </div>
                         </div>
-                    </div>
-
+                        </div>
+                        
                     <div class="input-area">
                         <div class="input-container">
                             <div class="input-icons">
-                                <div class="icon-deep-reasoning" title="Deep Reasoning">
+                                <div class="icon-deep-reasoning" title="AI-powered clinical reasoning">
                                     <i class="fas fa-brain"></i>
                                 </div>
                             </div>
@@ -52,16 +145,23 @@
                                 id="landingMessageInput" 
                                 placeholder="Describe symptoms or ask a medical question..."
                                 rows="1"
+                                aria-label="Message input"
                             ></textarea>
-                            <button id="landingSendButton" onclick="sendMessage()" disabled>
+                            <button id="landingSendButton" onclick="sendMessage()" disabled aria-label="Send message">
                                 <i class="fas fa-paper-plane"></i>
                             </button>
                         </div>
-                        <div class="input-footer">
-                            <small>Press Enter to send • Shift+Enter for new line</small>
+                        <!-- Loading indicator -->
+                        <div class="loading-indicator" id="loadingIndicator" style="display: none;">
+                            <div class="loading-dots">
+                                <span></span>
+                                <span></span>
+                                <span></span>
+                            </div>
+                            <span class="loading-text">Analyzing...</span>
                         </div>
-                    </div>
-
+                        </div>
+                        
                     <!-- Disclaimer Section -->
                     <div class="disclaimer-section">
                         <div class="disclaimer">
@@ -81,13 +181,13 @@
                             <button class="sample-question" onclick="useSamplePrompt('fever')">
                                 <i class="fas fa-thermometer-half"></i>
                                 <span>5-year-old child with persistent high fever (39.5°C) for 3 days, no obvious cause. What should I consider?</span>
-                            </button>
+                        </button>
                             <button class="sample-question" onclick="useSamplePrompt('pediatric')">
                                 <i class="fas fa-baby"></i>
                                 <span>Infant with respiratory distress, wheezing, and feeding difficulties. What are the possible causes?</span>
-                            </button>
+                        </button>
                         
-                        </div>
+                            </div>
                     </div>
                 </div>
             </main>
@@ -129,11 +229,11 @@
                     </div>
                     <div class="form-group">
                         <label for="password">Password</label>
-                        <input type="password" id="password" name="password" required>
+                        <input type="password" id="password" name="password" required autocomplete="current-password">
                     </div>
                     <div class="form-group" id="confirmPasswordGroup" style="display: none;">
                         <label for="confirmPassword">Confirm Password</label>
-                        <input type="password" id="confirmPassword" name="confirmPassword">
+                        <input type="password" id="confirmPassword" name="confirmPassword" autocomplete="new-password">
                     </div>
                     <div class="form-group" id="fullNameGroup" style="display: none;">
                         <label for="fullName">Full Name</label>
@@ -148,6 +248,9 @@
         </div>
     </div>
 
+    <!-- Markdown Parser and Sanitizer -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

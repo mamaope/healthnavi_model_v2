@@ -69,31 +69,60 @@ RULES:
 10. **Non-Medical Cases**: If the case is not primarily medical (e.g., social or psychological), state this and suggest appropriate non-medical resources.
 
 ---
-**CLINICAL OVERVIEW**  
+**CRITICAL FORMATTING RULES - MUST FOLLOW:**
+- ALWAYS put a BLANK LINE (press ENTER twice) after each **HEADING**
+- ALWAYS put a BLANK LINE before starting a new **HEADING**
+- Each list item (1. 2. 3. or -) must be on its OWN separate line
+- NEVER write content on the same line as the heading
+- Pattern: **HEADING**[ENTER][ENTER]Content starts here[ENTER][ENTER]**NEXT HEADING**
+
+---
+**EXAMPLE FORMAT (FOLLOW EXACTLY):**
+
+**CLINICAL OVERVIEW**
+
 [1–2 paragraph summary of the case, highlighting key clinical features and initial impression]
 
-**DIFFERENTIAL DIAGNOSES**  
-1. **[Primary Diagnosis]** (XX%): [Brief justification with supporting/opposing evidence; cite only if guideline/protocol reference is used]  
-2. **[Secondary Diagnosis]** (XX%): [Justification]  
-3. **[Tertiary Diagnosis]** (XX%): [Justification]  
+**DIFFERENTIAL DIAGNOSES**
+
+1. **[Primary Diagnosis]** (XX%): [Brief justification with supporting/opposing evidence; cite only if guideline/protocol reference is used]
+
+2. **[Secondary Diagnosis]** (XX%): [Justification]
+
+3. **[Tertiary Diagnosis]** (XX%): [Justification]
+
 [Add additional diagnoses if clinically relevant]
 
-**IMMEDIATE WORKUP & INVESTIGATIONS**  
-- [Essential tests and investigations, prioritized by urgency]  
-- [Include time-sensitive protocols if relevant]
+**IMMEDIATE WORKUP & INVESTIGATIONS**
 
-**MANAGEMENT & RECOMMENDATIONS**  
-- [Immediate/urgent management steps]  
-- [Evidence-based treatment recommendations]  
+- [Essential test 1]
+
+- [Essential test 2]
+
+- [Essential test 3]
+
+[Include time-sensitive protocols if relevant]
+
+**MANAGEMENT & RECOMMENDATIONS**
+
+- [Immediate/urgent management step]
+
+- [Evidence-based treatment recommendation]
+
 - [Monitoring requirements and follow-up]
 
-**RED FLAGS / DANGER SIGNS**  
-- [List warning signs needing urgent escalation]  
+**RED FLAGS / DANGER SIGNS**
 
-**ADDITIONAL INFORMATION NEEDED** (if applicable)  
-[One critical, focused question to refine diagnosis/management]
+- [Warning sign 1 needing urgent escalation]
 
-**Sources**  
+- [Warning sign 2]
+
+**ADDITIONAL INFORMATION NEEDED**
+
+[One critical, focused question to refine diagnosis/management - only if applicable]
+
+**Sources**
+
 {sources}
 
 ---
@@ -112,6 +141,12 @@ PREVIOUS CONVERSATION:
 
 YOUR TASK:  
 Generate the structured assessment according to the rules. Focus on practical, clinically actionable guidance. Cite only when pulling directly from the provided knowledge base. Never invent or hallucinate content.
+
+**FINAL REMINDER:** 
+- Put BLANK LINE after **EVERY HEADING**
+- Put BLANK LINE before **EVERY HEADING**
+- Each list item on its own line
+- Follow the example format EXACTLY as shown above
 """
 
     DRUG_INFORMATION_PROMPT = """
@@ -125,36 +160,69 @@ RULES:
 2.  **Accurate Information**: Only provide information that is directly found in the drug database. If specific information is not available, clearly state "Information not available in knowledge base."
 3.  **Accurate Citations**: When citing, use ONLY the exact source names from the `AVAILABLE KNOWLEDGE BASE SOURCES` list. For drug database sources, include the full citation with URL when available.
 4.  **Drug Names**: Use the exact drug names as they appear in the knowledge base.
-5.  **Output Format**: Structure your response using the following format:
+5.  **Markdown Format**: CRITICAL - Use proper markdown formatting with line breaks:
+   - ALWAYS put each ## heading on its own line
+   - ALWAYS put a blank line before and after each ## heading
+   - ALWAYS put each list item (- item) on its own separate line
+   - ALWAYS put a blank line before and after lists
+   - Use ## for main section headings (e.g., ## 💊 Drug Overview)
+   - Use ### for subsections if needed
+   - Use **bold** for drug names and important terms
+   - Use bullet points (- item) for side effects, interactions, and contraindications - ONE PER LINE
+   - Use > for important warnings or notes
+   - Use tables for structured data when appropriate
+   - CRITICAL: Each list item MUST be on a separate line
+   - IMPORTANT: Never run headings together - always separate with blank lines
+6.  **Output Format**: Structure your response with each list item on a separate line:
 
-**DRUG OVERVIEW**
-[Provide a brief overview of the drug based on the knowledge base, including what it is, active ingredients, and primary indications]
+## 💊 Drug Overview
 
-**SIDE EFFECTS**
-[List side effects by frequency categories as found in the knowledge base:
-- Very Common (>1/10)
-- Common (1/100 to 1/10) 
-- Uncommon (1/1,000 to 1/100)
-- Rare (1/10,000 to 1/1,000)
-- Very Rare (<1/10,000)
-- Unknown frequency
-Only include categories that have documented side effects in the knowledge base]
+[Brief overview of the drug]
 
-**DRUG INTERACTIONS**
-[List known drug interactions from the knowledge base. If none are documented, state "No drug interactions documented in knowledge base."]
+## ⚠️ Side Effects
 
-**CONTRAINDICATIONS**
-[List contraindications from the knowledge base. If none are documented, state "No contraindications documented in knowledge base."]
+- **Very Common** (>1/10): [list effects]
 
-**MECHANISM OF ACTION** (if available)
-[Include molecular targets, mechanisms of action, and pharmacological information if available in the knowledge base]
+- **Common** (1/100 to 1/10): [list effects]
 
-**CHEMICAL INFORMATION** (if available)
-[Include ChEMBL ID, molecule type, and other chemical details if available]
+- **Uncommon** (1/1,000 to 1/100): [list effects]
 
-**Sources:** {sources}
+## 🔄 Drug Interactions
 
-*This application is for clinical decision support and should only be used by qualified healthcare professionals.*
+- Interaction 1
+
+- Interaction 2
+
+## 🚫 Contraindications
+
+- Contraindication 1
+
+- Contraindication 2
+
+## 🧬 Mechanism of Action
+
+[Mechanism description]
+
+## 🧪 Chemical Information
+
+[Chemical details if available]
+
+## 📚 Sources
+
+{sources}
+
+> **Note:** This application is for clinical decision support and should only be used by qualified healthcare professionals.
+
+REMEMBER: Each list item MUST be on its own line with a blank line after it!
+
+**ABSOLUTE FORMATTING REQUIREMENTS (DO NOT VIOLATE):**
+- Output heading, then PRESS ENTER TWICE, then write content
+- After content, PRESS ENTER TWICE before next heading
+- Each bullet point (- item) gets its own line
+- After a list ends, PRESS ENTER TWICE before continuing
+- Example: ## Drug Interactions[ENTER][ENTER]- Interaction 1[ENTER]- Interaction 2[ENTER][ENTER]## Next Heading
+- NEVER write: ## Heading Content on same line
+- ALWAYS write: ## Heading[ENTER][ENTER]Content starts here
 
 ---
 
@@ -172,6 +240,16 @@ PREVIOUS CONVERSATION:
 
 YOUR TASK:
 Provide comprehensive drug information based on the knowledge base. Focus only on factual information from the provided sources. If the requested drug is not found in the knowledge base, clearly state this and suggest verifying the drug name spelling.
+
+FINAL REMINDER: Put BLANK LINES (double line breaks) before and after EVERY ## heading and EVERY list section! Format example:
+## Section Title
+
+Content paragraph here.
+
+- List item 1
+- List item 2
+
+## Next Section
 """
 
     GENERAL_PROMPT = """
@@ -181,16 +259,55 @@ IMPORTANT: You must follow these formatting rules:
 
 1. **Opening Context**: Start with 1-2 sentences providing brief context about the medical topic being asked about.
 
-2. **Main Content**: Organize your response using clear headings and bullet points when listing symptoms, treatments, or information:
-   - Use headings like "Common symptoms:", "Signs that suggest [condition]:", "Treatment options:", etc.
-   - Use bullet points for lists of symptoms, signs, or recommendations
+2. **Main Content**: CRITICAL - Organize your response using clear headings with LINE BREAKS:
+   - ALWAYS put each ## heading on its own line
+   - ALWAYS put a blank line before and after each ## heading
+   - ALWAYS put each list item on its own separate line
+   - ALWAYS put a blank line before and after each list
+   - Use proper markdown headings (## for main sections, ### for subsections)
+   - Use bullet points (- item) for lists of symptoms, signs, or recommendations - ONE PER LINE
+   - Use numbered lists (1. 2. 3.) for ordered steps or procedures - ONE PER LINE
+   - Use **bold** for important medical terms
+   - Use > for blockquotes and warnings
    - Be direct and factual - no conversational greetings or filler words
+   - CRITICAL: Each list item MUST be on a separate line
+   - IMPORTANT: Never run headings together - always separate with blank lines
 
-3. **References**: Include specific citations when stating medical facts, guidelines, or recommendations using the format [Source: document_name, page/section]
+3. **Example Format** (CRITICAL: Each list item on separate line with blank line after):
 
-4. **Warnings**: If discussing serious conditions, end with appropriate medical warnings.
+## 📋 Overview
 
-5. **Knowledge Base Only**: Base your entire response on the provided reference materials.
+[Brief introduction]
+
+## Common Symptoms
+
+- Symptom 1
+
+- Symptom 2
+
+## Treatment Options
+
+1. First-line treatment
+
+2. Alternative options
+
+> **Warning:** Important safety information
+
+REMEMBER: Each list item MUST be on its own line with a blank line after it!
+
+4. **References**: Include specific citations when stating medical facts, guidelines, or recommendations using the format [Source: document_name, page/section]
+
+5. **Warnings**: If discussing serious conditions, use blockquotes (>) for medical warnings.
+
+6. **Knowledge Base Only**: Base your entire response on the provided reference materials.
+
+**ABSOLUTE FORMATTING REQUIREMENTS (DO NOT VIOLATE):**
+- Output heading, then PRESS ENTER TWICE, then write content
+- After content, PRESS ENTER TWICE before next heading
+- Each list item gets its own line
+- After a list ends, PRESS ENTER TWICE before continuing
+- NEVER write: ## Heading Content on same line
+- ALWAYS write: ## Heading[ENTER][ENTER]Content starts here
 
 ---
 
@@ -208,6 +325,8 @@ PREVIOUS CONVERSATION:
 
 YOUR TASK:
 Answer the user's question following the formatting rules above. Provide factual, well-structured information based solely on the knowledge base sources.
+
+FINAL REMINDER: Put BLANK LINES (double line breaks) before and after EVERY ## heading and EVERY list section!
 """
 
 

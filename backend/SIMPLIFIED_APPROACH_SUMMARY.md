@@ -287,3 +287,6 @@ The simplified approach proves that **less is more** - by focusing on essential 
 
 
 
+
+
+

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Theme Toggle Test</title>
+    <style>
+        :root {
+            --bg-primary: #ffffff;
+            --text-primary: #1c1917;
+        }
+
+        [data-theme="dark"] {
+            --bg-primary: #1a1816;
+            --text-primary: #fafaf9;
+        }
+
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: Arial, sans-serif;
+            padding: 40px;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .theme-toggle {
+            padding: 10px 20px;
+            background: #0d9488;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        .theme-toggle:hover {
+            background: #0f766e;
+        }
+
+        .info {
+            margin-top: 20px;
+            padding: 20px;
+            border: 2px solid currentColor;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Theme Toggle Test</h1>
+    <p>Current theme: <strong id="currentTheme">light</strong></p>
+    <p>HTML data-theme attribute: <strong id="dataTheme">none</strong></p>
+    
+    <button class="theme-toggle" onclick="toggleTheme()">Toggle Theme</button>
+    
+    <div class="info">
+        <h2>Instructions:</h2>
+        <ol>
+            <li>Click the "Toggle Theme" button</li>
+            <li>The background should change from white to dark</li>
+            <li>The text should change from dark to light</li>
+            <li>Check the console for debug messages</li>
+        </ol>
+    </div>
+
+    <script>
+        let currentTheme = 'light';
+
+        function toggleTheme() {
+            console.log('🎨 Toggle theme called. Current theme:', currentTheme);
+            currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+            console.log('🎨 New theme:', currentTheme);
+            applyTheme(currentTheme);
+            localStorage.setItem('theme', currentTheme);
+        }
+
+        function applyTheme(theme) {
+            console.log('🎨 Applying theme:', theme);
+            const html = document.documentElement;
+            
+            if (theme === 'dark') {
+                html.setAttribute('data-theme', 'dark');
+                console.log('🎨 Set data-theme to dark');
+            } else {
+                html.removeAttribute('data-theme');
+                console.log('🎨 Removed data-theme attribute (light mode)');
+            }
+            
+            // Update display
+            document.getElementById('currentTheme').textContent = theme;
+            document.getElementById('dataTheme').textContent = html.getAttribute('data-theme') || 'none';
+            
+            console.log('🎨 Theme applied. Current theme is now:', currentTheme);
+            console.log('🎨 HTML data-theme attribute:', html.getAttribute('data-theme'));
+        }
+
+        // Initialize
+        function initializeTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme) {
+                currentTheme = savedTheme;
+                applyTheme(currentTheme);
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', initializeTheme);
+    </script>
+</body>
+</html>
+

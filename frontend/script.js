@@ -5,9 +5,22 @@ let accessToken = null;
 let currentUser = null;
 let isAuthenticated = false;
 let currentSession = null;
+let currentTheme = 'light';
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
+    // Check if markdown libraries are loaded
+    console.log('🚀 [App] Initializing HealthNavi AI');
+    console.log('📚 [Libraries] marked.js loaded:', typeof marked !== 'undefined');
+    if (typeof marked !== 'undefined') {
+        console.log('📚 [Libraries] marked.js version:', marked.version || 'unknown');
+    }
+    console.log('🧼 [Libraries] DOMPurify loaded:', typeof DOMPurify !== 'undefined');
+    if (typeof DOMPurify !== 'undefined') {
+        console.log('🧼 [Libraries] DOMPurify version:', DOMPurify.version || 'unknown');
+    }
+    
+    initializeTheme();
     initializeApp();
     setupEventListeners();
     checkAuthentication();
@@ -20,8 +33,16 @@ function initializeApp() {
     
     // Landing page input
     if (landingMessageInput) {
-        landingMessageInput.addEventListener('input', autoResizeTextarea);
+        landingMessageInput.addEventListener('input', function() {
+            autoResizeTextarea.call(this);
+            updateCharCounter();
+            updateSendButton();
+        });
         landingMessageInput.addEventListener('keydown', handleKeyDown);
+        landingMessageInput.addEventListener('focus', () => {
+            const charCounter = document.getElementById('charCounter');
+            if (charCounter) charCounter.style.display = 'block';
+        });
     }
     
     // Initially disable send button
@@ -31,6 +52,37 @@ function initializeApp() {
     
     // Set up chat expansion observer
     setupChatExpansionObserver();
+}
+
+function updateCharCounter() {
+    const messageInput = document.getElementById('landingMessageInput');
+    const charCounter = document.getElementById('charCounter');
+    if (!messageInput || !charCounter) return;
+    
+    const length = messageInput.value.length;
+    const maxLength = 2000;
+    
+    charCounter.textContent = `${length} / ${maxLength}`;
+    
+    // Update styling based on length
+    charCounter.classList.remove('warning', 'error');
+    if (length > maxLength * 0.9) {
+        charCounter.classList.add('warning');
+    }
+    if (length > maxLength) {
+        charCounter.classList.add('error');
+    }
+}
+
+function updateSendButton() {
+    const messageInput = document.getElementById('landingMessageInput');
+    const sendButton = document.getElementById('landingSendButton');
+    if (!messageInput || !sendButton) return;
+    
+    const hasText = messageInput.value.trim().length > 0;
+    const notTooLong = messageInput.value.length <= 2000;
+    
+    sendButton.disabled = !hasText || !notTooLong;
 }
 
 function setupEventListeners() {
@@ -100,19 +152,62 @@ function checkAuthentication() {
 function updateAuthenticationUI(authenticated) {
     const landingPage = document.getElementById('landingPage');
     const chatContainer = document.querySelector('.chat-container');
+    const appContainer = document.getElementById('appContainer');
+    const sidebar = document.getElementById('sidebar');
+    const headerActions = document.querySelector('.header-actions');
+    const headerUserProfile = document.getElementById('headerUserProfile');
     
     if (authenticated) {
+        // Show sidebar for authenticated users
+        if (sidebar) {
+            sidebar.style.display = 'flex';
+        }
+        
+        // Add authenticated class to app container
+        if (appContainer) {
+            appContainer.classList.add('authenticated');
+        }
+        
+        // Hide header actions (Sign In/Get Started buttons)
+        if (headerActions) {
+            headerActions.style.display = 'none';
+        }
+        
+        // Show header user profile
+        if (headerUserProfile) {
+            headerUserProfile.style.display = 'flex';
+        }
+        
         // For authenticated users, show the same UI but enable full functionality
         if (landingPage) landingPage.style.display = 'flex';
         
         // Update user info
         updateUserInfo();
+        updateHeaderUserInfo();
         
-        // Load user sessions if needed
-        if (typeof loadUserSessions === 'function') {
-            loadUserSessions();
-        }
+        // Load user sessions
+        loadUserSessions();
     } else {
+        // Hide sidebar for unauthenticated users
+        if (sidebar) {
+            sidebar.style.display = 'none';
+        }
+        
+        // Show header actions
+        if (headerActions) {
+            headerActions.style.display = 'flex';
+        }
+        
+        // Hide header user profile
+        if (headerUserProfile) {
+            headerUserProfile.style.display = 'none';
+        }
+        
+        // Remove authenticated class
+        if (appContainer) {
+            appContainer.classList.remove('authenticated');
+        }
+        
         // Show unauthenticated UI
         if (landingPage) landingPage.style.display = 'flex';
         
@@ -344,6 +439,88 @@ function clearStoredAuth() {
     localStorage.removeItem('currentUser');
 }
 
+// Header User Menu Functions
+function updateHeaderUserInfo() {
+    if (!currentUser) return;
+    
+    const headerUserName = document.getElementById('headerUserName');
+    const headerUserRole = document.getElementById('headerUserRole');
+    const dropdownUserName = document.getElementById('dropdownUserName');
+    const dropdownUserEmail = document.getElementById('dropdownUserEmail');
+    
+    const username = currentUser.username || currentUser.full_name || 'User';
+    const email = currentUser.email || 'user@example.com';
+    const role = currentUser.role || 'Healthcare Professional';
+    
+    if (headerUserName) headerUserName.textContent = username;
+    if (headerUserRole) headerUserRole.textContent = role;
+    if (dropdownUserName) dropdownUserName.textContent = username;
+    if (dropdownUserEmail) dropdownUserEmail.textContent = email;
+}
+
+function toggleUserMenu() {
+    const userDropdownMenu = document.getElementById('userDropdownMenu');
+    const headerUserButton = document.querySelector('.header-user-button');
+    
+    if (!userDropdownMenu) return;
+    
+    const isOpen = userDropdownMenu.style.display === 'block';
+    
+    if (isOpen) {
+        userDropdownMenu.style.display = 'none';
+        if (headerUserButton) {
+            headerUserButton.setAttribute('aria-expanded', 'false');
+        }
+    } else {
+        userDropdownMenu.style.display = 'block';
+        if (headerUserButton) {
+            headerUserButton.setAttribute('aria-expanded', 'true');
+        }
+    }
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(event) {
+    const userMenu = document.querySelector('.header-user-menu');
+    const userDropdownMenu = document.getElementById('userDropdownMenu');
+    
+    if (userMenu && userDropdownMenu && !userMenu.contains(event.target)) {
+        userDropdownMenu.style.display = 'none';
+        const headerUserButton = document.querySelector('.header-user-button');
+        if (headerUserButton) {
+            headerUserButton.setAttribute('aria-expanded', 'false');
+        }
+    }
+});
+
+// Menu item functions
+function showProfile() {
+    console.log('Show Profile clicked');
+    toggleUserMenu();
+    // TODO: Implement profile page
+    alert('Profile page coming soon!');
+}
+
+function showSettings() {
+    console.log('Show Settings clicked');
+    toggleUserMenu();
+    // TODO: Implement settings page
+    alert('Settings page coming soon!');
+}
+
+function showHelp() {
+    console.log('Show Help clicked');
+    toggleUserMenu();
+    // TODO: Implement help page
+    alert('Help & Support coming soon!');
+}
+
+// Make functions globally accessible
+window.toggleUserMenu = toggleUserMenu;
+window.showProfile = showProfile;
+window.showSettings = showSettings;
+window.showHelp = showHelp;
+
 // Message Functions
 async function sendMessage() {
     // Get the input and button
@@ -366,7 +543,7 @@ async function sendMessage() {
     // Check authentication
     if (!isAuthenticated) {
         console.log('🔐 [Frontend] Not authenticated, showing auth modal');
-        showAuthModal('register');
+        showAuthModal('login');
         return;
     }
     
@@ -374,6 +551,12 @@ async function sendMessage() {
     messageInput.disabled = true;
     sendButton.disabled = true;
     sendButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    
+    // Show loading indicator
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    if (loadingIndicator) {
+        loadingIndicator.style.display = 'flex';
+    }
     
     // Add user message to chat
     addMessage('user', message);
@@ -436,6 +619,12 @@ async function sendMessage() {
         console.error('Error:', error);
         addMessage('error', `Sorry, there was an error processing your request: ${error.message}`);
     } finally {
+        // Hide loading indicator
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        if (loadingIndicator) {
+            loadingIndicator.style.display = 'none';
+        }
+        
         // Re-enable input
         messageInput.disabled = false;
         sendButton.disabled = false;
@@ -445,7 +634,11 @@ async function sendMessage() {
 }
 
 function addMessage(type, content, diagnosisComplete = false) {
-    console.log('💬 [Frontend] addMessage called:', { type, content: content.substring(0, 100) + '...', diagnosisComplete });
+    console.log('💬 [Frontend] addMessage called:', { type, diagnosisComplete });
+    console.log('📄 [Frontend] FULL RAW CONTENT:\n' + content);
+    console.log('📊 [Frontend] Content length:', content.length);
+    console.log('🔍 [Frontend] Has ## headings:', content.includes('##'));
+    console.log('🔍 [Frontend] Has blank lines:', content.includes('\n\n'));
     
     // Get the chat container
     const chatMessages = document.getElementById('landingChatMessages');
@@ -501,20 +694,452 @@ function formatUserMessage(message) {
     return message.replace(/\n/g, '<br>');
 }
 
+// ===== HTML ENTITY DECODER =====
+function decodeHTMLEntities(text) {
+    const textarea = document.createElement('textarea');
+    textarea.innerHTML = text;
+    return textarea.value;
+}
+
+// ===== MARKDOWN FIXER - Add missing blank lines =====
+function fixMarkdownSpacing(markdown) {
+    console.log('🔧 [Markdown] Fixing spacing...');
+    console.log('🔍 [Markdown] Input has newlines:', markdown.includes('\n'));
+    console.log('🔍 [Markdown] Input has blank lines:', markdown.includes('\n\n'));
+    
+    let fixed = markdown;
+    
+    // STEP 1: If there are NO newlines at all (everything on one line), add newlines before ## headings
+    if (!markdown.includes('\n')) {
+        console.log('⚠️ [Markdown] Text is all on ONE LINE - adding line breaks');
+        
+        // First, add line breaks before each ## heading
+        fixed = fixed.replace(/\s+(##\s)/g, '\n\n$1');
+        
+        // Then, add line breaks after common heading patterns
+        // Match specific heading titles and add newline after them
+        const headingTitles = [
+            'Clinical Overview',
+            'Differential Diagnoses', 
+            'Immediate Workup & Investigations',
+            'Immediate Workup &amp; Investigations',
+            'Management & Recommendations',
+            'Management &amp; Recommendations',
+            'Red Flags / Danger Signs',
+            'Additional Information Needed',
+            'Sources',
+            'Drug Overview',
+            'Side Effects',
+            'Drug Interactions',
+            'Contraindications',
+            'Mechanism of Action',
+            'Chemical Information'
+        ];
+        
+        headingTitles.forEach(title => {
+            // Match: ## emoji Title - Content -> ## emoji Title\n\n- Content
+            // Also match: ## emoji Title Content -> ## emoji Title\n\nContent
+            const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            
+            // First, match heading followed by " - " (dash with spaces for subheadings)
+            const dashPattern = new RegExp(`(##\\s+[^\\s]+\\s+${escapedTitle})\\s+-\\s+`, 'g');
+            fixed = fixed.replace(dashPattern, '$1\n\n- ');
+            
+            // Then, match heading followed by [ or ( (for citations or parentheses)
+            const bracketPattern = new RegExp(`(##\\s+[^\\s]+\\s+${escapedTitle})\\s+(\\[|\\()`, 'g');
+            fixed = fixed.replace(bracketPattern, '$1\n\n$2');
+            
+            // Then, match heading followed by capital letter, number, or lowercase letter (any content)
+            const pattern = new RegExp(`(##\\s+[^\\s]+\\s+${escapedTitle})\\s+([A-Za-z0-9])`, 'g');
+            fixed = fixed.replace(pattern, '$1\n\n$2');
+            
+            // Also match heading followed by > (blockquote)
+            const blockquotePattern = new RegExp(`(##\\s+[^\\s]+\\s+${escapedTitle})\\s+(>)`, 'g');
+            fixed = fixed.replace(blockquotePattern, '$1\n\n$2');
+        });
+        
+        // Add line breaks between numbered list items
+        // Match: 1. **Title** (XX%): Long text with citations [source]. 2. **Next** -> line break before 2.
+        fixed = fixed.replace(/(\]\.\s+)(\d+\.\s+\*\*)/g, '$1\n\n$2');
+        // Also match sentences ending with period followed by number
+        fixed = fixed.replace(/([a-z]\.\s+)(\d+\.\s+\*\*)/g, '$1\n\n$2');
+        // Match: ). 2. **Next** (closing parenthesis followed by number)
+        fixed = fixed.replace(/(\)\.\s+)(\d+\.\s+\*\*)/g, '$1\n\n$2');
+        
+        // Add line breaks between bullet list items  
+        // Match: - **Item**: Text. - **Next** -> line break before -
+        fixed = fixed.replace(/(\]\.\s+)([-*]\s+\*\*)/g, '$1\n$2');
+        fixed = fixed.replace(/([a-z]\.\s+)([-*]\s+\*\*)/g, '$1\n$2');
+        
+        // Handle bullet points without bold (like red flags)
+        // Match: ]. - Next item -> ].\n- Next item
+        fixed = fixed.replace(/(\]\.\s+)([-*]\s+[A-Z])/g, '$1\n$2');
+        // Match: word. - Next item -> word.\n- Next item
+        fixed = fixed.replace(/([a-z]\.\s+)([-*]\s+[A-Z])/g, '$1\n$2');
+        // Match: ). - Next item -> ).\n- Next item
+        fixed = fixed.replace(/(\)\.\s+)([-*]\s+[A-Z])/g, '$1\n$2');
+    }
+    
+    // STEP 2: Add blank lines before ## headings (if only single newline exists)
+    fixed = fixed.replace(/([^\n])\n(##\s)/g, '$1\n\n$2');
+    
+    // STEP 3: Add blank lines after ## headings
+    // Match the heading and everything until the next heading or end
+    fixed = fixed.replace(/(##\s[^#\n]+?)(\s+##)/g, '$1\n\n$2');
+    
+    // STEP 4: Add blank line after heading if followed by content (not another heading)
+    // First, handle headings with content on the SAME line (no newline at all)
+    fixed = fixed.replace(/(##\s+[^\n#]+?)\s+([A-Z][a-z])/g, '$1\n\n$2');
+    // Then handle headings with single newline
+    fixed = fixed.replace(/(##[^\n]+)\n([^#\n])/g, '$1\n\n$2');
+    
+    // STEP 5: Add blank lines before numbered lists
+    fixed = fixed.replace(/([^\n])\n(\d+\.\s)/g, '$1\n\n$2');
+    // Also ensure blank line before first list item after heading
+    fixed = fixed.replace(/(##[^\n]+)\n(\d+\.\s)/g, '$1\n\n$2');
+    
+    // STEP 6: Add blank lines before bullet lists
+    fixed = fixed.replace(/([^\n])\n([-*]\s)/g, '$1\n\n$2');
+    
+    // STEP 7: Add blank line after lists (before non-list content)
+    fixed = fixed.replace(/(\n(?:\d+\.|-|\*)\s[^\n]+)\n([^\n\d\-\*#])/g, '$1\n\n$2');
+    
+    // STEP 8: Add blank lines before blockquotes
+    fixed = fixed.replace(/([^\n>])\n(>\s)/g, '$1\n\n$2');
+    
+    // STEP 9: Add blank lines after blockquotes
+    fixed = fixed.replace(/(>\s[^\n]+)\n([^>\n#])/g, '$1\n\n$2');
+    
+    // STEP 10: Clean up any triple+ blank lines
+    fixed = fixed.replace(/\n{3,}/g, '\n\n');
+    
+    // STEP 11: Remove blank lines at the very start
+    fixed = fixed.replace(/^\n+/, '');
+    
+    console.log('✅ [Markdown] Spacing fixed');
+    console.log('🔍 [Markdown] Now has blank lines:', fixed.includes('\n\n'));
+    
+    if (fixed.includes('\n\n')) {
+        const blankLineCount = (fixed.match(/\n\n/g) || []).length;
+        console.log('📊 [Markdown] Added', blankLineCount, 'blank line sections');
+    }
+    
+    return fixed;
+}
+
+// ===== ENHANCED MARKDOWN RENDERER =====
+function renderMarkdownWithEnhancements(markdown) {
+    console.log('📝 [Markdown] Rendering with marked.js');
+    console.log('📥 [Markdown] Input preview:', markdown.substring(0, 150) + '...');
+    
+    // Check if marked is available
+    if (typeof marked === 'undefined') {
+        console.error('❌ [Markdown] marked.js is not loaded! Returning plain text.');
+        return markdown.replace(/\n/g, '<br>');
+    }
+    
+    // Check if DOMPurify is available
+    if (typeof DOMPurify === 'undefined') {
+        console.error('❌ [Markdown] DOMPurify is not loaded! Using marked without sanitization.');
+    }
+    
+    // Decode HTML entities first (e.g., &quot; to ", &#x27; to ', &amp; to &)
+    const decodedMarkdown = decodeHTMLEntities(markdown);
+    console.log('🔓 [Markdown] Decoded preview:', decodedMarkdown.substring(0, 150) + '...');
+    
+    // Fix markdown spacing (add blank lines between elements)
+    let fixedMarkdown = fixMarkdownSpacing(decodedMarkdown);
+    
+    // Fix emoji on separate line from heading text (e.g., "## 🏥\nClinical Overview" -> "## 🏥 Clinical Overview")
+    fixedMarkdown = fixedMarkdown.replace(/(##\s*[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}])\s*\n\s*([A-Z])/gu, '$1 $2');
+    
+    // Convert **BOLD HEADINGS** to proper markdown headings (for old prompt format)
+    // Match patterns like: **CLINICAL OVERVIEW** or **DIFFERENTIAL DIAGNOSES**
+    const sectionHeadings = [
+        'CLINICAL OVERVIEW',
+        'DIFFERENTIAL DIAGNOSES',
+        'IMMEDIATE WORKUP & INVESTIGATIONS',
+        'IMMEDIATE WORKUP &amp; INVESTIGATIONS',
+        'MANAGEMENT & RECOMMENDATIONS',
+        'MANAGEMENT &amp; RECOMMENDATIONS',
+        'RED FLAGS / DANGER SIGNS',
+        'RED FLAGS \\/ DANGER SIGNS',
+        'ADDITIONAL INFORMATION NEEDED',
+        'SOURCES'
+    ];
+    
+    sectionHeadings.forEach(heading => {
+        const escapedHeading = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Match: **HEADING** anywhere (with optional whitespace before/after)
+        const pattern = new RegExp(`\\*\\*${escapedHeading}\\*\\*`, 'gi');
+        // Convert to title case: first letter of each word capitalized, rest lowercase
+        const titleCase = heading.toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
+        fixedMarkdown = fixedMarkdown.replace(pattern, `\n\n## ${titleCase}\n\n`);
+    });
+    
+    // Clean up multiple consecutive blank lines (more than 2)
+    fixedMarkdown = fixedMarkdown.replace(/\n{3,}/g, '\n\n');
+    
+    // Remove blank lines at the very start
+    fixedMarkdown = fixedMarkdown.replace(/^\n+/, '');
+    
+    console.log('🔧 [Markdown] Fixed preview:', fixedMarkdown.substring(0, 150) + '...');
+    
+    // Configure marked.js for better formatting
+    marked.setOptions({
+        breaks: false,       // Don't convert single \n to <br> (we need blank lines for lists)
+        gfm: true,          // GitHub Flavored Markdown
+        headerIds: false,    // Don't add IDs to headers
+        mangle: false,      // Don't escape autolinked emails
+        pedantic: false,    // Don't be overly strict
+        sanitize: false,    // We'll use DOMPurify for this
+        smartLists: true,   // Use smarter list behavior
+        smartypants: true   // Use smart quotes
+    });
+    
+    // Customize renderer for medical context
+    const renderer = new marked.Renderer();
+    
+    // Enhanced heading renderer with medical icons
+    renderer.heading = function(text, level) {
+        // Check if text already has an emoji at the start (common pattern from AI)
+        const emojiRegex = /^[\u{1F300}-\u{1F9FF}]|^[\u{2600}-\u{26FF}]/u;
+        const hasEmoji = emojiRegex.test(text.trim());
+        
+        // If heading already has emoji, don't add another one
+        if (hasEmoji) {
+            const isAlert = text.toLowerCase().includes('alert') || text.toLowerCase().includes('red flag');
+            const className = isAlert ? ' class="alert-heading"' : '';
+            return `<h${level}${className}>${text}</h${level}>`;
+        }
+        
+        // Otherwise, add icon based on content
+        const iconMap = {
+            'question': '📋',
+            'rationale': '🧠',
+            'impression': '💡',
+            'clinical impression': '💡',
+            'management': '⚕️',
+            'further management': '⚕️',
+            'sources': '📚',
+            'knowledge base': '📚',
+            'alert': '🚨',
+            'clinical overview': '🏥',
+            'differential diagnos': '🔍',  // Matches "diagnoses" or "diagnosis"
+            'immediate workup': '🔬',
+            'workup': '🔬',
+            'red flags': '🚩',
+            'treatment': '💊',
+            'medication': '💊',
+            'history': '📊',
+            'examination': '🔬',
+            'investigation': '🔬',
+            'assessment': '📋',
+            'plan': '📝',
+            'follow-up': '📅',
+            'prognosis': '📈'
+        };
+        
+        // Find matching icon
+        let icon = '';
+        const lowerText = text.toLowerCase();
+        for (const [key, value] of Object.entries(iconMap)) {
+            if (lowerText.includes(key)) {
+                icon = value + ' ';
+                break;
+            }
+        }
+        
+        // Add appropriate styling for alert headings
+        const isAlert = lowerText.includes('alert') || lowerText.includes('red flag');
+        const className = isAlert ? ' class="alert-heading"' : '';
+        
+        return `<h${level}${className}>${icon}${text}</h${level}>`;
+    };
+    
+    // Enhanced list renderer with better styling
+    renderer.list = function(body, ordered, start) {
+        const type = ordered ? 'ol' : 'ul';
+        const startAttr = (ordered && start !== 1) ? ` start="${start}"` : '';
+        const className = ordered ? ' class="ordered-list"' : ' class="unordered-list"';
+        return `<${type}${className}${startAttr}>\n${body}</${type}>\n`;
+    };
+    
+    // Enhanced list item renderer
+    renderer.listitem = function(text) {
+        // Detect if list item has emphasis or strong at the start
+        const hasLeadingEmphasis = text.trim().startsWith('<strong>') || text.trim().startsWith('<em>');
+        const className = hasLeadingEmphasis ? ' class="emphasized-item"' : '';
+        return `<li${className}>${text}</li>\n`;
+    };
+    
+    // Enhanced code block renderer
+    renderer.code = function(code, language) {
+        const validLanguage = language || 'plaintext';
+        const escapedCode = code
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+        
+        return `<div class="code-block-wrapper">
+            <div class="code-block-header">
+                <span class="code-language">${validLanguage}</span>
+                <button class="copy-code-btn" onclick="copyCodeToClipboard(this)" title="Copy code">
+                    <i class="fas fa-copy"></i>
+                </button>
+            </div>
+            <pre class="code-block"><code class="language-${validLanguage}">${escapedCode}</code></pre>
+        </div>`;
+    };
+    
+    // Enhanced inline code renderer
+    renderer.codespan = function(code) {
+        return `<code class="inline-code">${code}</code>`;
+    };
+    
+    // Enhanced blockquote renderer
+    renderer.blockquote = function(quote) {
+        // Check if it's a note, warning, or tip
+        const lowerQuote = quote.toLowerCase();
+        let className = 'blockquote';
+        let icon = '💬';
+        
+        if (lowerQuote.includes('note:') || lowerQuote.includes('📝')) {
+            className += ' note';
+            icon = '📝';
+        } else if (lowerQuote.includes('warning:') || lowerQuote.includes('⚠️')) {
+            className += ' warning';
+            icon = '⚠️';
+        } else if (lowerQuote.includes('tip:') || lowerQuote.includes('💡')) {
+            className += ' tip';
+            icon = '💡';
+        } else if (lowerQuote.includes('important:') || lowerQuote.includes('❗')) {
+            className += ' important';
+            icon = '❗';
+        }
+        
+        return `<blockquote class="${className}">
+            <div class="blockquote-icon">${icon}</div>
+            <div class="blockquote-content">${quote}</div>
+        </blockquote>`;
+    };
+    
+    // Enhanced table renderer
+    renderer.table = function(header, body) {
+        return `<div class="table-wrapper">
+            <table class="medical-table">
+                <thead>${header}</thead>
+                <tbody>${body}</tbody>
+            </table>
+        </div>`;
+    };
+    
+    // Enhanced link renderer (open external links in new tab)
+    renderer.link = function(href, title, text) {
+        const isExternal = href.startsWith('http://') || href.startsWith('https://');
+        const target = isExternal ? ' target="_blank" rel="noopener noreferrer"' : '';
+        const titleAttr = title ? ` title="${title}"` : '';
+        const icon = isExternal ? ' <i class="fas fa-external-link-alt"></i>' : '';
+        return `<a href="${href}"${titleAttr}${target}>${text}${icon}</a>`;
+    };
+    
+    // Set custom renderer
+    marked.use({ renderer });
+    
+    // Pre-process fixed markdown for medical-specific enhancements
+    let processedMarkdown = fixedMarkdown;
+    
+    // Highlight percentages (e.g., "85%")
+    processedMarkdown = processedMarkdown.replace(/(\d+(?:\.\d+)?%)/g, '<span class="probability-badge">$1</span>');
+    
+    // Highlight medical ranges (e.g., "120/80 mmHg")
+    processedMarkdown = processedMarkdown.replace(/(\d+\/\d+\s*(?:mmHg|mg\/dL|g\/dL|mEq\/L))/g, '<span class="medical-value">$1</span>');
+    
+    // Highlight temperature (e.g., "38.5°C" or "101.3°F")
+    processedMarkdown = processedMarkdown.replace(/(\d+(?:\.\d+)?°[CF])/g, '<span class="medical-value">$1</span>');
+    
+    // Parse markdown to HTML
+    let html = marked.parse(processedMarkdown);
+    console.log('📤 [Markdown] Parsed HTML preview:', html.substring(0, 200) + '...');
+    
+    // Sanitize HTML with DOMPurify (prevent XSS)
+    const cleanHtml = (typeof DOMPurify !== 'undefined') ? DOMPurify.sanitize(html, {
+        ALLOWED_TAGS: [
+            'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+            'p', 'br', 'hr',
+            'strong', 'em', 'u', 's', 'sub', 'sup',
+            'ul', 'ol', 'li',
+            'blockquote',
+            'code', 'pre',
+            'a',
+            'table', 'thead', 'tbody', 'tr', 'th', 'td',
+            'div', 'span',
+            'i', 'button'
+        ],
+        ALLOWED_ATTR: [
+            'class', 'id', 'style',
+            'href', 'title', 'target', 'rel',
+            'start',
+            'onclick'
+        ],
+        ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
+    }) : html;
+    
+    console.log('✅ [Markdown] Rendering complete');
+    return cleanHtml;
+}
+
+// Helper function to copy code to clipboard
+function copyCodeToClipboard(button) {
+    const codeBlock = button.closest('.code-block-wrapper').querySelector('code');
+    const code = codeBlock.textContent;
+    
+    navigator.clipboard.writeText(code).then(() => {
+        // Visual feedback
+        const originalHTML = button.innerHTML;
+        button.innerHTML = '<i class="fas fa-check"></i>';
+        button.classList.add('copied');
+        
+        setTimeout(() => {
+            button.innerHTML = originalHTML;
+            button.classList.remove('copied');
+        }, 2000);
+    }).catch(err => {
+        console.error('Failed to copy code:', err);
+    });
+}
+
 function formatAIResponse(response) {
     console.log('🎨 [Frontend] Formatting AI response:', response.substring(0, 200) + '...');
+    console.log('📚 [Markdown] marked available:', typeof marked !== 'undefined');
+    console.log('🧼 [Markdown] DOMPurify available:', typeof DOMPurify !== 'undefined');
+    console.log('📄 [Markdown] Response contains markdown?', response.includes('##') || response.includes('**') || response.includes('- '));
     
     // Check if it's a JSON response (new format)
     if (response.trim().startsWith('{') && response.trim().endsWith('}')) {
+        console.log('📦 [Format] Detected JSON response');
         return formatJSONResponse(response);
     }
     
     // Check if it's a differential diagnosis response
     if (response.includes('**DIFFERENTIAL DIAGNOSIS**')) {
+        console.log('🔍 [Format] Detected differential diagnosis response');
         return formatDifferentialDiagnosis(response);
     }
     
-    // Enhanced markdown formatting
+    // Use enhanced markdown renderer if marked.js is available
+    if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+        console.log('✅ [Markdown] Using enhanced markdown renderer');
+        const rendered = renderMarkdownWithEnhancements(response);
+        console.log('📤 [Markdown] Rendered HTML preview:', rendered.substring(0, 300) + '...');
+        return rendered;
+    }
+    
+    console.log('⚠️ [Markdown] Falling back to basic formatter');
+    
+    // Fallback to basic markdown formatting
     let formattedResponse = response;
     
     // Remove any existing HTML tags that might be in the response
@@ -1011,28 +1636,51 @@ async function loadUserSessions() {
 
 function updateSessionsList(sessions) {
     const sessionsList = document.getElementById('sessionsList');
+    const emptyState = document.getElementById('emptySessionsState');
     if (!sessionsList) return;
     
-    sessionsList.innerHTML = '';
+    // Clear existing sessions (but keep empty state)
+    const existingSessions = sessionsList.querySelectorAll('.session-item');
+    existingSessions.forEach(item => item.remove());
     
-    sessions.forEach(session => {
-        const sessionItem = document.createElement('div');
-        sessionItem.className = 'session-item';
-        sessionItem.innerHTML = `
-            <div class="session-name">${session.session_name || `Session #${session.id}`}</div>
-            <div class="session-date">${new Date(session.created_at).toLocaleDateString()}</div>
-        `;
+    // Show/hide empty state
+    if (sessions && sessions.length > 0) {
+        if (emptyState) emptyState.style.display = 'none';
         
-        sessionItem.addEventListener('click', () => {
-            // Remove active class from all items
-            document.querySelectorAll('.session-item').forEach(item => item.classList.remove('active'));
-            // Add active class to clicked item
-            sessionItem.classList.add('active');
-            loadSession(session);
+        sessions.forEach(session => {
+            const sessionItem = document.createElement('div');
+            sessionItem.className = 'session-item';
+            sessionItem.innerHTML = `
+                <div class="session-name">${session.session_name || `Session #${session.id}`}</div>
+                <div class="session-date">${new Date(session.created_at).toLocaleDateString()}</div>
+            `;
+            
+            // Add keyboard accessibility
+            sessionItem.setAttribute('role', 'button');
+            sessionItem.setAttribute('tabindex', '0');
+            sessionItem.setAttribute('aria-label', `Load session: ${session.session_name || `Session ${session.id}`}`);
+            
+            sessionItem.addEventListener('click', () => {
+                // Remove active class from all items
+                document.querySelectorAll('.session-item').forEach(item => item.classList.remove('active'));
+                // Add active class to clicked item
+                sessionItem.classList.add('active');
+                loadSession(session);
+            });
+            
+            // Keyboard support
+            sessionItem.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    sessionItem.click();
+                }
+            });
+            
+            sessionsList.appendChild(sessionItem);
         });
-        
-        sessionsList.appendChild(sessionItem);
-    });
+    } else {
+        if (emptyState) emptyState.style.display = 'flex';
+    }
 }
 
 async function loadSession(session) {
@@ -1099,6 +1747,11 @@ async function loadSession(session) {
     } catch (error) {
         console.error('Error loading session:', error);
     }
+}
+
+function startNewChat() {
+    // Alias for startNewSession for the UI button
+    startNewSession();
 }
 
 function startNewSession() {
@@ -1215,4 +1868,85 @@ function showPrivacy() {
 
 function showSupport() {
     alert('Support: For technical support or clinical assistance, please contact us at support@healthnavyai.com or visit our help center.');
+}
+
+// ===== THEME MANAGEMENT =====
+function initializeTheme() {
+    console.log('🎨 Initializing theme system...');
+    // Check for saved theme preference or default to system preference
+    const savedTheme = localStorage.getItem('theme');
+    const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    
+    if (savedTheme) {
+        currentTheme = savedTheme;
+        console.log('🎨 Loaded saved theme:', savedTheme);
+    } else if (systemPrefersDark) {
+        currentTheme = 'dark';
+        console.log('🎨 Using system preference: dark');
+    } else {
+        currentTheme = 'light';
+        console.log('🎨 Using default theme: light');
+    }
+    
+    applyTheme(currentTheme);
+    
+    // Listen for system theme changes
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+        if (!localStorage.getItem('theme')) {
+            currentTheme = e.matches ? 'dark' : 'light';
+            applyTheme(currentTheme);
+        }
+    });
+    
+    console.log('🎨 Theme system initialized successfully');
+}
+
+function toggleTheme() {
+    console.log('🎨 Toggle theme called. Current theme:', currentTheme);
+    currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+    console.log('🎨 New theme:', currentTheme);
+    applyTheme(currentTheme);
+    localStorage.setItem('theme', currentTheme);
+}
+
+// Make toggleTheme available globally (for onclick handlers)
+window.toggleTheme = toggleTheme;
+
+function applyTheme(theme) {
+    console.log('🎨 Applying theme:', theme);
+    const html = document.documentElement;
+    const themeIcon = document.getElementById('themeIcon');
+    const sidebarThemeIcon = document.getElementById('sidebarThemeIcon');
+    
+    console.log('🎨 HTML element:', html);
+    console.log('🎨 Theme icon:', themeIcon);
+    console.log('🎨 Sidebar theme icon:', sidebarThemeIcon);
+    
+    if (theme === 'dark') {
+        html.setAttribute('data-theme', 'dark');
+        console.log('🎨 Set data-theme to dark');
+        if (themeIcon) {
+            themeIcon.classList.remove('fa-sun');
+            themeIcon.classList.add('fa-moon');
+        }
+        if (sidebarThemeIcon) {
+            sidebarThemeIcon.classList.remove('fa-sun');
+            sidebarThemeIcon.classList.add('fa-moon');
+        }
+    } else {
+        html.removeAttribute('data-theme');
+        console.log('🎨 Removed data-theme attribute (light mode)');
+        if (themeIcon) {
+            themeIcon.classList.remove('fa-moon');
+            themeIcon.classList.add('fa-sun');
+        }
+        if (sidebarThemeIcon) {
+            sidebarThemeIcon.classList.remove('fa-moon');
+            sidebarThemeIcon.classList.add('fa-sun');
+        }
+    }
+    
+    currentTheme = theme;
+    console.log('🎨 Theme applied. Current theme is now:', currentTheme);
+    console.log('🎨 HTML data-theme attribute:', html.getAttribute('data-theme'));
 }
