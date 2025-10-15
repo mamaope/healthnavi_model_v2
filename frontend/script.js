@@ -478,13 +478,13 @@ function updateHeaderUserInfo() {
     const dropdownUserName = document.getElementById('dropdownUserName');
     const dropdownUserEmail = document.getElementById('dropdownUserEmail');
     
-    const username = currentUser.username || currentUser.full_name || 'User';
+    const fullName = currentUser.full_name || currentUser.username || 'User';
     const email = currentUser.email || 'user@example.com';
     const role = currentUser.role || 'Healthcare Professional';
     
-    if (headerUserName) headerUserName.textContent = username;
+    if (headerUserName) headerUserName.textContent = fullName;
     if (headerUserRole) headerUserRole.textContent = role;
-    if (dropdownUserName) dropdownUserName.textContent = username;
+    if (dropdownUserName) dropdownUserName.textContent = fullName;
     if (dropdownUserEmail) dropdownUserEmail.textContent = email;
 }
 
