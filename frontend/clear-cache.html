@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cache Cleared - HealthNavi AI</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            text-align: center;
+            padding: 40px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            max-width: 500px;
+        }
+        h1 { font-size: 2.5em; margin-bottom: 20px; }
+        p { font-size: 1.2em; margin-bottom: 30px; line-height: 1.6; }
+        .btn {
+            display: inline-block;
+            padding: 15px 40px;
+            background: white;
+            color: #667eea;
+            text-decoration: none;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 1.1em;
+            transition: transform 0.2s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }
+        .icon { font-size: 4em; margin-bottom: 20px; }
+        .steps {
+            text-align: left;
+            margin: 20px 0;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+        }
+        .steps li { margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">🔄</div>
+        <h1>Clear Your Cache</h1>
+        <p>The JavaScript files were corrupted. Please clear your browser cache:</p>
+        
+        <div class="steps">
+            <strong>Quick Steps:</strong>
+            <ol>
+                <li>Press <code>Ctrl + Shift + Delete</code> (Windows/Linux)</li>
+                <li>Or <code>Cmd + Shift + Delete</code> (Mac)</li>
+                <li>Select "Cached images and files"</li>
+                <li>Click "Clear data"</li>
+            </ol>
+            <br>
+            <strong>Or use Hard Refresh:</strong>
+            <ul>
+                <li><code>Ctrl + F5</code> (Windows/Linux)</li>
+                <li><code>Cmd + Shift + R</code> (Mac)</li>
+            </ul>
+        </div>
+        
+        <a href="index.html?nocache=<?php echo time(); ?>" class="btn">Return to HealthNavi →</a>
+        
+        <p style="margin-top: 30px; font-size: 0.9em; opacity: 0.8;">
+            Cache cleared! The app should work normally now.
+        </p>
+    </div>
+    
+    <script>
+        // Force clear service worker cache if exists
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(registrations => {
+                registrations.forEach(registration => registration.unregister());
+            });
+        }
+        
+        // Clear localStorage cache markers
+        if (window.localStorage) {
+            localStorage.removeItem('scriptLoaded');
+            localStorage.removeItem('cacheVersion');
+        }
+        
+        console.log('✅ Cache cleared, service workers unregistered');
+    </script>
+</body>
+</html>
+

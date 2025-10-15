@@ -1349,17 +1349,17 @@ body,
 }
 
 .chat-container.centered {
-    justify-content: center;
+    justify-content: flex-start;
     align-items: center;
 }
 
 .chat-container.centered .chat-messages {
-    justify-content: center;
+    justify-content: flex-start;
     align-items: center;
-    flex: 0 1 auto; /* Don't grow, allow shrink, auto height */
+    flex: 0 0 auto; /* Don't grow OR shrink, auto height */
     overflow-y: visible; /* Prevent scroll for centered welcome content */
-    max-height: 450px; /* Limit height of welcome section */
-    padding: var(--space-3) var(--space-4); /* Further reduced vertical padding */
+    max-height: none; /* Remove height limit */
+    padding: var(--space-3) var(--space-4) 0; /* Removed bottom padding */
     min-height: 0;
 }
 
@@ -1387,7 +1387,7 @@ body,
 /* Chat Messages */
 .chat-messages {
     flex: 1;
-    padding: var(--space-3) var(--space-4) var(--space-2);
+    padding: var(--space-3) var(--space-4) 0;
     overflow-y: auto;
     overflow-x: hidden;
     min-height: 0;
@@ -1420,6 +1420,8 @@ body,
 .welcome-message {
     text-align: center;
     color: var(--text-secondary);
+    margin: 0;
+    padding: 0;
 }
 
 .welcome-logo {
@@ -1505,7 +1507,7 @@ body,
 
 /* Input Area */
 .input-area {
-    padding: var(--space-2) var(--space-4) 0;
+    padding: 0 var(--space-4) 0;
     background: var(--bg-primary);
     flex-shrink: 0;
     position: relative;
@@ -1648,7 +1650,7 @@ body,
     padding: var(--space-2) var(--space-4);
     background: var(--bg-primary);
     flex-shrink: 0;
-    margin-top: var(--space-3);
+    margin-top: 0;
 }
 
 .sample-questions h3 {
@@ -1709,6 +1711,7 @@ body,
     padding: 0 var(--space-4);
     background: var(--bg-primary);
     margin-top: 0;
+    margin-bottom: 0;
     position: relative;
     z-index: 5;
     display: flex;

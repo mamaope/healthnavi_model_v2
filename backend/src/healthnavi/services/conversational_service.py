@@ -427,10 +427,74 @@ class ResponseValidator:
         # HTML escape
         sanitized = html.escape(response)
         
-        # Remove excessive whitespace
-        sanitized = ' '.join(sanitized.split())
+        # NOTE: We do NOT remove whitespace here to preserve markdown formatting
+        # The frontend handles markdown rendering
         
         return sanitized
+    
+    @staticmethod
+    def fix_unclosed_headings(response: str) -> str:
+        """
+        Automatically fix markdown heading issues:
+        1. Close unclosed headings: ## Text → ## Text ##
+        2. Merge split headings: ## 💊\nText → ## 💊 Text ##
+        
+        Args:
+            response: AI response text
+            
+        Returns:
+            Response with all headings properly formatted
+        """
+        lines = response.split('\n')
+        fixed_lines = []
+        i = 0
+        
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+            
+            # Check if line starts with heading marker
+            if stripped.startswith('#'):
+                # Extract heading level (# or ## or ###, etc.)
+                heading_match = re.match(r'^(#{1,6})\s*(.*?)\s*(?:#{1,6})?\s*$', stripped)
+                
+                if heading_match:
+                    level = heading_match.group(1)  # # or ## or ###
+                    content = heading_match.group(2).strip()  # The heading text
+                    
+                    # Case 1: Heading has only emoji/symbols, no text
+                    # Check if content is only emojis/special chars (no alphanumeric)
+                    if content and not re.search(r'[a-zA-Z0-9]', content):
+                        # Check if next line has the actual heading text
+                        if i + 1 < len(lines) and lines[i + 1].strip() and not lines[i + 1].strip().startswith('#'):
+                            next_line = lines[i + 1].strip()
+                            # Merge emoji line with text line
+                            merged_heading = f"{level} {content} {next_line} {level}"
+                            fixed_lines.append(merged_heading)
+                            logger.debug(f"Merged split heading: '{stripped}' + '{next_line}' → '{merged_heading}'")
+                            i += 2  # Skip both lines
+                            continue
+                    
+                    # Case 2: Regular heading (with or without emoji, but has text)
+                    if content:
+                        # Close the heading properly
+                        fixed_heading = f"{level} {content} {level}"
+                        fixed_lines.append(fixed_heading)
+                        if stripped != fixed_heading:
+                            logger.debug(f"Fixed heading: '{stripped}' → '{fixed_heading}'")
+                    else:
+                        # Empty heading, keep as is
+                        fixed_lines.append(line)
+                else:
+                    # Doesn't match heading pattern, keep as is
+                    fixed_lines.append(line)
+            else:
+                # Not a heading line, keep as is
+                fixed_lines.append(line)
+            
+            i += 1
+        
+        return '\n'.join(fixed_lines)
 
 
 class ConversationalService:
@@ -555,6 +619,11 @@ class ConversationalService:
             prompt_template = self._get_prompt_template(query_type)
             temperature = self._get_temperature_setting(query_type)
             
+            # Log which prompt is being used
+            logger.info(f"🎯 Using prompt: {query_type.value}")
+            logger.info(f"📝 Temperature setting: {temperature}")
+            logger.info(f"📊 Context length: {len(context)} chars, Sources: {len(sources)}")
+            
             # Populate prompt
             prompt = prompt_template.format(
                 patient_data=sanitized_patient_data,
@@ -612,8 +681,12 @@ class ConversationalService:
             if validation_result['warnings']:
                 SecureLogger.log_securely('warning', f'Response warnings: {validation_result["warnings"]}')
             
-            # Sanitize response
-            sanitized_response = self.response_validator.sanitize_response(response_text)
+            # Fix unclosed headings BEFORE sanitization (fail-safe)
+            fixed_response = self.response_validator.fix_unclosed_headings(response_text)
+            logger.info("Applied heading closure fix to response")
+            
+            # Sanitize response (HTML escape only, preserve markdown formatting)
+            sanitized_response = self.response_validator.sanitize_response(fixed_response)
             
             # Determine if diagnosis is complete
             if query_type == QueryType.DRUG_INFORMATION or query_type == QueryType.GENERAL_QUERY:
@@ -635,7 +708,7 @@ class ConversationalService:
                 }
             )
             
-            return sanitized_response, diagnosis_complete
+            return sanitized_response, diagnosis_complete, query_type.value
         
         except exceptions.ResourceExhausted:
             SecureLogger.log_securely('error', 'Google API resource exhausted')
@@ -664,7 +737,7 @@ conversational_service = ConversationalService()
 
 
 # Public API function
-async def generate_response(query: str, chat_history: str, patient_data: str) -> Tuple[str, bool]:
+async def generate_response(query: str, chat_history: str, patient_data: str) -> Tuple[str, bool, str]:
     """
     Generate AI response with enhanced security.
     
@@ -674,6 +747,6 @@ async def generate_response(query: str, chat_history: str, patient_data: str) ->
         patient_data: Patient data
         
     Returns:
-        Tuple of (response_text, diagnosis_complete)
+        Tuple of (response_text, diagnosis_complete, prompt_type)
     """
     return await conversational_service.generate_response(query, chat_history, patient_data)

@@ -62,6 +62,7 @@ class DiagnosisResponse(BaseModel):
     updated_chat_history: str = Field(..., description="Updated conversation history")
     session_id: Optional[int] = Field(None, description="Chat session ID if conversation was stored")
     message_id: Optional[int] = Field(None, description="Message ID of the AI response if stored")
+    prompt_type: Optional[str] = Field(None, description="Type of prompt used (differential_diagnosis, drug_information, clinical_guidance)")
 
 
 # Chat Session Management Schemas

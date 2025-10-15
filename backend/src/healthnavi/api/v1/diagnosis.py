@@ -27,7 +27,7 @@ async def diagnosis_health():
     with ResponseTimer() as timer:
         try:
             # Test AI service with a simple query
-            test_response, _ = await generate_response(
+            test_response, _, _ = await generate_response(
                 query="test",
                 chat_history="",
                 patient_data="test patient data"
@@ -117,11 +117,13 @@ async def diagnose(data: DiagnosisInput, current_user: User = Depends(require_us
 
             # Use the real AI service to generate response
             try:
-                response, diagnosis_complete = await generate_response(
+                response, diagnosis_complete, prompt_type = await generate_response(
                     query=data.patient_data,
                     chat_history=chat_history,
                     patient_data=data.patient_data
                 )
+                
+                logger.info(f"🎯 Prompt type used: {prompt_type}")
                 
                 # Validate AI response
                 if not response or len(response.strip()) < 10:
@@ -181,7 +183,8 @@ async def diagnose(data: DiagnosisInput, current_user: User = Depends(require_us
                 diagnosis_complete=diagnosis_complete,
                 updated_chat_history=updated_chat_history,
                 session_id=session_id,
-                message_id=message_id
+                message_id=message_id,
+                prompt_type=prompt_type
             )
             
             return create_success_response(

@@ -86,10 +86,16 @@ function updateSendButton() {
 }
 
 function setupEventListeners() {
+    console.log('🔧 [Setup] Setting up event listeners...');
+    
     // Auth form submission
     const authForm = document.getElementById('authForm');
+    console.log('🔧 [Setup] Auth form found:', !!authForm);
     if (authForm) {
         authForm.addEventListener('submit', handleAuthSubmit);
+        console.log('✅ [Setup] Auth form submit listener added');
+    } else {
+        console.error('❌ [Setup] Auth form NOT found!');
     }
     
     // Modal close on outside click
@@ -257,9 +263,24 @@ function showAuthModal(mode) {
     modal.classList.add('show');
     document.body.style.overflow = 'hidden';
     
+    // CRITICAL FIX: Attach event listener NOW (after modal is shown)
+    console.log('🔓 [Modal] Attaching submit listener...');
+    const authForm = document.getElementById('authForm');
+    if (authForm) {
+        // Remove any old listeners by cloning
+        const newForm = authForm.cloneNode(true);
+        authForm.parentNode.replaceChild(newForm, authForm);
+        
+        // Attach fresh listener
+        newForm.addEventListener('submit', handleAuthSubmit);
+        console.log('✅ [Modal] Submit listener attached!');
+    } else {
+        console.error('❌ [Modal] Auth form not found!');
+    }
+    
     // Focus first input
     setTimeout(() => {
-        const firstInput = modal.querySelector('input');
+        const firstInput = document.getElementById('authModal').querySelector('input');
         if (firstInput) firstInput.focus();
     }, 100);
 }
@@ -281,9 +302,12 @@ function toggleAuthMode() {
 }
 
 async function handleAuthSubmit(event) {
+    console.log('🚀 [Auth] Form submitted!');
     event.preventDefault();
+    console.log('🚀 [Auth] Event prevented');
     
     const formData = new FormData(event.target);
+    console.log('🚀 [Auth] Form data:', Object.fromEntries(formData));
     const email = formData.get('email');
     const password = formData.get('password');
     const confirmPassword = formData.get('confirmPassword');
@@ -324,7 +348,8 @@ async function handleAuthSubmit(event) {
             await registerUser(fullName, email, password);
         }
     } catch (error) {
-        console.error('Auth error:', error);
+        console.error('❌ [Login] Auth error:', error);
+        console.error('❌ [Login] Error stack:', error.stack);
         showAuthError(error.message || 'An error occurred. Please try again.');
     } finally {
         submitBtn.disabled = false;
@@ -333,6 +358,9 @@ async function handleAuthSubmit(event) {
 }
 
 async function loginUser(email, password) {
+    console.log('🔐 [Login] Attempting login for:', email);
+    console.log('🔐 [Login] API URL:', `${API_URL}/auth/login`);
+    
     const response = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: {
@@ -342,7 +370,9 @@ async function loginUser(email, password) {
         body: JSON.stringify({ email, password })
     });
     
+    console.log('🔐 [Login] Response status:', response.status);
     const data = await response.json();
+    console.log('🔐 [Login] Response data:', data);
     
     if (data.success) {
         accessToken = data.data.access_token;
@@ -709,6 +739,13 @@ function fixMarkdownSpacing(markdown) {
     
     let fixed = markdown;
     
+    // CRITICAL: Strip closing ## from headings (## Heading ## → ## Heading)
+    // marked.js expects open headings, not closed ones
+    // Use backreference \1 to ensure start and end markers MATCH
+    // ## Text ## ✓  |  ### Text ### ✓  |  ## Text ### ✗
+    fixed = fixed.replace(/(#{1,6})\s+([\s\S]+?)\s+\1\s*$/gm, '$1 $2');
+    console.log('✂️ [Markdown] Removed closing ## from headings (matched pairs only)');
+    
     // STEP 1: If there are NO newlines at all (everything on one line), add newlines before ## headings
     if (!markdown.includes('\n')) {
         console.log('⚠️ [Markdown] Text is all on ONE LINE - adding line breaks');
@@ -780,23 +817,24 @@ function fixMarkdownSpacing(markdown) {
         fixed = fixed.replace(/(\)\.\s+)([-*]\s+[A-Z])/g, '$1\n$2');
     }
     
-    // STEP 2: Add blank lines before ## headings (if only single newline exists)
-    fixed = fixed.replace(/([^\n])\n(##\s)/g, '$1\n\n$2');
+    // STEP 2: Add blank lines before ANY heading (##, ###, ####, etc.)
+    fixed = fixed.replace(/([^\n])\n(#{1,6}\s)/g, '$1\n\n$2');
     
-    // STEP 3: Add blank lines after ## headings
-    // Match the heading and everything until the next heading or end
-    fixed = fixed.replace(/(##\s[^#\n]+?)(\s+##)/g, '$1\n\n$2');
+    // STEP 3: Add blank lines BETWEEN consecutive headings (any level)
+    // Handles: ## Title ##\n### Subtitle ### (no blank line between)
+    fixed = fixed.replace(/(#{1,6}\s[^\n]+)\n(#{1,6}\s)/g, '$1\n\n$2');
     
     // STEP 4: Add blank line after heading if followed by content (not another heading)
-    // First, handle headings with content on the SAME line (no newline at all)
-    fixed = fixed.replace(/(##\s+[^\n#]+?)\s+([A-Z][a-z])/g, '$1\n\n$2');
+    // SKIP THIS STEP - Already handled by stripping closing ## at the top
+    // The heading closure regex handles this correctly
+    // This regex was BREAKING multi-word headings like "## Anatomic Abnormalities ##"
     // Then handle headings with single newline
-    fixed = fixed.replace(/(##[^\n]+)\n([^#\n])/g, '$1\n\n$2');
+    fixed = fixed.replace(/(#{1,6}[^\n]+)\n([^#\n])/g, '$1\n\n$2');
     
     // STEP 5: Add blank lines before numbered lists
     fixed = fixed.replace(/([^\n])\n(\d+\.\s)/g, '$1\n\n$2');
-    // Also ensure blank line before first list item after heading
-    fixed = fixed.replace(/(##[^\n]+)\n(\d+\.\s)/g, '$1\n\n$2');
+    // Also ensure blank line before first list item after ANY heading
+    fixed = fixed.replace(/(#{1,6}[^\n]+)\n(\d+\.\s)/g, '$1\n\n$2');
     
     // STEP 6: Add blank lines before bullet lists
     fixed = fixed.replace(/([^\n])\n([-*]\s)/g, '$1\n\n$2');

@@ -105,7 +105,7 @@ class PromptManager:
                 )
                 
                 self.prompts[query_type] = prompt_config
-                logger.info(f"Loaded prompt for {query_type}: {len(prompt_config.template)} characters")
+                logger.info(f"✅ Loaded prompt [{query_type.value}] v{prompt_config.version}: {len(prompt_config.template)} chars")
                 
             except Exception as e:
                 logger.error(f"Failed to load prompt {filename}: {e}")
