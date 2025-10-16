@@ -24,6 +24,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+*regal-autonomy-454806-d1-edf68610c57a.json
 
 # Virtual Environments
 venv/
@@ -112,7 +113,11 @@ patient_data/
 *.csv
 *.xlsx
 *.xls
-*.json
+# Only ignore JSON files in specific sensitive directories
+*/credentials/*.json
+*/secrets/*.json
+*credentials*.json
+*secrets*.json
 *.xml
 *.dcm
 *.nii
@@ -308,5 +313,3 @@ development/
 *.local
 *.dev
 *.development
-
-regal-autonomy-454806-d1-edf68610c57a.json

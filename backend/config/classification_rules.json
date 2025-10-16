@@ -1,0 +1,79 @@
+{
+  "rules": [
+    {
+      "name": "drug_side_effects",
+      "query_type": "drug_information",
+      "keywords": ["side effects", "adverse effects", "contraindications", "dosing", "interactions"],
+      "patterns": ["drug.*side.*effect", "adverse.*reaction", "contraindication"],
+      "priority": 10,
+      "description": "Detects queries about drug side effects and safety information"
+    },
+    {
+      "name": "drug_mechanism",
+      "query_type": "drug_information", 
+      "keywords": ["mechanism of action", "pharmacology", "how does", "works"],
+      "patterns": ["mechanism.*action", "pharmacological.*action", "how.*drug.*work"],
+      "priority": 9,
+      "description": "Detects queries about drug mechanisms and pharmacology"
+    },
+    {
+      "name": "diagnosis_request",
+      "query_type": "differential_diagnosis",
+      "keywords": ["differential diagnosis", "ddx", "diagnose", "what could cause"],
+      "patterns": ["differential.*diagnosis", "what.*could.*cause", "diagnose.*patient"],
+      "priority": 10,
+      "description": "Detects explicit requests for differential diagnosis"
+    },
+    {
+      "name": "case_presentation",
+      "query_type": "differential_diagnosis",
+      "keywords": ["year-old", "y/o", "presents with", "patient with", "case of"],
+      "patterns": ["\\d+.*year.*old", "\\d+.*y/o", "presents.*with", "patient.*with"],
+      "priority": 8,
+      "description": "Detects case presentations that require differential diagnosis"
+    },
+    {
+      "name": "treatment_guidance",
+      "query_type": "clinical_guidance",
+      "keywords": ["treatment", "management", "therapy", "protocol", "guidelines"],
+      "patterns": ["treatment.*option", "management.*plan", "therapeutic.*approach"],
+      "priority": 7,
+      "description": "Detects requests for treatment and management guidance"
+    },
+    {
+      "name": "drug_interaction_check",
+      "query_type": "drug_interaction",
+      "keywords": ["interaction", "interact", "contraindicated", "compatible"],
+      "patterns": ["drug.*interaction", "medication.*interact", "contraindicated.*with"],
+      "priority": 8,
+      "description": "Detects drug interaction queries"
+    },
+    {
+      "name": "general_medical_terms",
+      "query_type": "general_query",
+      "keywords": ["what is", "explain", "tell me about", "information about"],
+      "patterns": ["what.*is", "explain.*to.*me", "tell.*me.*about"],
+      "priority": 1,
+      "description": "General medical information queries"
+    }
+  ]
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

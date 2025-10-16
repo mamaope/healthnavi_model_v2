@@ -275,6 +275,17 @@ class SecureLogger:
         else:
             logger.debug(sanitized_message, **kwargs)
 
+    def log_request(self, action: str, details: Dict[str, Any]):
+        """
+        Log a request action with PHI sanitization.
+
+        Args:
+            action: The action being logged (e.g., 'generate_response', 'generate_response_success')
+            details: Dictionary of details to log
+        """
+        message = f"Action: {action}, Details: {details}"
+        SecureLogger.log_securely('info', message)
+
 
 class InputValidator:
     """Validates and sanitizes user inputs."""
@@ -330,7 +341,67 @@ class InputValidator:
             }
         
         return {'is_valid': True, 'sanitized_data': InputValidator._sanitize_text(history)}
-    
+
+    @staticmethod
+    def validate_query(query: str) -> str:
+        """Validate and sanitize query input."""
+        if not isinstance(query, str):
+            query = str(query)
+
+        # Basic validation - ensure it's not empty and not too long
+        if len(query.strip()) == 0:
+            return ""
+
+        if len(query) > 2000:  # Reasonable limit for queries
+            query = query[:2000]
+
+        return InputValidator._sanitize_text(query)
+
+    @staticmethod
+    def validate_context(context: str) -> str:
+        """Validate and sanitize context input."""
+        if not isinstance(context, str):
+            context = str(context)
+
+        # Basic validation - ensure it's not empty and not too long
+        if len(context.strip()) == 0:
+            return ""
+
+        if len(context) > 50000:  # Reasonable limit for context
+            context = context[:50000]
+
+        return InputValidator._sanitize_text(context)
+
+    @staticmethod
+    def validate_sources(sources: str) -> str:
+        """Validate and sanitize sources input."""
+        if not isinstance(sources, str):
+            sources = str(sources)
+
+        # Basic validation - ensure it's not empty and not too long
+        if len(sources.strip()) == 0:
+            return "General medical knowledge"
+
+        if len(sources) > 1000:  # Reasonable limit for sources
+            sources = sources[:1000]
+
+        return InputValidator._sanitize_text(sources)
+
+    @staticmethod
+    def validate_response(response: str) -> str:
+        """Validate and sanitize response input."""
+        if not isinstance(response, str):
+            response = str(response)
+
+        # Basic validation - ensure it's not empty and not too long
+        if len(response.strip()) == 0:
+            return ""
+
+        if len(response) > 10000:  # Reasonable limit for responses
+            response = response[:10000]
+
+        return InputValidator._sanitize_text(response)
+
     @staticmethod
     def _sanitize_text(text: str) -> str:
         """Basic text sanitization."""

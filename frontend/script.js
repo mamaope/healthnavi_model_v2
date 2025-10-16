@@ -64,8 +64,9 @@ function updateCharCounter() {
     const messageInput = document.getElementById('landingMessageInput');
     const charCounter = document.getElementById('charCounter');
     if (!messageInput || !charCounter) return;
-    
-    const length = messageInput.value.length;
+
+    const value = messageInput.value || '';
+    const length = value.length;
     const maxLength = 2000;
     
     charCounter.textContent = `${length} / ${maxLength}`;
@@ -84,10 +85,11 @@ function updateSendButton() {
     const messageInput = document.getElementById('landingMessageInput');
     const sendButton = document.getElementById('landingSendButton');
     if (!messageInput || !sendButton) return;
-    
-    const hasText = messageInput.value.trim().length > 0;
-    const notTooLong = messageInput.value.length <= 2000;
-    
+
+    const value = messageInput.value || '';
+    const hasText = value.trim().length > 0;
+    const notTooLong = value.length <= 2000;
+
     sendButton.disabled = !hasText || !notTooLong;
 }
 
@@ -1852,7 +1854,8 @@ function autoResizeTextarea() {
     }
     
     // Enable/disable send buttons based on input content
-    const hasContent = textarea.value.trim().length > 0;
+    const value = textarea.value || '';
+    const hasContent = value.trim().length > 0;
     
     const dashboardButton = document.getElementById('dashboardSendButton');
     const landingButton = document.getElementById('landingSendButton');

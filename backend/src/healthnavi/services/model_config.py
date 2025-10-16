@@ -93,9 +93,9 @@ class ModelManager:
     def get_vertex_ai_config(self) -> Dict[str, Any]:
         """Get Vertex AI configuration."""
         return {
-            "project": os.getenv("GOOGLE_CLOUD_PROJECT"),
-            "location": os.getenv("GOOGLE_CLOUD_LOCATION"),
-            "credentials_path": os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+            "project": os.getenv("GOOGLE_CLOUD_PROJECT", "regal-autonomy-454806-d1"),
+            "location": os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
+            "credentials_path": os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "/app/regal-autonomy-454806-d1-edf68610c57a.json")
         }
 
 

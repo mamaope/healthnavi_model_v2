@@ -68,8 +68,8 @@ class AIConfig:
     models: Dict[str, ModelConfig] = field(default_factory=dict)
     prompts: Dict[QueryType, PromptConfig] = field(default_factory=dict)
     classification_rules: List[ClassificationRule] = field(default_factory=list)
-    default_model: str = "gemini-1.5-pro"
-    fallback_model: str = "gemini-1.5-pro"
+    default_model: str = "gemini-2.5-flash"
+    fallback_model: str = "gemini-2.5-flash"
     max_retries: int = 3
     timeout_seconds: int = 30
     enable_caching: bool = True
@@ -254,9 +254,9 @@ class AIConfigManager:
     def _get_default_models(self) -> Dict[str, ModelConfig]:
         """Get default model configurations."""
         return {
-            "gemini-1.5-pro": ModelConfig(
+            "gemini-2.5-flash": ModelConfig(
         provider=ModelProvider.VERTEX_AI,
-                model_name="gemini-1.5-pro",
+                model_name="gemini-2.5-flash",
                 max_tokens=4000,
         temperature=0.1,
         top_p=0.8,
@@ -269,7 +269,7 @@ class AIConfigManager:
         """Get default prompt configurations."""
         return {
             QueryType.DIFFERENTIAL_DIAGNOSIS: PromptConfig(
-                template="""RULES: 1. **Source of Truth**: Base your entire analysis strictly on the REFERENCE TEXT TO USE. Do NOT reference sources that are not explicitly provided in the knowledge base. 2. **Selective Citations**: Only cite sources when: - Making specific clinical recommendations or diagnostic criteria - Stating clinical guidelines or protocols - Referencing specific diagnostic tests or treatment approaches - Quoting or paraphrasing specific clinical information Do NOT cite sources for general medical knowledge, basic pathophysiology, or common clinical observations. 3. **Accurate Citations**: When citing, use ONLY the exact source names from the AVAILABLE KNOWLEDGE BASE SOURCES list. Include page numbers, section names, or specific document identifiers when available in the format: [Source: document_name, page/section]. 4. **Medical Acronyms**: Interpret and correctly use common medical acronyms. 5. **Critical Assessment**: Always begin by checking for life-threatening conditions. If any vital signs are in a dangerous range, issue an "CRITICAL ALERT" immediately and prioritize urgent interventions. 6. **Output Format**: Structure your response using the following json format given below: 7. Add a probability percentage (0-100%) for each diagnosis listed in the differential, based on the information provided., signs, or recommendations. - Be direct and factual - no conversational greetings or filler words. 8. Provide output in json format. 9. If you need more information to refine the diagnosis or management plan, include an "ADDITIONAL INFORMATION NEEDED" section with one focused, essential question. 10. If the provided patient information is insufficient to generate a differential diagnosis, clearly state this and request more details. 11. If the patient information indicates a non-medical issue (e.g., social, psychological), state that a medical differential diagnosis is not applicable and suggest appropriate non-medical resources.
+                template=f"""RULES: 1. **Source of Truth**: Base your entire analysis strictly on the REFERENCE TEXT TO USE. Do NOT reference sources that are not explicitly provided in the knowledge base. 2. **Selective Citations**: Only cite sources when: - Making specific clinical recommendations or diagnostic criteria - Stating clinical guidelines or protocols - Referencing specific diagnostic tests or treatment approaches - Quoting or paraphrasing specific clinical information Do NOT cite sources for general medical knowledge, basic pathophysiology, or common clinical observations. 3. **Accurate Citations**: When citing, use ONLY the exact source names from the AVAILABLE KNOWLEDGE BASE SOURCES list. Include page numbers, section names, or specific document identifiers when available in the format: [Source: document_name, page/section]. 4. **Medical Acronyms**: Interpret and correctly use common medical acronyms. 5. **Critical Assessment**: Always begin by checking for life-threatening conditions. If any vital signs are in a dangerous range, issue an "CRITICAL ALERT" immediately and prioritize urgent interventions. 6. **Output Format**: Structure your response using the following json format given below: 7. Add a probability percentage (0-100%) for each diagnosis listed in the differential, based on the information provided., signs, or recommendations. - Be direct and factual - no conversational greetings or filler words. 8. Provide output in json format. 9. If you need more information to refine the diagnosis or management plan, include an "ADDITIONAL INFORMATION NEEDED" section with one focused, essential question. 10. If the provided patient information is insufficient to generate a differential diagnosis, clearly state this and request more details. 11. If the patient information indicates a non-medical issue (e.g., social, psychological), state that a medical differential diagnosis is not applicable and suggest appropriate non-medical resources.
 
 RULES
 Source of Truth
@@ -342,20 +342,20 @@ JSON Schema
 
 Input Variables
 
-REFERENCE TEXT TO USE: {{context}}
+REFERENCE TEXT TO USE: {context}
 
-AVAILABLE KNOWLEDGE BASE SOURCES: {{sources}}
+AVAILABLE KNOWLEDGE BASE SOURCES: {sources}
 
-PATIENT'S CURRENT INFORMATION: {{patient_data}}
+PATIENT’S CURRENT INFORMATION: {patient_data}
 
-PREVIOUS CONVERSATION: {{chat_history}}""",
+PREVIOUS CONVERSATION: {chat_history}""",
                 variables=["patient_data", "chat_history", "context", "sources"],
                 max_length=12000
             ),
             QueryType.DRUG_INFORMATION: PromptConfig(
                 template="""You are a medical AI assistant specializing in drug information. Provide comprehensive information about the requested medication.
 
-Drug Query: {{query}}
+Drug Query: {query}
 
 Please provide:
 1. **Drug Name and Class**
@@ -373,7 +373,7 @@ Format your response with clear headers and bullet points.""",
             QueryType.CLINICAL_GUIDANCE: PromptConfig(
                 template="""You are a medical AI assistant providing clinical guidance. Answer the clinical question based on evidence-based medicine.
 
-Clinical Question: {{query}}
+Clinical Question: {query}
 
 Please provide:
 1. **Evidence-Based Answer**
@@ -388,7 +388,7 @@ Format your response with clear headers and bullet points.""",
             QueryType.GENERAL_QUERY: PromptConfig(
                 template="""You are a medical AI assistant. Please provide helpful information about the medical topic.
 
-Query: {{query}}
+Query: {query}
 
 Please provide a clear, accurate, and helpful response.""",
                 variables=["query"],

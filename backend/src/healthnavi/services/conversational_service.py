@@ -22,6 +22,7 @@ import vertexai
 from healthnavi.core.config import get_config
 from healthnavi.core.security import SecureLogger, InputValidator, EncryptionService
 from healthnavi.services.vectorstore_manager import search_all_collections
+from healthnavi.services.model_config import get_model_manager
 
 config = get_config()
 logger = logging.getLogger(__name__)
@@ -40,7 +41,7 @@ class QueryType(Enum):
 class PromptTemplates:
     """Secure prompt templates for different query types."""
     
-    DIFFERENTIAL_DIAGNOSIS_PROMPT = """
+    GENERAL_PROMPT = """
 You are an expert medical AI, assisting a qualified doctor. Your task is to analyze patient information and generate a structured clinical assessment based ONLY on the provided reference materials.
 
 IMPORTANT: You must follow all rules listed below.
@@ -142,386 +143,72 @@ PREVIOUS CONVERSATION:
 YOUR TASK:  
 Generate the structured assessment according to the rules. Focus on practical, clinically actionable guidance. Cite only when pulling directly from the provided knowledge base. Never invent or hallucinate content.
 
-**FINAL REMINDER:** 
-- Put BLANK LINE after **EVERY HEADING**
-- Put BLANK LINE before **EVERY HEADING**
-- Each list item on its own line
-- Follow the example format EXACTLY as shown above
+**CRITICAL FORMATTING RULES - MUST FOLLOW:**
+- ALWAYS put a BLANK LINE (press ENTER twice) after each **HEADING**
+- ALWAYS put a BLANK LINE before starting a new **HEADING**
+- Each list item (1. 2. 3. or -) must be on its OWN separate line
+- NEVER write content on the same line as the heading
+- Pattern: **HEADING**[ENTER][ENTER]Content starts here[ENTER][ENTER]**NEXT HEADING**
 """
 
-    DRUG_INFORMATION_PROMPT = """
-You are an expert pharmacology AI, designed to assist qualified healthcare professionals with drug information. Your task is to provide comprehensive drug information based ONLY on the provided reference materials from the drug knowledge base.
-
-IMPORTANT: You must follow all rules listed below.
-
----
-RULES:
-1.  **Source of Truth**: Base your entire response strictly on the `REFERENCE TEXT TO USE`. Do NOT make up or infer information not explicitly provided in the knowledge base.
-2.  **Accurate Information**: Only provide information that is directly found in the drug database. If specific information is not available, clearly state "Information not available in knowledge base."
-3.  **Accurate Citations**: When citing, use ONLY the exact source names from the `AVAILABLE KNOWLEDGE BASE SOURCES` list. For drug database sources, include the full citation with URL when available.
-4.  **Drug Names**: Use the exact drug names as they appear in the knowledge base.
-5.  **Markdown Format**: CRITICAL - Use proper markdown formatting with line breaks:
-   - ALWAYS put each ## heading on its own line
-   - ALWAYS put a blank line before and after each ## heading
-   - ALWAYS put each list item (- item) on its own separate line
-   - ALWAYS put a blank line before and after lists
-   - Use ## for main section headings (e.g., ## 💊 Drug Overview)
-   - Use ### for subsections if needed
-   - Use **bold** for drug names and important terms
-   - Use bullet points (- item) for side effects, interactions, and contraindications - ONE PER LINE
-   - Use > for important warnings or notes
-   - Use tables for structured data when appropriate
-   - CRITICAL: Each list item MUST be on a separate line
-   - IMPORTANT: Never run headings together - always separate with blank lines
-6.  **Output Format**: Structure your response with each list item on a separate line:
-
-## 💊 Drug Overview
-
-[Brief overview of the drug]
-
-## ⚠️ Side Effects
-
-- **Very Common** (>1/10): [list effects]
-
-- **Common** (1/100 to 1/10): [list effects]
-
-- **Uncommon** (1/1,000 to 1/100): [list effects]
-
-## 🔄 Drug Interactions
-
-- Interaction 1
-
-- Interaction 2
-
-## 🚫 Contraindications
-
-- Contraindication 1
-
-- Contraindication 2
-
-## 🧬 Mechanism of Action
-
-[Mechanism description]
-
-## 🧪 Chemical Information
-
-[Chemical details if available]
-
-## 📚 Sources
-
-{sources}
-
-> **Note:** This application is for clinical decision support and should only be used by qualified healthcare professionals.
-
-REMEMBER: Each list item MUST be on its own line with a blank line after it!
-
-**ABSOLUTE FORMATTING REQUIREMENTS (DO NOT VIOLATE):**
-- Output heading, then PRESS ENTER TWICE, then write content
-- After content, PRESS ENTER TWICE before next heading
-- Each bullet point (- item) gets its own line
-- After a list ends, PRESS ENTER TWICE before continuing
-- Example: ## Drug Interactions[ENTER][ENTER]- Interaction 1[ENTER]- Interaction 2[ENTER][ENTER]## Next Heading
-- NEVER write: ## Heading Content on same line
-- ALWAYS write: ## Heading[ENTER][ENTER]Content starts here
-
----
-
-REFERENCE TEXT TO USE:
-{context}
-
-AVAILABLE KNOWLEDGE BASE SOURCES:
-{sources}
-
-DRUG QUERY:
-{patient_data}
-
-PREVIOUS CONVERSATION:
-{chat_history}
-
-YOUR TASK:
-Provide comprehensive drug information based on the knowledge base. Focus only on factual information from the provided sources. If the requested drug is not found in the knowledge base, clearly state this and suggest verifying the drug name spelling.
-
-FINAL REMINDER: Put BLANK LINES (double line breaks) before and after EVERY ## heading and EVERY list section! Format example:
-## Section Title
-
-Content paragraph here.
-
-- List item 1
-- List item 2
-
-## Next Section
-"""
-
-    GENERAL_PROMPT = """
-You are a medical AI assistant. Answer the user's question based ONLY on the provided reference materials from the knowledge base.
-
-IMPORTANT: You must follow these formatting rules:
-
-1. **Opening Context**: Start with 1-2 sentences providing brief context about the medical topic being asked about.
-
-2. **Main Content**: CRITICAL - Organize your response using clear headings with LINE BREAKS:
-   - ALWAYS put each ## heading on its own line
-   - ALWAYS put a blank line before and after each ## heading
-   - ALWAYS put each list item on its own separate line
-   - ALWAYS put a blank line before and after each list
-   - Use proper markdown headings (## for main sections, ### for subsections)
-   - Use bullet points (- item) for lists of symptoms, signs, or recommendations - ONE PER LINE
-   - Use numbered lists (1. 2. 3.) for ordered steps or procedures - ONE PER LINE
-   - Use **bold** for important medical terms
-   - Use > for blockquotes and warnings
-   - Be direct and factual - no conversational greetings or filler words
-   - CRITICAL: Each list item MUST be on a separate line
-   - IMPORTANT: Never run headings together - always separate with blank lines
-
-3. **Example Format** (CRITICAL: Each list item on separate line with blank line after):
-
-## 📋 Overview
-
-[Brief introduction]
-
-## Common Symptoms
-
-- Symptom 1
-
-- Symptom 2
-
-## Treatment Options
-
-1. First-line treatment
-
-2. Alternative options
-
-> **Warning:** Important safety information
-
-REMEMBER: Each list item MUST be on its own line with a blank line after it!
-
-4. **References**: Include specific citations when stating medical facts, guidelines, or recommendations using the format [Source: document_name, page/section]
-
-5. **Warnings**: If discussing serious conditions, use blockquotes (>) for medical warnings.
-
-6. **Knowledge Base Only**: Base your entire response on the provided reference materials.
-
-**ABSOLUTE FORMATTING REQUIREMENTS (DO NOT VIOLATE):**
-- Output heading, then PRESS ENTER TWICE, then write content
-- After content, PRESS ENTER TWICE before next heading
-- Each list item gets its own line
-- After a list ends, PRESS ENTER TWICE before continuing
-- NEVER write: ## Heading Content on same line
-- ALWAYS write: ## Heading[ENTER][ENTER]Content starts here
-
----
-
-REFERENCE TEXT TO USE:
-{context}
-
-AVAILABLE KNOWLEDGE BASE SOURCES:
-{sources}
-
-USER'S QUERY:
-{patient_data}
-
-PREVIOUS CONVERSATION:
-{chat_history}
-
-YOUR TASK:
-Answer the user's question following the formatting rules above. Provide factual, well-structured information based solely on the knowledge base sources.
-
-FINAL REMINDER: Put BLANK LINES (double line breaks) before and after EVERY ## heading and EVERY list section!
-"""
-
-
-class QueryClassifier:
-    """Secure query classification service."""
-    
-    @staticmethod
-    async def classify_query(query: str, patient_data: str) -> QueryType:
-        """
-        Classify the query using rules to determine the user's intent.
-        
-        Args:
-            query: User query
-            patient_data: Patient data
-            
-        Returns:
-            QueryType: Classified query type
-        """
-        full_query = f"{query} {patient_data}".lower().strip()
-        
-        # Rule for drug information
-        drug_keywords = [
-            "side effects of", "contraindications for", "dosing of", 
-            "interactions of", "mechanism of action", "pharmacology"
-        ]
-        if any(keyword in full_query for keyword in drug_keywords):
-            return QueryType.DRUG_INFORMATION
-        
-        # Rule for differential diagnosis
-        diagnosis_keywords = [
-            "differential diagnosis", "ddx", "patient with", "case of",
-            "year-old", "y/o", "presents with", "symptoms suggest"
-        ]
-        if any(keyword in full_query for keyword in diagnosis_keywords):
-            return QueryType.DIFFERENTIAL_DIAGNOSIS
-        
-        # Default to general query
-        return QueryType.GENERAL_QUERY
-
-
-class ResponseValidator:
-    """Response validation and sanitization."""
-    
-    @staticmethod
-    def validate_response(response: str) -> Dict[str, Any]:
-        """
-        Validate AI response for safety and compliance.
-        
-        Args:
-            response: AI response text
-            
-        Returns:
-            Dict with validation results
-        """
-        validation_result = {
-            'is_valid': True,
-            'warnings': [],
-            'errors': []
-        }
-        
-        # Check for potentially harmful content
-        harmful_patterns = [
-            r'<script.*?>.*?</script>',  # Script tags
-            r'javascript:',  # JavaScript protocol
-            r'data:text/html',  # Data URLs
-        ]
-        
-        for pattern in harmful_patterns:
-            if re.search(pattern, response, re.IGNORECASE):
-                validation_result['is_valid'] = False
-                validation_result['errors'].append('Potentially harmful content detected')
-        
-        # Check for excessive length
-        if len(response) > 10000:  # 10KB limit
-            validation_result['warnings'].append('Response exceeds recommended length')
-        
-        # Check for proper medical disclaimers
-        if not any(disclaimer in response.lower() for disclaimer in [
-            'qualified healthcare professional', 'clinical decision support', 'medical advice'
-        ]):
-            validation_result['warnings'].append('Missing medical disclaimer')
-        
-        return validation_result
-    
-    @staticmethod
-    def sanitize_response(response: str) -> str:
-        """
-        Sanitize AI response.
-        
-        Args:
-            response: AI response text
-            
-        Returns:
-            Sanitized response
-        """
-        import html
-        
-        # HTML escape
-        sanitized = html.escape(response)
-        
-        # NOTE: We do NOT remove whitespace here to preserve markdown formatting
-        # The frontend handles markdown rendering
-        
-        return sanitized
-    
-    @staticmethod
-    def fix_unclosed_headings(response: str) -> str:
-        """
-        Automatically fix markdown heading issues:
-        1. Close unclosed headings: ## Text → ## Text ##
-        2. Merge split headings: ## 💊\nText → ## 💊 Text ##
-        
-        Args:
-            response: AI response text
-            
-        Returns:
-            Response with all headings properly formatted
-        """
-        lines = response.split('\n')
-        fixed_lines = []
-        i = 0
-        
-        while i < len(lines):
-            line = lines[i]
-            stripped = line.strip()
-            
-            # Check if line starts with heading marker
-            if stripped.startswith('#'):
-                # Extract heading level (# or ## or ###, etc.)
-                heading_match = re.match(r'^(#{1,6})\s*(.*?)\s*(?:#{1,6})?\s*$', stripped)
-                
-                if heading_match:
-                    level = heading_match.group(1)  # # or ## or ###
-                    content = heading_match.group(2).strip()  # The heading text
-                    
-                    # Case 1: Heading has only emoji/symbols, no text
-                    # Check if content is only emojis/special chars (no alphanumeric)
-                    if content and not re.search(r'[a-zA-Z0-9]', content):
-                        # Check if next line has the actual heading text
-                        if i + 1 < len(lines) and lines[i + 1].strip() and not lines[i + 1].strip().startswith('#'):
-                            next_line = lines[i + 1].strip()
-                            # Merge emoji line with text line
-                            merged_heading = f"{level} {content} {next_line} {level}"
-                            fixed_lines.append(merged_heading)
-                            logger.debug(f"Merged split heading: '{stripped}' + '{next_line}' → '{merged_heading}'")
-                            i += 2  # Skip both lines
-                            continue
-                    
-                    # Case 2: Regular heading (with or without emoji, but has text)
-                    if content:
-                        # Close the heading properly
-                        fixed_heading = f"{level} {content} {level}"
-                        fixed_lines.append(fixed_heading)
-                        if stripped != fixed_heading:
-                            logger.debug(f"Fixed heading: '{stripped}' → '{fixed_heading}'")
-                    else:
-                        # Empty heading, keep as is
-                        fixed_lines.append(line)
-                else:
-                    # Doesn't match heading pattern, keep as is
-                    fixed_lines.append(line)
-            else:
-                # Not a heading line, keep as is
-                fixed_lines.append(line)
-            
-            i += 1
-        
-        return '\n'.join(fixed_lines)
+    # Legacy prompts for backward compatibility (now all use GENERAL_PROMPT)
+    DIFFERENTIAL_DIAGNOSIS_PROMPT = GENERAL_PROMPT
+    DRUG_INFORMATION_PROMPT = GENERAL_PROMPT
+    CLINICAL_GUIDANCE_PROMPT = GENERAL_PROMPT
 
 
 class ConversationalService:
-    """Enhanced conversational service with security features."""
+    """Enhanced conversational service with security and medical compliance."""
     
     def __init__(self):
         """Initialize the conversational service."""
+        self.model = None
+        self.secure_logger = SecureLogger()
+        self.input_validator = InputValidator()
+        self._initialize_model()
+
+    def _initialize_model(self) -> None:
+        """Initialize the Vertex AI model."""
         try:
-            # Initialize Google Cloud Vertex AI
-            project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "regal-autonomy-454806-d1")
-            location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
-            
-            logger.info(f"Initializing Vertex AI with project: {project_id}, location: {location}")
+            # Get model configuration
+            model_config = get_model_manager().get_vertex_ai_config()
+            project_id = model_config.get("project")
+            location = model_config.get("location", "us-central1")
+
+            # Initialize Vertex AI
             vertexai.init(project=project_id, location=location)
             
-            # Initialize the model
-            self.model = GenerativeModel("gemini-2.5-flash")
-            self.query_classifier = QueryClassifier()
-            self.response_validator = ResponseValidator()
+            # Create the model
+            self.model = GenerativeModel(
+                model_name="gemini-2.5-flash",
+                generation_config=GenerationConfig(
+                    temperature=0.2,
+                    top_p=0.9,
+                    top_k=40,
+                    max_output_tokens=3000,
+                    candidate_count=1,
+                )
+            )
             
             logger.info("ConversationalService initialized successfully")
             
         except Exception as e:
             logger.error(f"Failed to initialize ConversationalService: {e}")
+
+            # Provide more specific error messages for common issues
+            error_message = str(e).lower()
+            if "credentials" in error_message or "authentication" in error_message:
+                detail = "Google Cloud credentials not configured. Please set GOOGLE_APPLICATION_CREDENTIALS environment variable."
+            elif "project" in error_message:
+                detail = "Google Cloud project not configured. Please set GOOGLE_CLOUD_PROJECT environment variable."
+            elif "permission" in error_message or "forbidden" in error_message:
+                detail = "Insufficient permissions for Vertex AI. Check your service account credentials and permissions."
+            else:
+                detail = f"AI service initialization failed: {str(e)}. Please check your Google Cloud configuration."
+
             raise HTTPException(
                 status_code=503,
-                detail=f"AI service initialization failed: {str(e)}"
+                detail=detail
             )
     
     def _get_prompt_template(self, query_type: QueryType) -> str:
@@ -538,33 +225,57 @@ class ConversationalService:
         if query_type == QueryType.DRUG_INFORMATION:
             return 0.2  # Lower temperature for factual drug information
         elif query_type == QueryType.DIFFERENTIAL_DIAGNOSIS:
-            return 0.4  # Medium temperature for clinical reasoning
+            return 0.3  # Moderate temperature for clinical reasoning
         else:
-            return 0.3  # Lower temperature for general queries
-    
-    def _is_diagnosis_complete(self, response: str) -> bool:
-        """Check if diagnosis is complete based on response content."""
-        response_lower = response.lower().strip()
-        incomplete_indicators = [
-            "question:", "need more information", "additional information needed",
-            "please provide", "can you tell me more"
-        ]
-        return not any(indicator in response_lower for indicator in incomplete_indicators)
-    
-    @retry(
-        stop=stop_after_attempt(3), 
-        wait=wait_exponential(multiplier=1, min=4, max=10),
-        reraise=True,
-        retry=retry_if_not_exception_type(HTTPException)
-    )
-    async def generate_response(
-        self, 
-        query: str, 
-        chat_history: str, 
-        patient_data: str
-    ) -> Tuple[str, bool]:
-        """
-        Generate AI response with enhanced security and validation.
+            return 0.3  # Default for general queries
+
+    def _determine_query_type(self, query: str) -> QueryType:
+        """Determine the type of query."""
+        query_lower = query.lower()
+
+        # Drug-related queries
+        drug_keywords = ['drug', 'medication', 'medicine', 'pharmacy', 'pharmacology', 'side effect', 'interaction', 'contraindication', 'dosage', 'prescription']
+        if any(keyword in query_lower for keyword in drug_keywords):
+            return QueryType.DRUG_INFORMATION
+
+        # Diagnosis-related queries
+        diagnosis_keywords = ['diagnosis', 'differential', 'symptom', 'patient', 'clinical', 'sign', 'history', 'examination', 'assessment']
+        if any(keyword in query_lower for keyword in diagnosis_keywords):
+            return QueryType.DIFFERENTIAL_DIAGNOSIS
+
+        return QueryType.GENERAL_QUERY
+
+    def _format_prompt(self, prompt_template: str, query: str, context: str, sources: str, chat_history: str = "", patient_data: str = "") -> str:
+        """Format the prompt with provided variables."""
+        try:
+            # Clean and validate inputs
+            query = self.input_validator.validate_query(query)
+            context = self.input_validator.validate_context(context)
+            sources = self.input_validator.validate_sources(sources)
+
+            # Format the prompt
+            formatted_prompt = prompt_template.format(
+                query=query,
+                context=context,
+                sources=sources,
+                chat_history=chat_history,
+                patient_data=patient_data
+            )
+
+            # Log prompt for debugging (without sensitive data)
+            logger.debug(f"Formatted prompt length: {len(formatted_prompt)}")
+
+            return formatted_prompt
+
+        except Exception as e:
+            logger.error(f"Error formatting prompt: {e}")
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid input data for prompt formatting"
+            )
+
+    async def generate_response(self, query: str, chat_history: str, patient_data: str) -> Tuple[str, bool, str]:
+        """Generate AI response for the given query.
         
         Args:
             query: User query
@@ -572,174 +283,185 @@ class ConversationalService:
             patient_data: Patient data
             
         Returns:
-            Tuple of (response_text, diagnosis_complete)
-            
-        Raises:
-            HTTPException: If generation fails
+            Tuple of (response_text, diagnosis_complete, prompt_type)
         """
         start_time = time.time()
         
         try:
-            # Validate inputs
-            query_validation = InputValidator.validate_patient_data(query)
-            if not query_validation['is_valid']:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid query: {query_validation['error']}"
-                )
-            
-            patient_validation = InputValidator.validate_patient_data(patient_data)
-            if not patient_validation['is_valid']:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid patient data: {patient_validation['error']}"
-                )
-            
-            # Use sanitized data
-            sanitized_query = query_validation['sanitized_data']
-            sanitized_patient_data = patient_validation['sanitized_data']
-            sanitized_chat_history = InputValidator.validate_chat_history(chat_history or "")['sanitized_data']
-            
-            # Classify query type
-            query_type = await self.query_classifier.classify_query(sanitized_query, sanitized_patient_data)
-            
-            # Retrieve context from vector store (increased k for more comprehensive context)
-            context, sources = search_all_collections(sanitized_query, sanitized_patient_data, k=5)
-            
-            # Truncate context if too long to prevent token overflow
-            max_context_length = 3000  # Increased to allow more comprehensive medical context
-            if len(context) > max_context_length:
-                context = context[:max_context_length] + "... [Context truncated due to length]"
-                logger.warning(f"Context truncated from {len(context)} to {max_context_length} characters")
-            
-            # Format sources for display
-            sources_text = ", ".join(sources) if sources else "No sources available"
-            
-            # Get prompt template and temperature
-            prompt_template = self._get_prompt_template(query_type)
-            temperature = self._get_temperature_setting(query_type)
-            
-            # Log which prompt is being used
-            logger.info(f"🎯 Using prompt: {query_type.value}")
-            logger.info(f"📝 Temperature setting: {temperature}")
-            logger.info(f"📊 Context length: {len(context)} chars, Sources: {len(sources)}")
-            
-            # Populate prompt
-            prompt = prompt_template.format(
-                patient_data=sanitized_patient_data,
-                context=context,
-                sources=sources_text,
-                chat_history=sanitized_chat_history or "No previous conversation",
-            )
-            
-            # Generate response
-            generation_config = GenerationConfig(
-                temperature=temperature,
-                max_output_tokens=3000,  # Increased to match working configuration
-                top_p=1.0,
-            )
-            
-            response = await self.model.generate_content_async(
-                prompt, 
-                generation_config=generation_config
-            )
-            
-            # Handle response safely
-            try:
-                response_text = response.text
-            except Exception as e:
-                # Handle cases where response is blocked or truncated
-                if "MAX_TOKENS" in str(e) or "finish_reason" in str(e):
-                    logger.warning(f"Response truncated due to token limit: {e}")
-                    raise HTTPException(
-                        status_code=500,
-                        detail="Response was truncated due to token limits. Please try with a shorter query or patient data."
-                    )
-                elif "safety filters" in str(e).lower():
-                    logger.warning(f"Response blocked by safety filters: {e}")
-                    raise HTTPException(
-                        status_code=500,
-                        detail="Response was blocked by safety filters. Please rephrase your query."
-                    )
-                else:
-                    logger.error(f"Unexpected error getting response text: {e}")
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"Unexpected error: {str(e)}"
-                    )
-            
-            # Validate response
-            validation_result = self.response_validator.validate_response(response_text)
-            if not validation_result['is_valid']:
-                SecureLogger.log_securely('warning', f'Response validation failed: {validation_result["errors"]}')
-                raise HTTPException(
-                    status_code=500,
-                    detail="Response validation failed"
-                )
-            
-            # Log warnings if any
-            if validation_result['warnings']:
-                SecureLogger.log_securely('warning', f'Response warnings: {validation_result["warnings"]}')
-            
-            # Fix unclosed headings BEFORE sanitization (fail-safe)
-            fixed_response = self.response_validator.fix_unclosed_headings(response_text)
-            logger.info("Applied heading closure fix to response")
-            
-            # Sanitize response (HTML escape only, preserve markdown formatting)
-            sanitized_response = self.response_validator.sanitize_response(fixed_response)
-            
-            # Determine if diagnosis is complete
-            if query_type == QueryType.DRUG_INFORMATION or query_type == QueryType.GENERAL_QUERY:
-                diagnosis_complete = True
-            else:
-                diagnosis_complete = self._is_diagnosis_complete(sanitized_response)
-            
-            # Log successful generation
-            processing_time = time.time() - start_time
-            SecureLogger.log_securely(
-                'info',
-                f'Response generated successfully',
-                extra={
-                    'query_type': query_type.value,
-                    'processing_time': processing_time,
-                    'response_length': len(sanitized_response),
-                    'sources_count': len(sources),
-                    'diagnosis_complete': diagnosis_complete
+            # Log the request (without sensitive data)
+            self.secure_logger.log_request(
+                action="generate_response",
+                details={
+                    "query_length": len(query),
+                    "patient_data_length": len(patient_data),
+                    "chat_history_length": len(chat_history)
                 }
             )
-            
-            return sanitized_response, diagnosis_complete, query_type.value
-        
-        except exceptions.ResourceExhausted:
-            SecureLogger.log_securely('error', 'Google API resource exhausted')
-            raise HTTPException(
-                status_code=429, 
-                detail="Rate limit exceeded or resource unavailable, please try again later."
+
+            # Determine query type
+            query_type = self._determine_query_type(query)
+
+            # Get context from vector database
+            context_data, sources = await self._get_context_and_sources(query, patient_data)
+
+            # Get appropriate prompt template
+            prompt_template = self._get_prompt_template(query_type)
+
+            # Format the prompt
+            formatted_prompt = self._format_prompt(
+                prompt_template, query, context_data, sources, chat_history, patient_data
             )
-        
-        except exceptions.GoogleAPIError as e:
-            SecureLogger.log_securely('error', f'Google API error: {str(e)}')
-            raise HTTPException(
-                status_code=500, 
-                detail=f"Model error: {str(e)}"
+
+            # Generate response using Vertex AI
+            response = await self._generate_with_vertex_ai(formatted_prompt, query_type)
+
+            # Process and validate response
+            processed_response, diagnosis_complete = self._process_response(response, query_type)
+
+            # Log successful response
+            execution_time = time.time() - start_time
+            self.secure_logger.log_request(
+                action="generate_response_success",
+                details={
+                    "execution_time": execution_time,
+                    "response_length": len(processed_response),
+                    "query_type": query_type.value
+                }
             )
-        
+
+            logger.info(f"Response generated successfully in {execution_time:.2f}s")
+
+            return processed_response, diagnosis_complete, query_type.value
+
         except Exception as e:
-            SecureLogger.log_securely('error', f'Unexpected error in generate_response: {str(e)}')
-            raise HTTPException(
-                status_code=500, 
-                detail=f"Unexpected error: {str(e)}"
+            execution_time = time.time() - start_time
+            logger.error(f"Error generating response after {execution_time:.2f}s: {e}")
+
+            # Log error securely
+            self.secure_logger.log_request(
+                action="generate_response_error",
+                details={"error": str(e), "execution_time": execution_time}
             )
 
+            # Re-raise with sanitized error message
+            raise HTTPException(
+                status_code=503,
+                detail="AI service is currently unavailable. Please try again later."
+            )
 
-# Global service instance
-conversational_service = ConversationalService()
+    async def _get_context_and_sources(self, query: str, patient_data: str) -> Tuple[str, str]:
+        """Get context and sources from vector database."""
+        try:
+            # Search vector database for relevant context
+            context_results = await search_all_collections(query, patient_data)
+
+            # Format context from results
+            context_parts = []
+            sources_list = []
+
+            for result in context_results:
+                if result.get("content"):
+                    context_parts.append(f"**Source: {result.get('source', 'Unknown')}**\n{result['content']}")
+                    sources_list.append(result.get('source', 'Unknown'))
+
+            context = "\n\n".join(context_parts) if context_parts else "No relevant context found in knowledge base."
+            sources = ", ".join(sources_list) if sources_list else "General medical knowledge"
+
+            return context, sources
+
+        except Exception as e:
+            logger.warning(f"Error getting context from vector database: {e}")
+            return "Context retrieval failed. Using general medical knowledge.", "General medical knowledge"
+
+    async def _generate_with_vertex_ai(self, prompt: str, query_type: QueryType) -> str:
+        """Generate response using Vertex AI."""
+        if not self.model:
+            raise HTTPException(status_code=503, detail="AI model not initialized")
+
+        try:
+            # Set temperature based on query type
+            temperature = self._get_temperature_setting(query_type)
+
+            # Update model configuration
+            self.model._generation_config = GenerationConfig(
+                temperature=temperature,
+                top_p=0.95,
+                top_k=40,
+                max_output_tokens=4096,
+            )
+
+            # Generate response
+            response = self.model.generate_content(prompt)
+
+            if response and response.text:
+                return response.text.strip()
+            else:
+                raise Exception("Empty response from AI model")
+
+        except exceptions.GoogleAPIError as e:
+            logger.error(f"Google API error: {e}")
+            raise HTTPException(
+                status_code=503,
+                detail="AI service temporarily unavailable due to API error"
+            )
+        except Exception as e:
+            logger.error(f"Error generating response with Vertex AI: {e}")
+            raise HTTPException(
+                status_code=503,
+                detail="AI service temporarily unavailable"
+            )
+
+    def _process_response(self, response: str, query_type: QueryType) -> Tuple[str, bool]:
+        """Process and validate the AI response."""
+        try:
+            # Clean and validate response
+            cleaned_response = self.input_validator.validate_response(response)
+
+            # Check if diagnosis is complete (for differential diagnosis queries)
+            diagnosis_complete = self._check_diagnosis_completion(cleaned_response, query_type)
+
+            # Log response processing
+            logger.debug(f"Processed response length: {len(cleaned_response)}")
+
+            return cleaned_response, diagnosis_complete
+
+        except Exception as e:
+            logger.error(f"Error processing response: {e}")
+            raise HTTPException(
+                status_code=503,
+                detail="Error processing AI response"
+            )
+
+    def _check_diagnosis_completion(self, response: str, query_type: QueryType) -> bool:
+        """Check if the diagnosis response is complete."""
+        if query_type != QueryType.DIFFERENTIAL_DIAGNOSIS:
+            return True
+
+        # For differential diagnosis, check if we have sufficient information
+        required_sections = ["differential", "management", "investigation"]
+        response_lower = response.lower()
+
+        # Count how many required sections are present
+        found_sections = sum(1 for section in required_sections if section in response_lower)
+
+        # Consider complete if at least 2 out of 3 sections are present
+        return found_sections >= 2
 
 
-# Public API function
+# Global conversational service instance
+_conversational_service: Optional[ConversationalService] = None
+
+
+def get_conversational_service() -> ConversationalService:
+    """Get the global conversational service instance."""
+    global _conversational_service
+    if _conversational_service is None:
+        _conversational_service = ConversationalService()
+    return _conversational_service
+
+
 async def generate_response(query: str, chat_history: str, patient_data: str) -> Tuple[str, bool, str]:
-    """
-    Generate AI response with enhanced security.
+    """Generate AI response for the given query.
     
     Args:
         query: User query
@@ -749,4 +471,4 @@ async def generate_response(query: str, chat_history: str, patient_data: str) ->
     Returns:
         Tuple of (response_text, diagnosis_complete, prompt_type)
     """
-    return await conversational_service.generate_response(query, chat_history, patient_data)
+    return await get_conversational_service().generate_response(query, chat_history, patient_data)

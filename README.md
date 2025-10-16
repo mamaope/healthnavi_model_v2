@@ -75,6 +75,36 @@ cp .env.example .env
 # Edit .env with your configuration
 ```
 
+### **Google Cloud Setup (Required for AI Features)**
+
+**⚠️ Important**: The AI features (diagnosis, chat) require Google Cloud Vertex AI to be properly configured. Without valid credentials, the application will return "AI service is currently unavailable" errors.
+
+1. **Create a Google Cloud Project**
+   ```bash
+   # Go to Google Cloud Console and create a new project
+   # Enable Vertex AI API for your project
+   ```
+
+2. **Create a Service Account**
+   ```bash
+   # In Google Cloud Console, go to IAM & Admin > Service Accounts
+   # Create a new service account with Vertex AI permissions
+   # Download the JSON key file
+   ```
+
+3. **Set Environment Variables**
+   ```bash
+   export GOOGLE_CLOUD_PROJECT=your-project-id
+   export GOOGLE_CLOUD_LOCATION=us-central1
+   export GOOGLE_APPLICATION_CREDENTIALS=/path/to/your/service-account.json
+   ```
+
+4. **For Docker Deployment**
+   ```bash
+   # Place your service account JSON file in the backend directory
+   # The docker-compose.yml will mount it automatically
+   ```
+
 ### **Required Environment Variables**
 
 ```bash
@@ -90,8 +120,8 @@ DB_PORT=5432
 DB_NAME=healthnavi_cdss
 
 # Google Cloud / Vertex AI
-GCP_ID=your-gcp-project-id
-GCP_LOCATION=us-central1
+GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+GOOGLE_CLOUD_LOCATION=us-central1
 GOOGLE_APPLICATION_CREDENTIALS=path/to/service-account.json
 
 # Azure OpenAI
