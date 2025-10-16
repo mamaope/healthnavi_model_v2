@@ -157,6 +157,7 @@ async function sendMessage() {
     
     // Add user message to chat
     addMessage('user', message);
+    console.log('✅ User message added to DOM');
     messageInput.value = '';
     messageInput.style.height = 'auto';
     messageInput.style.height = '24px'; // Reset to minimum height
@@ -169,12 +170,13 @@ async function sendMessage() {
             chat_history: formatChatHistory()
         };
         
-        // Call diagnosis API
-
+        // Call diagnosis API with streaming
         const headers = { 'Content-Type': 'application/json' };
         if (accessToken) {
             headers['Authorization'] = `Bearer ${accessToken}`;
         }
+        
+        console.log('🚀 Starting fetch request...');
         const response = await fetch(`${API_URL}/api/v2/diagnose`, {
             method: 'POST',
             headers,
@@ -185,19 +187,77 @@ async function sendMessage() {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        const data = await response.json();
+        console.log('✅ Response received, starting to process stream...');
         
-        // Add AI response to chat
-        addMessage('ai', data.model_response, data.diagnosis_complete);
+        // Create AI message container IMMEDIATELY for streaming with typing indicator
+        const chatMessages = document.getElementById('chatMessages');
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message ai-message';
+        const uniqueId = `streaming-response-${Date.now()}`;
+        messageDiv.innerHTML = `
+            <div class="message-content">
+                <div id="${uniqueId}"><span class="typing-indicator">●●●</span></div>
+            </div>
+        `;
+        chatMessages.appendChild(messageDiv);
+        console.log('✅ AI message container added to DOM');
         
-        // Update chat history
+        const responseContainer = document.getElementById(uniqueId);
+        
+        // Handle streaming response with proper chunk processing
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullResponse = '';
+        let chunkCount = 0;
+        let lastRenderTime = Date.now();
+        const renderInterval = 100; // Update UI every 100ms for smooth streaming feel
+        
+        // Read and display stream chunks in real-time
+        while (true) {
+            const { done, value } = await reader.read();
+            
+            if (done) {
+                console.log(`✅ Stream complete! Received ${chunkCount} chunks, ${fullResponse.length} total chars`);
+                break;
+            }
+            
+            // Decode chunk incrementally
+            const chunk = decoder.decode(value, { stream: true });
+            chunkCount++;
+            
+            if (chunkCount === 1) {
+                console.log('⚡ First chunk received!');
+            }
+            
+            fullResponse += chunk;
+            
+            // Throttle rendering for performance (update every 100ms or on first chunk)
+            const now = Date.now();
+            if (chunkCount === 1 || now - lastRenderTime >= renderInterval) {
+                // Use textContent for instant raw display (much faster than HTML formatting)
+                responseContainer.textContent = fullResponse;
+                lastRenderTime = now;
+                
+                // Auto-scroll to bottom
+                window.scrollTo({
+                    top: document.body.scrollHeight,
+                    behavior: 'smooth'
+                });
+            }
+        }
+        
+        // Final formatting after stream completes (apply markdown/HTML formatting)
+        console.log('🎨 Applying final formatting...');
+        responseContainer.innerHTML = formatAIResponse(fullResponse);
+        
+        // Update chat history with complete response
         chatHistory.push({
             user: message,
-            ai: data.model_response
+            ai: fullResponse
         });
         
     } catch (error) {
-        console.error('Error:', error);
+        console.error('❌ Error:', error);
         addMessage('error', `Sorry, there was an error processing your request: ${error.message}`);
     } finally {
         // Re-enable input
@@ -236,16 +296,13 @@ function addMessage(type, content, diagnosisComplete = false) {
     
     chatMessages.appendChild(messageDiv);
     
-    // Smooth scroll to the new message
-    if (type === 'ai') {
-        // For AI responses, scroll to show the full response
-        setTimeout(() => {
-            messageDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 100);
-    } else {
-        // For user messages, scroll to bottom
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-    }
+    // Smooth scroll to the new message using window scroll
+    setTimeout(() => {
+        window.scrollTo({
+            top: document.body.scrollHeight,
+            behavior: 'smooth'
+        });
+    }, 100);
     
     // Remove welcome message after first interaction
     const welcomeMessage = chatMessages.querySelector('.welcome-message');

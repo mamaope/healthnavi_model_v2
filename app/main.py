@@ -7,6 +7,7 @@ import logging
 from fastapi import FastAPI
 from app.routers import diagnosis
 from app.services.vectorstore_manager import initialize_vectorstore
+from app.services.genai_client import initialize_genai_client
 from fastapi.middleware.cors import CORSMiddleware
 
 logging.basicConfig(
@@ -35,15 +36,20 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     """
-    Initialise the vector store at start up.
+    Initialise the vector store and GenAI client at start up.
     """
     logger.info("Starting up HealthNavi AI API...")
 
     try:
         initialize_vectorstore()
+        logger.info("Vector store initialized successfully.")
+        
+        initialize_genai_client()
+        logger.info("GenAI client initialized successfully.")
+        
         logger.info("Startup complete.")
     except Exception as e:
-        logger.error(f"FATAL: Could not initialize vector store. Shutting down. Error: {e}")
+        logger.error(f"FATAL: Could not initialize services. Shutting down. Error: {e}")
         raise
         
 @app.get("/")
