@@ -38,7 +38,13 @@ function initializeApp() {
             updateCharCounter();
             updateSendButton();
         });
-        landingMessageInput.addEventListener('keydown', handleKeyDown);
+        // Simple keydown handler - matches working example
+        landingMessageInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault(); // Stop newline
+                sendMessage();
+            }
+        });
         landingMessageInput.addEventListener('focus', () => {
             const charCounter = document.getElementById('charCounter');
             if (charCounter) charCounter.style.display = 'block';
@@ -274,7 +280,7 @@ function showAuthModal(mode) {
         // Attach fresh listener
         newForm.addEventListener('submit', handleAuthSubmit);
         console.log('✅ [Modal] Submit listener attached!');
-    } else {
+            } else {
         console.error('❌ [Modal] Auth form not found!');
     }
     
@@ -303,7 +309,7 @@ function toggleAuthMode() {
 
 async function handleAuthSubmit(event) {
     console.log('🚀 [Auth] Form submitted!');
-    event.preventDefault();
+        event.preventDefault();
     console.log('🚀 [Auth] Event prevented');
     
     const formData = new FormData(event.target);
@@ -319,9 +325,9 @@ async function handleAuthSubmit(event) {
     // Client-side validation
     if (!email || !password) {
         showAuthError('Email and password are required');
-        return;
-    }
-    
+            return;
+        }
+        
     if (!isLogin) {
         if (!fullName) {
             showAuthError('Full name is required');
@@ -404,20 +410,20 @@ async function registerUser(fullName, email, password) {
         },
         body: JSON.stringify({
             full_name: fullName,
-            email: email,
-            password: password
+                email: email,
+                password: password
         })
-    });
-    
+            });
+            
     const data = await response.json();
-    
+                
     if (data.success) {
         // Registration successful, switch to login
         showAuthError('Registration successful! Please sign in with your credentials.', 'success');
-        setTimeout(() => {
+                setTimeout(() => {
             showAuthModal('login');
-        }, 2000);
-    } else {
+                }, 2000);
+            } else {
         const errorMessage = data.metadata?.errors?.join(', ') || data.data?.message || 'Registration failed';
         throw new Error(errorMessage);
     }
@@ -501,7 +507,7 @@ function toggleUserMenu() {
         if (headerUserButton) {
             headerUserButton.setAttribute('aria-expanded', 'false');
         }
-    } else {
+            } else {
         userDropdownMenu.style.display = 'block';
         if (headerUserButton) {
             headerUserButton.setAttribute('aria-expanded', 'true');
@@ -562,7 +568,7 @@ async function sendMessage() {
         return;
     }
     
-    const message = messageInput.value.trim();
+        const message = messageInput.value.trim();
     if (!message) return;
     
     console.log('🚀 [Frontend] sendMessage called');
@@ -574,23 +580,23 @@ async function sendMessage() {
     if (!isAuthenticated) {
         console.log('🔐 [Frontend] Not authenticated, showing auth modal');
         showAuthModal('login');
-        return;
-    }
-    
+            return;
+        }
+        
     // Disable input and show loading
-    messageInput.disabled = true;
-    sendButton.disabled = true;
-    sendButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        messageInput.disabled = true;
+        sendButton.disabled = true;
+        sendButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
     
     // Show loading indicator
     const loadingIndicator = document.getElementById('loadingIndicator');
     if (loadingIndicator) {
         loadingIndicator.style.display = 'flex';
     }
-    
-    // Add user message to chat
+        
+        // Add user message to chat
     addMessage('user', message);
-    messageInput.value = '';
+        messageInput.value = '';
     autoResizeTextarea.call(messageInput);
     
     try {
@@ -645,23 +651,23 @@ async function sendMessage() {
             ai: data.data.model_response
         });
         
-    } catch (error) {
+        } catch (error) {
         console.error('Error:', error);
         addMessage('error', `Sorry, there was an error processing your request: ${error.message}`);
-    } finally {
+        } finally {
         // Hide loading indicator
         const loadingIndicator = document.getElementById('loadingIndicator');
         if (loadingIndicator) {
             loadingIndicator.style.display = 'none';
         }
         
-        // Re-enable input
-        messageInput.disabled = false;
-        sendButton.disabled = false;
-        sendButton.innerHTML = '<i class="fas fa-paper-plane"></i>';
-        messageInput.focus();
+            // Re-enable input
+            messageInput.disabled = false;
+            sendButton.disabled = false;
+            sendButton.innerHTML = '<i class="fas fa-paper-plane"></i>';
+            messageInput.focus();
+        }
     }
-}
 
 function addMessage(type, content, diagnosisComplete = false) {
     console.log('💬 [Frontend] addMessage called:', { type, diagnosisComplete });
@@ -680,31 +686,31 @@ function addMessage(type, content, diagnosisComplete = false) {
         return;
     }
     
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${type}-message`;
-    
-    if (type === 'user') {
-        messageDiv.innerHTML = `
-            <div class="message-content">
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${type}-message`;
+        
+        if (type === 'user') {
+            messageDiv.innerHTML = `
+                <div class="message-content">
                 ${formatUserMessage(content)}
-            </div>
-        `;
-    } else if (type === 'ai') {
-        messageDiv.innerHTML = `
-            <div class="message-content">
+                </div>
+            `;
+        } else if (type === 'ai') {
+            messageDiv.innerHTML = `
+                <div class="message-content">
                 ${formatAIResponse(content)}
-            </div>
-        `;
-    } else if (type === 'error') {
-        messageDiv.innerHTML = `
-            <div class="message-content">
-                <strong>⚠️ Error:</strong><br>
-                ${content}
-            </div>
-        `;
-    }
-    
-    chatMessages.appendChild(messageDiv);
+                </div>
+            `;
+        } else if (type === 'error') {
+            messageDiv.innerHTML = `
+                <div class="message-content">
+                    <strong>⚠️ Error:</strong><br>
+                    ${content}
+                </div>
+            `;
+        }
+        
+        chatMessages.appendChild(messageDiv);
     console.log('💬 [Frontend] Message added to chat container');
     
     // Smooth scroll to the new message
@@ -713,9 +719,9 @@ function addMessage(type, content, diagnosisComplete = false) {
     }, 100);
     
     // Remove welcome message after first interaction
-    const welcomeMessage = chatMessages.querySelector('.welcome-message');
-    if (welcomeMessage) {
-        welcomeMessage.remove();
+        const welcomeMessage = chatMessages.querySelector('.welcome-message');
+        if (welcomeMessage) {
+            welcomeMessage.remove();
         console.log('💬 [Frontend] Welcome message removed');
     }
 }
@@ -1300,7 +1306,7 @@ function formatAIResponse(response) {
             continue;
         } else if (inCodeBlock) {
             processedLines.push(line);
-            continue;
+                continue;
         }
         
         // Regular paragraph content
@@ -1341,30 +1347,30 @@ function formatJSONResponse(response) {
         console.log('🎨 [Frontend] Parsing JSON response:', data);
         
         let html = '<div class="diagnosis-card">';
-        
-        // Clinical Overview
-        if (data.clinical_overview) {
-            html += `
+            
+            // Clinical Overview
+            if (data.clinical_overview) {
+                html += `
                 <h3>🏥 Clinical Assessment</h3>
                 <div class="case-discussion">
                     <p>${data.clinical_overview}</p>
-                </div>
-            `;
-        }
-        
-        // Critical Alert
-        if (data.critical_alert) {
-            html += `
+                    </div>
+                `;
+            }
+            
+            // Critical Alert
+            if (data.critical_alert) {
+                html += `
                 <div class="critical-alert">
                     <h4 style="color: #dc3545;">🚨 CRITICAL ALERT</h4>
                     <p>This case requires immediate attention and urgent intervention.</p>
-                </div>
-            `;
-        }
-        
-        // Differential Diagnoses
+                    </div>
+                `;
+            }
+            
+            // Differential Diagnoses
         if (data.differential_diagnoses && data.differential_diagnoses.length > 0) {
-            html += `
+                html += `
                 <div class="differential-diagnoses-section">
                     <h4>🔍 Differential Diagnoses</h4>
                     <div class="diagnoses-grid">
@@ -1376,12 +1382,12 @@ function formatJSONResponse(response) {
             );
             
             sortedDiagnoses.forEach((diagnosis, index) => {
-                const probability = diagnosis.probability_percent || 0;
+                    const probability = diagnosis.probability_percent || 0;
                 const probabilityColor = probability >= 70 ? '#dc3545' : probability >= 40 ? '#fd7e14' : '#28a745';
                 const probabilityText = probability >= 70 ? 'High' : probability >= 40 ? 'Moderate' : 'Low';
                 const rank = index + 1;
-                
-                html += `
+                    
+                    html += `
                     <div class="diagnosis-card-item">
                         <div class="diagnosis-rank">#${rank}</div>
                         <div class="diagnosis-content">
@@ -1403,19 +1409,19 @@ function formatJSONResponse(response) {
                                 </div>
                             ` : ''}
                         </div>
+                        </div>
+                    `;
+                });
+                
+                html += `
+                        </div>
                     </div>
                 `;
-            });
+            }
             
-            html += `
-                    </div>
-                </div>
-            `;
-        }
-        
-        // Immediate Workup
+            // Immediate Workup
         if (data.immediate_workup && data.immediate_workup.length > 0) {
-            html += `
+                html += `
                 <div class="workup-section">
                     <h4>⚕️ Immediate Workup</h4>
                     <ul>
@@ -1424,14 +1430,14 @@ function formatJSONResponse(response) {
                 html += `<li>${item}</li>`;
             });
             html += `
-                    </ul>
-                </div>
-            `;
-        }
-        
-        // Management
+                        </ul>
+                    </div>
+                `;
+            }
+            
+            // Management
         if (data.management && data.management.length > 0) {
-            html += `
+                html += `
                 <div class="management-section">
                     <h4>💊 Management</h4>
                     <ul>
@@ -1440,14 +1446,14 @@ function formatJSONResponse(response) {
                 html += `<li>${item}</li>`;
             });
             html += `
-                    </ul>
-                </div>
-            `;
-        }
-        
-        // Red Flags
+                        </ul>
+                    </div>
+                `;
+            }
+            
+            // Red Flags
         if (data.red_flags && data.red_flags.length > 0) {
-            html += `
+                html += `
                 <div class="red-flags-section">
                     <h4 style="color: #dc3545;">🚩 Red Flags</h4>
                     <ul>
@@ -1456,30 +1462,30 @@ function formatJSONResponse(response) {
                 html += `<li>${flag}</li>`;
             });
             html += `
-                    </ul>
-                </div>
-            `;
-        }
-        
-        // Additional Information Needed
-        if (data.additional_information_needed) {
-            html += `
+                        </ul>
+                    </div>
+                `;
+            }
+            
+            // Additional Information Needed
+            if (data.additional_information_needed) {
+                html += `
                 <div class="additional-info">
                     <h4>❓ Additional Information Needed</h4>
                     <p>${data.additional_information_needed}</p>
-                </div>
-            `;
-        }
-        
+                    </div>
+                `;
+            }
+            
         // Sources
         if (data.sources_used && data.sources_used.length > 0) {
-            html += `
+                html += `
                 <div class="sources">
                     <strong>📚 Sources Used:</strong> ${data.sources_used.join(', ')}
-                </div>
-            `;
-        }
-        
+                    </div>
+                `;
+            }
+            
         html += '</div>';
         return html;
         
@@ -1523,7 +1529,7 @@ function formatDifferentialDiagnosis(response) {
             <div class="case-discussion">
                 <h4>Case Discussion</h4>
                 <p>${formatText(caseDiscussion)}</p>
-            </div>
+                    </div>
         `;
     }
     
@@ -1532,7 +1538,7 @@ function formatDifferentialDiagnosis(response) {
             <div class="diagnosis-list">
                 <h4>Most Likely Diagnoses</h4>
                 ${formatDiagnosisList(mostLikely)}
-            </div>
+                    </div>
         `;
     }
     
@@ -1541,8 +1547,8 @@ function formatDifferentialDiagnosis(response) {
             <div class="diagnosis-list">
                 <h4>Expanded Differential</h4>
                 ${formatDiagnosisList(expanded)}
-            </div>
-        `;
+                </div>
+            `;
     }
     
     if (sources) {
@@ -1689,14 +1695,14 @@ function updateSessionsList(sessions) {
             const sessionItem = document.createElement('div');
             sessionItem.className = 'session-item';
             sessionItem.innerHTML = `
-                <div class="session-name">${session.session_name || `Session #${session.id}`}</div>
+                <div class="session-name">Session ${session.id}</div>
                 <div class="session-date">${new Date(session.created_at).toLocaleDateString()}</div>
             `;
             
             // Add keyboard accessibility
             sessionItem.setAttribute('role', 'button');
             sessionItem.setAttribute('tabindex', '0');
-            sessionItem.setAttribute('aria-label', `Load session: ${session.session_name || `Session ${session.id}`}`);
+            sessionItem.setAttribute('aria-label', `Load Session ${session.id}`);
             
             sessionItem.addEventListener('click', () => {
                 // Remove active class from all items
@@ -1831,18 +1837,18 @@ function clearChat() {
 function autoResizeTextarea() {
     const textarea = this;
     
-    textarea.style.height = 'auto';
-    const scrollHeight = textarea.scrollHeight;
-    const minHeight = 24;
-    const maxHeight = 120;
-    
-    const newHeight = Math.max(minHeight, Math.min(scrollHeight, maxHeight));
-    textarea.style.height = newHeight + 'px';
-    
-    if (scrollHeight > maxHeight) {
-        textarea.style.overflowY = 'auto';
-    } else {
-        textarea.style.overflowY = 'hidden';
+            textarea.style.height = 'auto';
+            const scrollHeight = textarea.scrollHeight;
+            const minHeight = 24;
+            const maxHeight = 120;
+            
+            const newHeight = Math.max(minHeight, Math.min(scrollHeight, maxHeight));
+            textarea.style.height = newHeight + 'px';
+            
+            if (scrollHeight > maxHeight) {
+                textarea.style.overflowY = 'auto';
+            } else {
+                textarea.style.overflowY = 'hidden';
     }
     
     // Enable/disable send buttons based on input content
@@ -1859,12 +1865,6 @@ function autoResizeTextarea() {
     }
 }
 
-function handleKeyDown(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        sendMessage();
-    }
-}
 
 // Global functions for HTML onclick handlers
 window.showAuthModal = showAuthModal;
@@ -1888,7 +1888,7 @@ function togglePasswordVisibility(inputId) {
         input.type = 'text';
         toggle.className = 'fas fa-eye-slash';
         toggle.setAttribute('aria-label', 'Hide password');
-    } else {
+        } else {
         input.type = 'password';
         toggle.className = 'fas fa-eye';
         toggle.setAttribute('aria-label', 'Show password');

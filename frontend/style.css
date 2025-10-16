@@ -151,6 +151,43 @@
     --bg-accent: rgba(26, 66, 117, 0.12);
 }
 
+/* Dark theme user message styling */
+[data-theme="dark"] .user-message .message-content {
+    background: #1A4275 !important;  /* Strong blue background */
+    color: #ffffff !important;       /* White text */
+    border: 1px solid rgba(26, 66, 117, 0.3) !important;
+    box-shadow: var(--shadow-sm) !important;
+    padding: var(--spacing-md) var(--spacing-lg) !important;
+    border-radius: var(--radius-2xl) var(--radius-2xl) var(--radius-sm) var(--radius-2xl) !important;
+}
+
+/* Dark theme send button styling */
+[data-theme="dark"] #landingSendButton,
+[data-theme="dark"] #dashboardSendButton,
+[data-theme="dark"] #sendButton {
+    background: var(--primary) !important;
+    color: #ffffff !important;
+    border: none !important;
+    box-shadow: var(--shadow-sm) !important;
+}
+
+[data-theme="dark"] #landingSendButton:hover:not(:disabled),
+[data-theme="dark"] #dashboardSendButton:hover:not(:disabled),
+[data-theme="dark"] #sendButton:hover:not(:disabled) {
+    background: var(--primary-hover) !important;
+    transform: scale(1.05) !important;
+    box-shadow: var(--shadow-md) !important;
+}
+
+[data-theme="dark"] #landingSendButton:disabled,
+[data-theme="dark"] #dashboardSendButton:disabled,
+[data-theme="dark"] #sendButton:disabled {
+    background: var(--text-muted) !important;
+    opacity: 0.4 !important;
+    cursor: not-allowed !important;
+    transform: none !important;
+}
+
 /* Spacing Scale - shared by both themes */
 :root {
     /* Spacing Scale */
@@ -383,11 +420,80 @@ body,
     color: #ffffff !important;
 }
 
-/* Force theme toggle and auth buttons to be visible */
+/* Force all buttons to have proper colors in light theme */
+:root:not([data-theme="dark"]) .btn-primary {
+    background: var(--primary) !important;
+    color: #ffffff !important;
+    border-color: var(--primary) !important;
+}
+
+:root:not([data-theme="dark"]) .btn-primary:hover {
+    background: var(--primary-hover) !important;
+    color: #ffffff !important;
+    border-color: var(--primary-hover) !important;
+}
+
+:root:not([data-theme="dark"]) .btn-primary:active {
+    background: var(--primary-hover) !important;
+    color: #ffffff !important;
+    border-color: var(--primary-hover) !important;
+}
+
+:root:not([data-theme="dark"]) .btn-primary:focus {
+    background: var(--primary) !important;
+    color: #ffffff !important;
+    border-color: var(--primary) !important;
+}
+
+:root:not([data-theme="dark"]) .btn-outline {
+    background: #ffffff !important;
+    color: #1c1917 !important;
+    border-color: var(--border-medium) !important;
+}
+
+:root:not([data-theme="dark"]) .btn-outline:hover {
+    background: var(--bg-accent) !important;
+    color: var(--primary) !important;
+    border-color: var(--primary) !important;
+}
+
+:root:not([data-theme="dark"]) .btn-outline:active {
+    background: var(--bg-accent) !important;
+    color: var(--primary) !important;
+    border-color: var(--primary) !important;
+}
+
+:root:not([data-theme="dark"]) .btn-outline:focus {
+    background: #ffffff !important;
+    color: #1c1917 !important;
+    border-color: var(--primary) !important;
+}
+
+/* Ensure outline button text and children are dark */
+:root:not([data-theme="dark"]) .btn-outline *,
+:root:not([data-theme="dark"]) .btn-outline span,
+:root:not([data-theme="dark"]) .btn-outline i {
+    color: inherit !important;
+}
+
+/* Force theme toggle to use outline style in light theme */
 :root:not([data-theme="dark"]) .theme-toggle {
-    background: var(--bg-secondary) !important;
-    border: 1px solid var(--border-light) !important;
+    background: #ffffff !important;
+    border: 2px solid var(--border-medium) !important;
     color: var(--text-primary) !important;
+    box-shadow: var(--shadow-sm) !important;
+}
+
+:root:not([data-theme="dark"]) .theme-toggle:hover {
+    background: var(--bg-accent) !important;
+    border-color: var(--primary) !important;
+    box-shadow: var(--shadow-md) !important;
+}
+
+:root:not([data-theme="dark"]) .theme-toggle:focus {
+    background: #ffffff !important;
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 3px rgba(26, 66, 117, 0.1) !important;
 }
 
 :root:not([data-theme="dark"]) .theme-toggle-icon {
@@ -1117,7 +1223,7 @@ body,
 
 @media (max-width: 480px) {
     .header {
-        flex-direction: column;
+    flex-direction: column;
         align-items: center;
         padding: var(--space-4) var(--space-4);
         text-align: center;
@@ -1386,7 +1492,6 @@ body,
 
 /* Chat Messages */
 .chat-messages {
-    flex: 1;
     padding: var(--space-3) var(--space-4) 0;
     overflow-y: auto;
     overflow-x: hidden;
@@ -3328,7 +3433,7 @@ body,
     
     /* Mobile logo adjustments */
     .custom-logo {
-        flex-direction: column;
+    flex-direction: column;
         gap: 0;
         margin-right: var(--space-2);
     }
@@ -3359,9 +3464,9 @@ body,
     .footer-content {
         grid-template-columns: 1fr;
         gap: var(--space-4);
-        text-align: center;
-    }
-    
+    text-align: center;
+}
+
     .footer-brand,
     .footer-copyright,
     .footer-links {
@@ -4081,9 +4186,20 @@ a .fa-external-link-alt {
 
 /* Buttons with primary background should have white text */
 :root:not([data-theme="dark"]) .btn-primary,
-:root:not([data-theme="dark"]) .btn-primary:hover {
+:root:not([data-theme="dark"]) .btn-primary:hover,
+:root:not([data-theme="dark"]) .btn-primary:active,
+:root:not([data-theme="dark"]) .btn-primary:focus,
+:root:not([data-theme="dark"]) .btn-primary:visited {
     color: #ffffff !important;
     background: var(--primary) !important;
+    border-color: var(--primary) !important;
+}
+
+/* Ensure button text is always white in light theme */
+:root:not([data-theme="dark"]) .btn-primary *,
+:root:not([data-theme="dark"]) .btn-primary span,
+:root:not([data-theme="dark"]) .btn-primary i {
+    color: #ffffff !important;
 }
 
 /* Alert heading text should be visible */
