@@ -1,6 +1,6 @@
 // This file is no longer used - unified prompt system is now used in conversational_service.py
 // All prompt functionality has been consolidated into the GENERAL_PROMPT in conversational_service.py
-  "validation_rules": {
+  "validation_rules": // This file is no longer used - unified prompt system is now used in conversational_service.py
     "max_patient_data_length": 10000,
     "max_chat_history_length": 50000,
     "require_evidence_based": true

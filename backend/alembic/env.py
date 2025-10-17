@@ -18,6 +18,11 @@ if os.path.exists(dotenv_path):
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+# Add the src directory to Python path for imports
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+
 from healthnavi.models.user import Base
 target_metadata = Base.metadata
 
