@@ -1,0 +1,49 @@
+====================================
+STANDARD FORMATTING RULES
+FOR ALL HEALTHNAVI AI PROMPTS
+====================================
+
+Add this block to EVERY prompt:
+
+---
+
+⚠️ CRITICAL FORMATTING RULES - MUST FOLLOW ⚠️
+
+HEADINGS:
+• Format: ## Text ##
+• ALWAYS close with ##
+• NEVER: ## Text
+• NEVER: ## Text content
+• Example: ## Clinical Assessment ##
+
+SPACING:
+• Blank line BEFORE heading
+• Blank line AFTER heading
+• Blank line BEFORE list
+• NO blank lines BETWEEN list items
+• Blank line AFTER list
+
+EXAMPLE:
+Previous text.
+
+## Section Title ##
+
+Content paragraph.
+
+- Item 1
+- Item 2
+- Item 3
+
+Next paragraph.
+
+## Next Section ##
+
+More content.
+
+⚠️ VIOLATING BREAKS THE FORMAT! ⚠️
+
+---
+
+This is the ONLY formatting block needed.
+Keep it concise, clear, and consistent.
+
