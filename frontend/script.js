@@ -147,19 +147,76 @@ function checkAuthentication() {
     // Check for stored token
     const storedToken = localStorage.getItem('accessToken');
     const storedUser = localStorage.getItem('currentUser');
-    
+
     if (storedToken && storedUser) {
         try {
+            const userData = JSON.parse(storedUser);
+
+            // Check if token is expired
+            if (isTokenExpired(userData)) {
+                console.log('Token expired, clearing stored auth');
+                clearStoredAuth();
+                updateAuthenticationUI(false);
+                return;
+            }
+
             accessToken = storedToken;
-            currentUser = JSON.parse(storedUser);
+            currentUser = userData;
             isAuthenticated = true;
+
+            // Validate token with backend
+            validateTokenWithBackend(storedToken, userData);
             updateAuthenticationUI(true);
         } catch (error) {
             console.error('Error parsing stored user data:', error);
             clearStoredAuth();
+            updateAuthenticationUI(false);
         }
     } else {
         updateAuthenticationUI(false);
+    }
+}
+
+function isTokenExpired(userData) {
+    // Check if user data has expiration info
+    if (userData && userData.exp) {
+        const expirationTime = userData.exp * 1000; // Convert to milliseconds
+        const currentTime = Date.now();
+
+        // If token expires in the next 5 minutes, consider it expired
+        return (expirationTime - currentTime) < (5 * 60 * 1000);
+    }
+
+    // If no expiration info, assume it's valid (backward compatibility)
+    return false;
+}
+
+async function validateTokenWithBackend(token, userData) {
+    try {
+        const response = await fetch(`${API_URL}/auth/me`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            }
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            if (data.success) {
+                // Token is valid, update user info if needed
+                console.log('Token validation successful');
+                return;
+            }
+        }
+
+        // Token is invalid or expired
+        console.log('Token validation failed, clearing auth');
+        clearStoredAuth();
+        updateAuthenticationUI(false);
+    } catch (error) {
+        console.error('Token validation error:', error);
+        // Don't clear auth on network errors, just log
     }
 }
 
