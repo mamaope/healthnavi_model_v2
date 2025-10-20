@@ -185,6 +185,8 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     """Register a new user."""
     with ResponseTimer() as timer:
         try:
+            # Debug logging
+            logger.info(f"Registration attempt - Email: {user.email}, Username: {user.username}, First: {user.first_name}, Last: {user.last_name}, Role: {user.role}, Password length: {len(user.password) if user.password else 0}")
             # Validate that we have either username or first_name+last_name
             if not user.username and not (user.first_name and user.last_name):
                 return create_error_response(
@@ -231,7 +233,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
                 email=user.email,
                 hashed_password=hashed_password,
                 is_active=True,
-                is_email_verified=False,
+                is_email_verified=True,  # Auto-verify users since email service is not configured
                 email_verification_token=verification_token,
                 role=user_role,
                 created_at=datetime.utcnow().isoformat(),
@@ -325,13 +327,13 @@ def login_for_access_token(login_data: LoginRequest, db: Session = Depends(get_d
                     execution_time=timer.get_execution_time()
                 )
             
-            # Check if email is verified
-            if not user.is_email_verified:
-                return create_error_response(
-                    message="Please verify your email address before logging in",
-                    status_code=401,
-                    execution_time=timer.get_execution_time()
-                )
+            # Email verification check removed
+            # if not user.is_email_verified:
+            #     return create_error_response(
+            #         message="Please verify your email address before logging in",
+            #         status_code=401,
+            #         execution_time=timer.get_execution_time()
+            #     )
             
             access_token_expires = timedelta(minutes=config.security.access_token_expire_minutes)
             access_token = create_access_token(

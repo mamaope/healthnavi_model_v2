@@ -39,6 +39,14 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Vector store initialization failed during startup: {e}")
         logger.info("Application will continue - AI will work without RAG context")
     
+    try:
+        from healthnavi.services.genai_client import initialize_genai_client
+        initialize_genai_client()
+        logger.info("GenAI client initialization completed")
+    except Exception as e:
+        logger.warning(f"GenAI client initialization failed during startup: {e}")
+        logger.info("Application will continue - AI functionality may be limited")
+    
     logger.info("Application startup completed successfully")
     
     yield

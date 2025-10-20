@@ -122,9 +122,8 @@ async def diagnose(data: DiagnosisInput, current_user: User = Depends(require_us
                     chat_history=chat_history,
                     patient_data=data.patient_data
                 )
-                
+                logger.info(f"Model respose: {response}")
                 logger.info(f"🎯 Prompt type used: {prompt_type}")
-                
                 # Validate AI response
                 if not response or len(response.strip()) < 10:
                     return create_error_response(

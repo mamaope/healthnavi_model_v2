@@ -461,6 +461,11 @@ async function loginUser(email, password) {
 }
 
 async function registerUser(fullName, email, password) {
+    // Parse full name into first and last name
+    const nameParts = fullName.trim().split(' ');
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.slice(1).join(' ') || '';
+    
     const response = await fetch(`${API_URL}/auth/register`, {
         method: 'POST',
         headers: {
@@ -468,9 +473,10 @@ async function registerUser(fullName, email, password) {
             'Accept': 'application/json'
         },
         body: JSON.stringify({
-            full_name: fullName,
-                email: email,
-                password: password
+            first_name: firstName,
+            last_name: lastName,
+            email: email,
+            password: password
         })
             });
             
@@ -1285,8 +1291,13 @@ function formatAIResponse(response) {
         .replace(/\*\*Sources:\*\*/g, '<h4>📚 Knowledge Base Sources:</h4>')
         .replace(/\*\*ALERT:\*\*/g, '<h4 style="color: #dc3545;">🚨 ALERT:</h4>')
         .replace(/\*\*Clinical Overview:\*\*/g, '<h4>🏥 Clinical Overview:</h4>')
-        .replace(/\*\*Differential Diagnoses:\*\*/g, '<h4>🔍 Differential Diagnoses:</h4>')
+        .replace(/\*\*Summary\*\*/g, '<h4>🏥 Summary</h4>')
+        .replace(/\*\*References:\*\*/g, '<h4>📚 References:</h4>')
+        .replace(/\*\*Correct Answer:\*\*/g, '<h4>💡 Correct Answer:</h4>')
+        .replace(/\*\*Explanation:\*\*/g, '<h4>🧠 Explanation:</h4>')
+        .replace(/\*\*Differential Diagnosis:\*\*/g, '<h4>🔍 Differential Diagnosis:</h4>')
         .replace(/\*\*Immediate Workup:\*\*/g, '<h4>🔬 Immediate Workup:</h4>')
+        .replace(/\*\*Investigations \/ Workup:\*\*/g, '<h4>🔬 Investigations / Workup:</h4>')
         .replace(/\*\*Management:\*\*/g, '<h4>💊 Management:</h4>')
         .replace(/\*\*Red Flags:\*\*/g, '<h4 style="color: #dc3545;">🚩 Red Flags:</h4>');
     

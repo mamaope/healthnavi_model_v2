@@ -335,3 +335,4 @@ class DiagnosisSessionService:
         except Exception as e:
             logger.error(f"Error getting chat history for session {session_id}: {e}")
             return ""
+            

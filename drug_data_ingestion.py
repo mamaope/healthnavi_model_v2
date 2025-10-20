@@ -157,7 +157,7 @@ class DrugDataIngestion:
             record = {
                 "content": row['text_content'],
                 "file_path": drug_file_path,
-                "page_number": row['drug_id'],  # Use drug_id as page_number for easy identification
+                "display_page_number": str(row['drug_id']),  # Use drug_id as page_number for easy identification
                 "vector": embeddings[idx]
             }
             data_to_insert.append(record)
