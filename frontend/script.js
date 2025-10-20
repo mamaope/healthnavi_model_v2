@@ -828,6 +828,7 @@ function fixMarkdownSpacing(markdown) {
         // Match specific heading titles and add newline after them
         const headingTitles = [
             'Clinical Overview',
+            'Summary',
             'Differential Diagnoses', 
             'Immediate Workup & Investigations',
             'Immediate Workup &amp; Investigations',
@@ -966,6 +967,22 @@ function renderMarkdownWithEnhancements(markdown) {
     // Match patterns like: **CLINICAL OVERVIEW** or **DIFFERENTIAL DIAGNOSES**
     const sectionHeadings = [
         'CLINICAL OVERVIEW',
+        'Explanation',
+        'Question',
+        'Drug Interactions',
+        'Drug-Drug Interaction',
+        'Rationale',
+        'Impression',
+        'Conclusion',
+        'Management Considerations',
+        'Important Considerations',
+        'Clinical Considerations',
+        'Further Management',
+        'Summary',
+        'Differential Diagnosis',
+        'Management',
+        'References',
+        'Investigations / Workup',
         'DIFFERENTIAL DIAGNOSES',
         'IMMEDIATE WORKUP & INVESTIGATIONS',
         'IMMEDIATE WORKUP &amp; INVESTIGATIONS',
@@ -1034,6 +1051,7 @@ function renderMarkdownWithEnhancements(markdown) {
             'knowledge base': '📚',
             'alert': '🚨',
             'clinical overview': '🏥',
+            'summary': '🏥',
             'differential diagnos': '🔍',  // Matches "diagnoses" or "diagnosis"
             'immediate workup': '🔬',
             'workup': '🔬',
