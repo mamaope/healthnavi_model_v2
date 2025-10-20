@@ -8,6 +8,22 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
+-- Create the application user if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'healthnavi_user') THEN
+        CREATE USER healthnavi_user WITH PASSWORD 'SecurePass123!';
+    END IF;
+END
+$$;
+
+-- Grant privileges to the application user
+GRANT ALL PRIVILEGES ON DATABASE healthnavi_cdss TO healthnavi_user;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO healthnavi_user;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO healthnavi_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO healthnavi_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO healthnavi_user;
+
 -- Set up security
 ALTER DATABASE healthnavi_cdss SET log_statement = 'all';
 ALTER DATABASE healthnavi_cdss SET log_min_duration_statement = 1000;

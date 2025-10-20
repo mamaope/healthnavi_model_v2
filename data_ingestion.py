@@ -42,6 +42,42 @@ azure_client = openai.AzureOpenAI(
 )
 AZURE_DEPLOYMENT = os.getenv('DEPLOYMENT', 'text-embedding-3-large')
 
+# --- NEW HELPER FUNCTION FOR DISPLAY PAGE NUMBER EXTRACTION ---
+def _get_display_page_number_from_fitz(page: fitz.Page, doc_index: int) -> str:
+    """
+    Attempts to find the visual page number string (e.g., 'i', '1-A') on a PDF page.
+    This logic can be refined for greater accuracy.
+    The document index is used as a reliable fallback.
+    """
+    # 1. Fallback to the document's sequential index
+    display_page_num_str = str(doc_index)
+    
+    # 2. Define the header and footer search areas (e.g., top/bottom 10% of the page)
+    height = page.rect.height
+    
+    # Define footer rectangle (bottom 10% of page)
+    footer_rect = fitz.Rect(0, height * 0.9, page.rect.width, height)
+    # Define header rectangle (top 10% of page)
+    header_rect = fitz.Rect(0, 0, page.rect.width, height * 0.1)
+
+    # 3. Search in the footer and header
+    for rect in [footer_rect, header_rect]:
+        # Get text blocks from the defined area
+        text_blocks = page.get_text('blocks', clip=rect)
+        for _, _, _, _, text, block_type, _ in text_blocks:
+            if block_type == 0: # Only check text blocks
+                # Clean and check the text block content
+                candidate = text.strip()
+                
+                # Check for short text blocks that are likely page numbers
+                if len(candidate.split()) <= 3 and len(candidate) > 0:
+                    # Simple check for a number/roman numeral/complex format
+                    if re.fullmatch(r'[\w\d]+(?:[\-\s]?[\w\d]+)?', candidate.lower()):
+                        return candidate
+                        
+    return display_page_num_str
+# ----------------------------------------------------------------
+
 def initialize_zilliz_collection(refresh: bool = False):
     """
     Connects to Milvus and initializes the collection with a schema for Azure embeddings.
@@ -58,9 +94,10 @@ def initialize_zilliz_collection(refresh: bool = False):
             logger.info(f"Creating collection '{COLLECTION_NAME}'...")
             schema = MilvusClient.create_schema(auto_id=True, enable_dynamic_field=False)
             schema.add_field(field_name="id", datatype=DataType.INT64, is_primary=True)
-            schema.add_field(field_name="content", datatype=DataType.VARCHAR, max_length=4000)
+            schema.add_field(field_name="content", datatype=DataType.VARCHAR, max_length=65535)
             schema.add_field(field_name="file_path", datatype=DataType.VARCHAR, max_length=1024, is_partition_key=True)
-            schema.add_field(field_name="page_number", datatype=DataType.INT64)
+            schema.add_field(field_name="display_page_number", datatype=DataType.VARCHAR, max_length=100)
+            # 
             schema.add_field(field_name="vector", datatype=DataType.FLOAT_VECTOR, dim=3072, is_nullable=False)
 
             index_params = MilvusClient.prepare_index_params()
@@ -90,6 +127,8 @@ def extract_content_with_pymupdf_semantic(pdf_content: bytes, file_key: str) -> 
     try:
         with fitz.open(stream=pdf_content, filetype="pdf") as doc:
             for page_num, page in enumerate(doc, start=1):
+                display_page_num_str = _get_display_page_number_from_fitz(page, page_num)
+                
                 text = page.get_text("text")
                 paragraphs = re.split(r'\n\s*\n', text)
 
@@ -99,13 +138,13 @@ def extract_content_with_pymupdf_semantic(pdf_content: bytes, file_key: str) -> 
                     words = para.split()
                     word_count = len(words)
                     
-                    if 10 < word_count < 400:
-                        chunks.append({'text': para.strip(), 'page': page_num})
+                    if 3 < word_count < 400:
+                        chunks.append({'text': para.strip(), 'display_page_number': display_page_num_str})
                     elif word_count >= 400:
                         chunk_size, overlap = 300, 50
                         for i in range(0, word_count, chunk_size - overlap):
                             chunk_text = " ".join(words[i : i + chunk_size])
-                            chunks.append({'text': chunk_text, 'page': page_num})
+                            chunks.append({'text': chunk_text, 'display_page_number': display_page_num_str})
 
                 tables = page.find_tables()
                 if tables:
@@ -113,8 +152,9 @@ def extract_content_with_pymupdf_semantic(pdf_content: bytes, file_key: str) -> 
                         try:
                             table_data = table.extract()
                             table_text = "\n".join([" | ".join([str(cell) if cell is not None else "" for cell in row]) for row in table_data])
-                            content = f"The following is data from a table on page {page_num}:\n{table_text}"
-                            chunks.append({'text': content, 'page': page_num})
+                            content = f"The following is data from a table on page {display_page_num_str}:\n{table_text}"
+                            # --- FIELD RENAME ---
+                            chunks.append({'text': content, 'display_page_number': display_page_num_str})
                         except Exception as e:
                             logger.warning(f"Could not extract table {i} on page {page_num}. Error: {e}")
 
@@ -127,6 +167,7 @@ def extract_content_with_pymupdf_semantic(pdf_content: bytes, file_key: str) -> 
 def extract_content_with_docx(docx_content: bytes, file_key: str) -> list[dict]:
     """
     Extracts semantic chunks from a DOCX file using python-docx.
+    (Note: DOCX 'page' numbers are sequential sections, not display numbers.)
     """
     logger.info(f"Parsing DOCX: {file_key}...")
     chunks = []
@@ -142,23 +183,28 @@ def extract_content_with_docx(docx_content: bytes, file_key: str) -> list[dict]:
             words = text.split()
             word_count = len(words)
             section_number += 1
+            display_page_num_str = str(section_number) # DOCX uses sequential section index
             
-            if 10 < word_count < 400:
-                chunks.append({'text': text, 'page': section_number})
+            # --- CHUNK IMPROVEMENT: Lowered minimum word count from 10 to 3 ---
+            if 3 < word_count < 400:
+                chunks.append({'text': text, 'display_page_number': display_page_num_str})
+            # ------------------------------------------------------------------
             elif word_count >= 400:
                 chunk_size, overlap = 300, 50
                 for i in range(0, word_count, chunk_size - overlap):
                     chunk_text = " ".join(words[i : i + chunk_size])
-                    chunks.append({'text': chunk_text, 'page': section_number})
+                    chunks.append({'text': chunk_text, 'display_page_number': display_page_num_str})
 
         for table in doc.tables:
             section_number += 1
+            display_page_num_str = str(section_number) # Use next sequential index for tables
             try:
                 table_text = "\n".join([" | ".join([cell.text.strip() if cell.text else "" for cell in row.cells]) for row in table.rows])
-                content = f"The following is data from a table in section {section_number}:\n{table_text}"
-                chunks.append({'text': content, 'page': section_number})
+                content = f"The following is data from a table in section {display_page_num_str}:\n{table_text}"
+                # --- FIELD RENAME ---
+                chunks.append({'text': content, 'display_page_number': display_page_num_str})
             except Exception as e:
-                logger.warning(f"Could not extract table in section {section_number}. Error: {e}")
+                logger.warning(f"Could not extract table in section {display_page_num_str}. Error: {e}")
 
         logger.info(f"Extracted {len(chunks)} chunks from {file_key}.")
         return chunks
@@ -185,14 +231,15 @@ def extract_content_with_txt(txt_content: bytes, file_key: str) -> list[dict]:
             words = para.split()
             word_count = len(words)
             section_number += 1
+            display_page_num_str = str(section_number) # TXT uses sequential section index
             
-            if 10 < word_count < 400:
-                chunks.append({'text': para, 'page': section_number})
+            if 3 < word_count < 400:
+                chunks.append({'text': para, 'display_page_number': display_page_num_str})
             elif word_count >= 400:
                 chunk_size, overlap = 300, 50
                 for i in range(0, word_count, chunk_size - overlap):
                     chunk_text = " ".join(words[i : i + chunk_size])
-                    chunks.append({'text': chunk_text, 'page': section_number})
+                    chunks.append({'text': chunk_text, 'display_page_number': display_page_num_str})
 
         logger.info(f"Extracted {len(chunks)} chunks from {file_key}.")
         return chunks
@@ -212,7 +259,9 @@ def extract_content_with_csv(csv_content: bytes, file_key: str) -> list[dict]:
         for idx, row in df.iterrows():
             row_text = " | ".join([str(val) if pd.notnull(val) else "" for val in row])
             content = f"CSV row {idx + 1}:\n{row_text}"
-            chunks.append({'text': content, 'page': idx + 1})
+            display_page_num_str = str(idx + 1) # CSV uses row index + 1
+            # --- FIELD RENAME ---
+            chunks.append({'text': content, 'display_page_number': display_page_num_str})
 
         logger.info(f"Extracted {len(chunks)} chunks from {file_key}.")
         return chunks
@@ -335,7 +384,8 @@ def main(refresh: bool, specific_file: str = None):
                     {
                         "content": chunk['text'], 
                         "file_path": file_key, 
-                        "page_number": chunk['page'],
+                        # --- FIELD RENAME IN INSERTION DATA ---
+                        "display_page_number": chunk['display_page_number'],
                         "vector": emb
                     }
                     for chunk, emb in zip(chunks, embeddings)
@@ -382,4 +432,3 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     main(refresh=args.refresh, specific_file=args.file)
-    
