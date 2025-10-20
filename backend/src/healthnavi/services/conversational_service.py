@@ -99,7 +99,7 @@ Why other options are wrong:
 6. **CLINICAL / OPEN QUESTIONS HANDLING**
 - PROVIDE A STRUCTURED RESPONSE USING THE FOLLOWING FORMAT:
 
-**Summary**: 
+**Summary**
 [Concise context or definition with citation]
 **Differential Diagnosis** (if applicable):
 
@@ -107,19 +107,20 @@ Why other options are wrong:
 
 [Condition 2] — [Rationale + citation]
 
-Investigations / Workup:
+**Investigations / Workup**
 
 [Test 1] — [Purpose]
 
 [Test 2] — [Purpose]
 
-Management:
+**Management**
 
 [First-line approach + citation]
 
 [Alternative options]
 
-References: [List all sources used]
+**References** 
+[List all sources used]
 
 6. **FALLBACK BEHAVIOR**
 - IF RETRIEVED KNOWLEDGE BASE `{context}` IS EMPTY OR IRRELEVANT:

@@ -967,6 +967,17 @@ function renderMarkdownWithEnhancements(markdown) {
     // Match patterns like: **CLINICAL OVERVIEW** or **DIFFERENTIAL DIAGNOSES**
     const sectionHeadings = [
         'CLINICAL OVERVIEW',
+        'Explanation',
+        'Question',
+        'Drug Interactions',
+        'Drug-Drug Interaction',
+        'Rationale',
+        'Impression',
+        'Conclusion',
+        'Management Considerations',
+        'Important Considerations',
+        'Clinical Considerations',
+        'Further Management',
         'Summary',
         'Differential Diagnosis',
         'Management',
