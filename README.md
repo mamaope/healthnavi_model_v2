@@ -173,6 +173,31 @@ docker-compose logs -f api
 docker-compose down
 ```
 
+## 📂 Repository Structure
+
+```
+healthnavi_model_v2/
+├─ backend/
+│  ├─ src/healthnavi/            # FastAPI app (APIs, services, core, models, schemas)
+│  ├─ scripts/                   # Canonical scripts for ingestion/utilities
+│  │  └─ legacy/                 # Archived older/duplicate scripts for review
+│  ├─ data/                      # Untracked large data files (e.g., bnf_20210409.db)
+│  ├─ requirements.txt           # Synced with pyproject when needed
+│  ├─ pyproject.toml             # Source of truth for deps and tool configs
+│  └─ README.md
+├─ frontend/
+│  ├─ index.html | style.css | script.js | nginx.conf
+│  └─ legacy/                    # Archived unused auth files
+├─ docker-compose.yml
+├─ .env (local) | env.example
+└─ README.md
+```
+
+Notes:
+- **Data**: Large binaries live under `backend/data/` and are gitignored.
+- **Secrets**: Service account JSON files must not be committed; use env vars or mounted secrets.
+- **API root**: Backend serves under `/api/v2` (see `ApplicationConfig.api_root_path`).
+
 ## 🏗️ Architecture
 
 ### **System Architecture**
@@ -295,15 +320,15 @@ pytest -m integration
 ### **Code Quality**
 ```bash
 # Format code
-black app/
-isort app/
+black backend/src/healthnavi
+isort backend/src/healthnavi
 
 # Lint code
-flake8 app/
-mypy app/
+flake8 backend/src/healthnavi
+mypy backend/src/healthnavi
 
 # Security scan
-bandit -r app/
+bandit -r backend/src/healthnavi
 safety check
 ```
 

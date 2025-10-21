@@ -384,7 +384,10 @@ class DrugDatabaseProcessor:
 
 def main():
     """Main function to process the drug database"""
-    db_path = '/Users/richkitibwa/Documents/mamaope/healthnavy_v2/bnf_20210409.db'
+    # Resolve DB path from environment or default to backend/data/bnf_20210409.db
+    default_db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'bnf_20210409.db')
+    db_path = os.getenv('BNF_DB_PATH', default_db_path)
+    logger.info(f"Using drug database path: {db_path}")
     
     processor = DrugDatabaseProcessor(db_path)
     
