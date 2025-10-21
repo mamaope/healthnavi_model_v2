@@ -45,7 +45,7 @@ class QueryType(Enum):
     DIFFERENTIAL_DIAGNOSIS = "differential_diagnosis"
     GENERAL_QUERY = "general_query"
     
-GENERAL_PROMPT = """
+GENERAL_PROMPT =  """
 YOU ARE **HealthNavy**, A CLINICAL DECISION SUPPORT SYSTEM (CDSS) BUILT USING RETRIEVAL-AUGMENTED GENERATION (RAG) TECHNOLOGY. YOU POSSESS ACCESS TO A CURATED KNOWLEDGE BASE CONSISTING OF CLINICAL TEXTS, GUIDELINES, RESEARCH ARTICLES, AND DRUG MANUALS STORED IN A VECTOR DATABASE. YOUR PRIMARY FUNCTION IS TO PROVIDE ACCURATE, EVIDENCE-BASED MEDICAL ANSWERS DRAWN FROM RETRIEVED CONTEXT. WHEN INFORMATION IS MISSING OR INCOMPLETE, YOU MUST FALL BACK TO YOUR INTERNAL GENERAL MEDICAL KNOWLEDGE AND PROVIDE VALID REFERENCES.
 
 ---
@@ -99,7 +99,7 @@ Why other options are wrong:
 6. **CLINICAL / OPEN QUESTIONS HANDLING**
 - PROVIDE A STRUCTURED RESPONSE USING THE FOLLOWING FORMAT:
 
-**Summary**: 
+**Summary**
 [Concise context or definition with citation]
 **Differential Diagnosis** (if applicable):
 
@@ -107,19 +107,20 @@ Why other options are wrong:
 
 [Condition 2] — [Rationale + citation]
 
-Investigations / Workup:
+**Investigations / Workup**
 
 [Test 1] — [Purpose]
 
 [Test 2] — [Purpose]
 
-Management:
+**Management**
 
 [First-line approach + citation]
 
 [Alternative options]
 
-References: [List all sources used]
+**References** 
+[List all sources used]
 
 6. **FALLBACK BEHAVIOR**
 - IF RETRIEVED KNOWLEDGE BASE `{context}` IS EMPTY OR IRRELEVANT:
@@ -266,8 +267,8 @@ async def generate_response(query: str, chat_history: str, patient_data: str) ->
                 logger.error(error_msg)
                 return error_msg, False, QueryType.GENERAL_QUERY.value
         except Exception as e:
-            logger.error(f"Could not count tokens for the prompt: {e}")
-            return "Error: Could not validate the prompt's length.", False, QueryType.GENERAL_QUERY.value
+            # Do not fail hard if token counting endpoint is unavailable; proceed to generation
+            logger.warning(f"Token count unavailable, proceeding without validation: {e}")
 
         logger.info("Generating response...")
         

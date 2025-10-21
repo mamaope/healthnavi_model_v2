@@ -10,20 +10,20 @@ services:
       - .env  
     environment:
       - ENV=development
-      - GOOGLE_APPLICATION_CREDENTIALS=/app/regal-autonomy-454806-d1-edf68610c57a.json
+      # - GOOGLE_APPLICATION_CREDENTIALS=/app/regal-autonomy-454806-d1-edf68610c57a.json  # commented for local dev
       - LOG_LEVEL=info
     volumes:
-      - ./backend:/app
-      - /app/venv
-      - ./logs:/app/logs
-      - ./regal-autonomy-454806-d1-edf68610c57a.json:/app/regal-autonomy-454806-d1-edf68610c57a.json
+      - ./backend:/backend
+      - /backend/venv
+      - ./logs:/backend/logs
+      # - ./regal-autonomy-454806-d1-edf68610c57a.json:/backend/regal-autonomy-454806-d1-edf68610c57a.json  # commented for local dev
     command: sh -c "alembic upgrade head && uvicorn healthnavi.main:app --host 0.0.0.0 --port 8050 --reload"
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8050/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8050/api/v2/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -43,7 +43,7 @@ services:
       - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U healthnavi_user -d healthnavi_cdss"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
       retries: 5
