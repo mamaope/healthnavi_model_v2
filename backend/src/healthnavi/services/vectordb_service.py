@@ -259,12 +259,20 @@ class ZillizService:
                 similarity_score = hit.get('distance', 'N/A')
                 
                 if content:
-                    context_parts.append(content)
-                    total_content_length += len(content)
                     file_path = entity.get('file_path', 'Unknown document')
                     page_number = entity.get('display_page_number', 'N/A')
-                    source_str = f"{os.path.basename(file_path)} (Page: {page_number})"
-                    sources.add(source_str)
+                    document_name = os.path.basename(file_path)                    
+                    formatted_content = (
+                        f"--- START SOURCE CHUNK ---\n"
+                        f"[SOURCE: {document_name} (Page: {page_number})]\n"
+                        f"{content}\n"
+                        f"--- END SOURCE CHUNK ---"
+                    )
+                    
+                    context_parts.append(formatted_content)
+                    total_content_length += len(content)
+                    source_str = f"{document_name} (Page: {page_number})"
+                    sources.add(document_name)
 
             processing_time = time.time() - processing_start
 
