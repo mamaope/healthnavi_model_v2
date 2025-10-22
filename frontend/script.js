@@ -1745,10 +1745,43 @@ function formatChatHistory() {
 // Sample Question Functions
 function useSamplePrompt(type) {
     const sampleQuestions = {
+        // Backward-compatible keys
         'chest-pain': 'Adult patient presents with chest pain, shortness of breath, and diaphoresis. What are the differential diagnoses?',
         'fever': '5-year-old child with persistent high fever (39.5°C) for 3 days, no obvious cause. What should I consider?',
         'pediatric': 'Infant with respiratory distress, wheezing, and feeding difficulties. What are the possible causes?',
-        'abdominal': 'Adult with acute severe abdominal pain, nausea, and vomiting. What diagnostic approach should I take?'
+        'abdominal': 'Adult with acute severe abdominal pain, nausea, and vomiting. What diagnostic approach should I take?',
+
+        // Differential Diagnosis
+        'ddx_chest_pain': 'Adult patient presents with chest pain, shortness of breath, and diaphoresis. What are the differential diagnoses?',
+        'ddx_abdominal_pain': 'Adult with acute severe abdominal pain and vomiting. Outline initial differential diagnoses and workup.',
+
+        // Pediatrics
+        'peds_fever': '5-year-old child with persistent high fever (39.5°C) for 3 days, no obvious cause. What should I consider?',
+        'peds_wheezing': 'Infant with respiratory distress, wheezing, and feeding difficulties. What are the possible causes and red flags?',
+
+        // Drug Information
+        'drug_paracetamol': 'Provide drug information for Paracetamol: indications, adult dosing, contraindications, and key interactions.',
+        'drug_amoxicillin': 'Provide drug information for Amoxicillin: indications, pediatric dosing, common side effects, and interactions.',
+
+        // Clinical Guidance
+        'guideline_stemi': 'Suspected STEMI in the ER — summarize immediate management steps and critical time targets.',
+        'guideline_preeclampsia': 'Third-trimester patient with severe hypertension — outline management for preeclampsia with severe features.',
+
+        // New: Ask about drug dosing
+        'dosing_ceftriaxone_pneumonia_adult60': 'Calculate the dose for ceftriaxone for a 60kg adult with severe pneumonia',
+        'dosing_insulin_dka': 'How is insulin dosed during diabetic ketoacidosis(DKA) management?',
+
+        // New: Ask about Drug interactions
+        'interact_ritonavir_simvastatin': 'An HIV patient on ritonavir is started on simvastatin. What adverse effect might occur and why?',
+        'interact_warfarin_greens': 'What happens when green leafy vegetables are taken in large amounts while on warfarin?',
+
+        // New: About Guidelines
+        'guideline_ada_t2dm_insulin_init': 'What are the ADA(American Diabates Association) recommendations for initiating insulin therapy in type 2 diabetes',
+        'guideline_who_malaria_pregnancy': 'According to Who Malaria guidelines, how should malaria in pregnancy be treated?',
+
+        // New: Treatment Options
+        'tx_severe_malnutrition_u5': 'What are the treatmmet options for severe malnutrition in children under 5',
+        'tx_stage1_hypertension_firstline': 'What is the first line antihypertensive medications for stage 1 hypertension?'
     };
 
     // Try dashboard input first, then landing input
