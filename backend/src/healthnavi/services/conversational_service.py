@@ -96,12 +96,12 @@ To deliver authoritative, evidence-based, and professionally formatted clinical 
     **Why other options are wrong:**
     - (Y) [Brief reason. (MAX 1 SENTENCE)]
     - (Z) [Brief reason. (MAX 1 SENTENCE)]
-    **References**:
+    **References**
     - [List all sources used.]
 
 2.  **For Clinical / Open Questions:**
     Use this structured format:
-    **Summary**:
+    **Summary**
     [Concise overview or definition with citation. (MAX 2 SENTENCES)]
     **Differential Diagnosis** (if applicable):
     - [Condition 1] — [Rationale + citation. (MAX 1 SENTENCE RATIONALE)]
@@ -109,10 +109,10 @@ To deliver authoritative, evidence-based, and professionally formatted clinical 
     **Investigations / Workup**:
     - [Test 1] — [Purpose. (MAX 1 SENTENCE PURPOSE)]
     - [Test 2] — [Purpose. (MAX 1 SENTENCE PURPOSE)]
-    **Management**:
+    **Management**
     - [First-line approach + citation. (MAX 2 SENTENCES TOTAL)]
     - [Alternative options. (MAX 1 SENTENCE)]
-    **References**:
+    **References**
     - [List all sources used.]
 
 ---
