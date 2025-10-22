@@ -7,8 +7,8 @@ let isAuthenticated = false;
 let currentSession = null;
 let currentTheme = 'light';
 
-// Initialize the application
-document.addEventListener('DOMContentLoaded', function() {
+// Initialize the application (robust to late script injection)
+function bootApp() {
     // Check if markdown libraries are loaded
     console.log('🚀 [App] Initializing HealthNavi AI');
     console.log('📚 [Libraries] marked.js loaded:', typeof marked !== 'undefined');
@@ -19,12 +19,20 @@ document.addEventListener('DOMContentLoaded', function() {
     if (typeof DOMPurify !== 'undefined') {
         console.log('🧼 [Libraries] DOMPurify version:', DOMPurify.version || 'unknown');
     }
-    
+
     initializeTheme();
     initializeApp();
     setupEventListeners();
     checkAuthentication();
-});
+    updateSendButton();
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootApp);
+} else {
+    // DOM is already ready; run immediately
+    bootApp();
+}
 
 function initializeApp() {
     // Set up message input auto-resize for landing page
@@ -33,6 +41,8 @@ function initializeApp() {
     
     // Landing page input
     if (landingMessageInput) {
+        // Ensure textarea does not block clicks
+        landingMessageInput.style.pointerEvents = 'auto';
         landingMessageInput.addEventListener('input', function() {
             autoResizeTextarea.call(this);
             updateCharCounter();
@@ -45,6 +55,12 @@ function initializeApp() {
                 sendMessage();
             }
         });
+        landingMessageInput.addEventListener('keyup', () => {
+            updateSendButton();
+        });
+        landingMessageInput.addEventListener('change', () => {
+            updateSendButton();
+        });
         landingMessageInput.addEventListener('focus', () => {
             const charCounter = document.getElementById('charCounter');
             if (charCounter) charCounter.style.display = 'block';
@@ -53,7 +69,27 @@ function initializeApp() {
     
     // Initially disable send button
     if (landingSendButton) {
+        // Ensure button is clickable even if overlapping elements exist
+        landingSendButton.style.pointerEvents = 'auto';
+        landingSendButton.style.position = 'relative';
+        landingSendButton.style.zIndex = '2';
         landingSendButton.disabled = true;
+        landingSendButton.setAttribute('disabled', 'true');
+        landingSendButton.setAttribute('aria-disabled', 'true');
+
+        // Explicit click listener to guarantee click handling
+        landingSendButton.addEventListener('click', (e) => {
+            console.log('🖱️ [UI] Landing send button clicked');
+            e.preventDefault();
+            // Defensive: if enabled by content, proceed
+            const input = document.getElementById('landingMessageInput');
+            if (input && input.value && input.value.trim().length > 0) {
+                sendMessage();
+            } else {
+                // Sync state if mismatch
+                updateSendButton();
+            }
+        });
     }
     
     // Set up chat expansion observer
@@ -90,7 +126,21 @@ function updateSendButton() {
     const hasText = value.trim().length > 0;
     const notTooLong = value.length <= 2000;
 
-    sendButton.disabled = !hasText || !notTooLong;
+    const enabled = hasText && notTooLong;
+    setSendButtonEnabled(enabled);
+}
+
+function setSendButtonEnabled(enabled) {
+    const sendButton = document.getElementById('landingSendButton');
+    if (!sendButton) return;
+    sendButton.disabled = !enabled;
+    if (enabled) {
+        sendButton.removeAttribute('disabled');
+        sendButton.setAttribute('aria-disabled', 'false');
+    } else {
+        sendButton.setAttribute('disabled', 'true');
+        sendButton.setAttribute('aria-disabled', 'true');
+    }
 }
 
 function setupEventListeners() {
@@ -461,6 +511,11 @@ async function loginUser(email, password) {
 }
 
 async function registerUser(fullName, email, password) {
+    // Parse full name into first and last name
+    const nameParts = fullName.trim().split(' ');
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.slice(1).join(' ') || '';
+    
     const response = await fetch(`${API_URL}/auth/register`, {
         method: 'POST',
         headers: {
@@ -468,9 +523,10 @@ async function registerUser(fullName, email, password) {
             'Accept': 'application/json'
         },
         body: JSON.stringify({
-            full_name: fullName,
-                email: email,
-                password: password
+            first_name: firstName,
+            last_name: lastName,
+            email: email,
+            password: password
         })
             });
             
@@ -644,7 +700,7 @@ async function sendMessage() {
         
     // Disable input and show loading
         messageInput.disabled = true;
-        sendButton.disabled = true;
+        setSendButtonEnabled(false);
         sendButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
     
     // Show loading indicator
@@ -722,8 +778,8 @@ async function sendMessage() {
         
             // Re-enable input
             messageInput.disabled = false;
-            sendButton.disabled = false;
             sendButton.innerHTML = '<i class="fas fa-paper-plane"></i>';
+            updateSendButton();
             messageInput.focus();
         }
     }
@@ -960,6 +1016,22 @@ function renderMarkdownWithEnhancements(markdown) {
     // Match patterns like: **CLINICAL OVERVIEW** or **DIFFERENTIAL DIAGNOSES**
     const sectionHeadings = [
         'CLINICAL OVERVIEW',
+        'Explanation',
+        'Question',
+        'Drug Interactions',
+        'Drug-Drug Interaction',
+        'Rationale',
+        'Impression',
+        'Conclusion',
+        'Management Considerations',
+        'Important Considerations',
+        'Clinical Considerations',
+        'Further Management',
+        'Summary',
+        'Differential Diagnosis',
+        'Management',
+        'References',
+        'Investigations / Workup',
         'DIFFERENTIAL DIAGNOSES',
         'IMMEDIATE WORKUP & INVESTIGATIONS',
         'IMMEDIATE WORKUP &amp; INVESTIGATIONS',
@@ -1285,8 +1357,13 @@ function formatAIResponse(response) {
         .replace(/\*\*Sources:\*\*/g, '<h4>📚 Knowledge Base Sources:</h4>')
         .replace(/\*\*ALERT:\*\*/g, '<h4 style="color: #dc3545;">🚨 ALERT:</h4>')
         .replace(/\*\*Clinical Overview:\*\*/g, '<h4>🏥 Clinical Overview:</h4>')
-        .replace(/\*\*Differential Diagnoses:\*\*/g, '<h4>🔍 Differential Diagnoses:</h4>')
+        .replace(/\*\*Summary\*\*/g, '<h4>🏥 Summary</h4>')
+        .replace(/\*\*References:\*\*/g, '<h4>📚 References:</h4>')
+        .replace(/\*\*Correct Answer:\*\*/g, '<h4>💡 Correct Answer:</h4>')
+        .replace(/\*\*Explanation:\*\*/g, '<h4>🧠 Explanation:</h4>')
+        .replace(/\*\*Differential Diagnosis:\*\*/g, '<h4>🔍 Differential Diagnosis:</h4>')
         .replace(/\*\*Immediate Workup:\*\*/g, '<h4>🔬 Immediate Workup:</h4>')
+        .replace(/\*\*Investigations \/ Workup:\*\*/g, '<h4>🔬 Investigations / Workup:</h4>')
         .replace(/\*\*Management:\*\*/g, '<h4>💊 Management:</h4>')
         .replace(/\*\*Red Flags:\*\*/g, '<h4 style="color: #dc3545;">🚩 Red Flags:</h4>');
     
@@ -1673,16 +1750,19 @@ function useSamplePrompt(type) {
         'pediatric': 'Infant with respiratory distress, wheezing, and feeding difficulties. What are the possible causes?',
         'abdominal': 'Adult with acute severe abdominal pain, nausea, and vomiting. What diagnostic approach should I take?'
     };
-    
+
     // Try dashboard input first, then landing input
     const dashboardInput = document.getElementById('dashboardMessageInput');
     const landingInput = document.getElementById('landingMessageInput');
     const messageInput = dashboardInput || landingInput;
-    
+
     if (messageInput && sampleQuestions[type]) {
         messageInput.value = sampleQuestions[type];
         messageInput.focus();
         autoResizeTextarea.call(messageInput);
+
+        // Force update of send button state since programmatic value setting doesn't trigger input events
+        updateSendButton();
     }
 }
 
@@ -1921,7 +2001,7 @@ function autoResizeTextarea() {
         dashboardButton.disabled = !hasContent;
     }
     if (landingButton) {
-        landingButton.disabled = !hasContent;
+        setSendButtonEnabled(hasContent);
     }
 }
 
