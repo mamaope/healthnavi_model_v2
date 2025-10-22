@@ -99,7 +99,6 @@ terraform.tfstate.*
 *.model
 *.weights
 embeddings/
-models/
 checkpoints/
 wandb/
 mlruns/
