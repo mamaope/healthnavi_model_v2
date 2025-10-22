@@ -174,20 +174,58 @@
                     <div class="sample-questions">
                         <h3>Try these examples:</h3>
                         <div class="sample-grid">
-                            <button class="sample-question" onclick="useSamplePrompt('chest-pain')">
-                                <i class="fas fa-heart"></i>
-                                <span>Adult patient presents with chest pain, shortness of breath, and diaphoresis. What are the differential diagnoses?</span>
-                            </button>
-                            <button class="sample-question" onclick="useSamplePrompt('fever')">
-                                <i class="fas fa-thermometer-half"></i>
-                                <span>5-year-old child with persistent high fever (39.5°C) for 3 days, no obvious cause. What should I consider?</span>
-                        </button>
-                            <button class="sample-question" onclick="useSamplePrompt('pediatric')">
-                                <i class="fas fa-baby"></i>
-                                <span>Infant with respiratory distress, wheezing, and feeding difficulties. What are the possible causes?</span>
-                        </button>
-                        
+                            <!-- Category: Ask about drug dosing -->
+                            <div class="sample-category">
+                                <h5><i class="fas fa-prescription-bottle-alt"></i> Ask about drug dosing</h5>
+                                <button class="sample-question" onclick="useSamplePrompt('dosing_ceftriaxone_pneumonia_adult60')">
+                                    <i class="fas fa-syringe"></i>
+                                    <span>Calculate the dose for ceftriaxone for a 60kg adult with severe pneumonia</span>
+                                </button>
+                                <button class="sample-question" onclick="useSamplePrompt('dosing_insulin_dka')">
+                                    <i class="fas fa-vial"></i>
+                                    <span>How is insulin dosed during diabetic ketoacidosis(DKA) management?</span>
+                                </button>
                             </div>
+
+                            <!-- Category: Ask about Drug interactions -->
+                            <div class="sample-category">
+                                <h5><i class="fas fa-exclamation-triangle"></i> Ask about Drug interactions</h5>
+                                <button class="sample-question" onclick="useSamplePrompt('interact_ritonavir_simvastatin')">
+                                    <i class="fas fa-pills"></i>
+                                    <span>An HIV patient on ritonavir is started on simvastatin. What adverse effect might occur and why?</span>
+                                </button>
+                                <button class="sample-question" onclick="useSamplePrompt('interact_warfarin_greens')">
+                                    <i class="fas fa-leaf"></i>
+                                    <span>What happens when green leafy vegetables are taken in large amounts while on warfarin?</span>
+                                </button>
+                            </div>
+
+                            <!-- Category: About Guidelines -->
+                            <div class="sample-category">
+                                <h5><i class="fas fa-book-medical"></i> About Guidelines</h5>
+                                <button class="sample-question" onclick="useSamplePrompt('guideline_ada_t2dm_insulin_init')">
+                                    <i class="fas fa-notes-medical"></i>
+                                    <span>What are the ADA(American Diabates Association) recommendations for initiating insulin therapy in type 2 diabetes</span>
+                                </button>
+                                <button class="sample-question" onclick="useSamplePrompt('guideline_who_malaria_pregnancy')">
+                                    <i class="fas fa-baby"></i>
+                                    <span>According to Who Malaria guidelines, how should malaria in pregnancy be treated?</span>
+                                </button>
+                            </div>
+
+                            <!-- Category: Treatment Options -->
+                            <div class="sample-category">
+                                <h5><i class="fas fa-stethoscope"></i> Treatment Options</h5>
+                                <button class="sample-question" onclick="useSamplePrompt('tx_severe_malnutrition_u5')">
+                                    <i class="fas fa-child"></i>
+                                    <span>What are the treatmmet options for severe malnutrition in children under 5</span>
+                                </button>
+                                <button class="sample-question" onclick="useSamplePrompt('tx_stage1_hypertension_firstline')">
+                                    <i class="fas fa-heartbeat"></i>
+                                    <span>What is the first line antihypertensive medications for stage 1 hypertension?</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </main>
