@@ -34,6 +34,48 @@ if (document.readyState === 'loading') {
     bootApp();
 }
 
+function updateAuthenticationUI(authenticated) {
+    const landingPage = document.getElementById('landingPage');
+    const chatContainer = document.querySelector('.chat-container');
+    const appContainer = document.getElementById('appContainer');
+    const sidebar = document.getElementById('sidebar');
+    const headerActions = document.querySelector('.header-actions');
+    const headerUserProfile = document.getElementById('headerUserProfile');
+    const sampleSection = document.querySelector('.sample-questions');
+    const disclaimerSection = document.querySelector('.disclaimer-section');
+    const chatMessages = document.getElementById('landingChatMessages');
+
+    if (authenticated) {
+        if (sidebar) sidebar.style.display = 'flex';
+        if (appContainer) appContainer.classList.add('authenticated');
+        if (headerActions) headerActions.style.display = 'none';
+        if (headerUserProfile) headerUserProfile.style.display = 'flex';
+        if (landingPage) landingPage.style.display = 'flex';
+        if (sampleSection) sampleSection.style.display = 'none';
+        if (disclaimerSection) disclaimerSection.style.display = 'none';
+        if (chatContainer) chatContainer.classList.remove('centered');
+        if (chatMessages) {
+            const welcome = chatMessages.querySelector('.welcome-message');
+            if (welcome) welcome.remove();
+            chatMessages.style.justifyContent = 'flex-start';
+            chatMessages.style.paddingTop = 'var(--spacing-md)';
+        }
+        updateUserInfo();
+        updateHeaderUserInfo();
+        loadUserSessions();
+    } else {
+        if (sidebar) sidebar.style.display = 'none';
+        if (headerActions) headerActions.style.display = 'flex';
+        if (headerUserProfile) headerUserProfile.style.display = 'none';
+        if (appContainer) appContainer.classList.remove('authenticated');
+        if (landingPage) landingPage.style.display = 'flex';
+        if (sampleSection) sampleSection.style.display = '';
+        if (disclaimerSection) disclaimerSection.style.display = '';
+        if (chatContainer) chatContainer.classList.add('centered');
+        clearChat();
+    }
+}
+
 function initializeApp() {
     // Set up message input auto-resize for landing page
     const landingMessageInput = document.getElementById('landingMessageInput');
@@ -197,32 +239,33 @@ function checkAuthentication() {
     // Check for stored token
     const storedToken = localStorage.getItem('accessToken');
     const storedUser = localStorage.getItem('currentUser');
+    console.log('🔐 [AuthBoot] accessToken present:', !!storedToken, 'currentUser present:', !!storedUser);
 
-    if (storedToken && storedUser) {
-        try {
-            const userData = JSON.parse(storedUser);
-
-            // Check if token is expired
-            if (isTokenExpired(userData)) {
-                console.log('Token expired, clearing stored auth');
-                clearStoredAuth();
-                updateAuthenticationUI(false);
-                return;
+    if (storedToken) {
+        accessToken = storedToken;
+        // If we have a stored user, try to parse and validate expiry
+        if (storedUser) {
+            try {
+                const userData = JSON.parse(storedUser);
+                if (isTokenExpired(userData)) {
+                    console.log('🔐 [AuthBoot] Token expired, clearing stored auth');
+                    clearStoredAuth();
+                    updateAuthenticationUI(false);
+                    return;
+                }
+                currentUser = userData;
+            } catch (err) {
+                console.warn('🔐 [AuthBoot] Failed to parse currentUser; proceeding with token only');
             }
-
-            accessToken = storedToken;
-            currentUser = userData;
-            isAuthenticated = true;
-
-            // Validate token with backend
-            validateTokenWithBackend(storedToken, userData);
-            updateAuthenticationUI(true);
-        } catch (error) {
-            console.error('Error parsing stored user data:', error);
-            clearStoredAuth();
-            updateAuthenticationUI(false);
         }
+
+        isAuthenticated = true;
+        // Immediately show authenticated UI on the basis of token presence
+        updateAuthenticationUI(true);
+        // Validate with backend and hydrate user if needed
+        validateTokenWithBackend(storedToken, currentUser || null);
     } else {
+        console.log('🔐 [AuthBoot] No token found; showing unauthenticated UI');
         updateAuthenticationUI(false);
     }
 }
@@ -252,93 +295,33 @@ async function validateTokenWithBackend(token, userData) {
         });
 
         if (response.ok) {
-            const data = await response.json();
-            if (data.success) {
-                // Token is valid, update user info if needed
-                console.log('Token validation successful');
+            // Backend reachable; try to parse and honor explicit invalidation only
+            try {
+                const data = await response.json();
+                if (data && data.success) {
+                    console.log('Token validation successful');
+                    return;
+                } else {
+                    console.warn('Token validation returned non-success payload; keeping UI authenticated unless unauthorized');
+                    return;
+                }
+            } catch (e) {
+                console.warn('Failed to parse /auth/me response; keeping UI authenticated');
                 return;
             }
+        } else {
+            // Only clear auth on explicit unauthorized
+            if (response.status === 401 || response.status === 403) {
+                console.log('Token unauthorized, clearing auth');
+                clearStoredAuth();
+                updateAuthenticationUI(false);
+            } else {
+                console.warn(`Non-OK status from /auth/me (${response.status}); keeping UI authenticated`);
+            }
         }
-
-        // Token is invalid or expired
-        console.log('Token validation failed, clearing auth');
-        clearStoredAuth();
-        updateAuthenticationUI(false);
     } catch (error) {
         console.error('Token validation error:', error);
         // Don't clear auth on network errors, just log
-    }
-}
-
-function updateAuthenticationUI(authenticated) {
-    const landingPage = document.getElementById('landingPage');
-    const chatContainer = document.querySelector('.chat-container');
-    const appContainer = document.getElementById('appContainer');
-    const sidebar = document.getElementById('sidebar');
-    const headerActions = document.querySelector('.header-actions');
-    const headerUserProfile = document.getElementById('headerUserProfile');
-    
-    if (authenticated) {
-        // Show sidebar for authenticated users
-        if (sidebar) {
-            sidebar.style.display = 'flex';
-        }
-        
-        // Add authenticated class to app container
-        if (appContainer) {
-            appContainer.classList.add('authenticated');
-        }
-        
-        // Hide header actions (Sign In/Get Started buttons)
-        if (headerActions) {
-            headerActions.style.display = 'none';
-        }
-        
-        // Show header user profile
-        if (headerUserProfile) {
-            headerUserProfile.style.display = 'flex';
-        }
-        
-        // For authenticated users, show the same UI but enable full functionality
-        if (landingPage) landingPage.style.display = 'flex';
-        
-        // Update user info
-        updateUserInfo();
-        updateHeaderUserInfo();
-        
-        // Load user sessions
-        loadUserSessions();
-    } else {
-        // Hide sidebar for unauthenticated users
-        if (sidebar) {
-            sidebar.style.display = 'none';
-        }
-        
-        // Show header actions
-        if (headerActions) {
-            headerActions.style.display = 'flex';
-        }
-        
-        // Hide header user profile
-        if (headerUserProfile) {
-            headerUserProfile.style.display = 'none';
-        }
-        
-        // Remove authenticated class
-        if (appContainer) {
-            appContainer.classList.remove('authenticated');
-        }
-        
-        // Show unauthenticated UI
-        if (landingPage) landingPage.style.display = 'flex';
-        
-        // Center chat for unauthenticated users
-        if (chatContainer) {
-            chatContainer.classList.add('centered');
-        }
-        
-        // Clear any existing chat
-        clearChat();
     }
 }
 
