@@ -1992,7 +1992,7 @@ function clearChat() {
                 <h1 class="welcome-logo">
                     <span class="logo-health">Health</span><span class="logo-navy">Navy</span>
                 </h1>
-                <h3>Information for clinicians.</h3>
+                <h3>Guiding your care.</h3>
                 <p>How can I assist you  today?</p>
             </div>
         </div>
