@@ -1986,14 +1986,16 @@ function clearChat() {
     // Clear chat container
     const landingChat = document.getElementById('landingChatMessages');
     
-    const welcomeHTML = `
+    const welcomeHTML = `<br>
         <div class="welcome-message">
             <div class="welcome-content">
                 <h1 class="welcome-logo">
                     <span class="logo-health">Health</span><span class="logo-navy">Navy</span>
                 </h1>
-                <h3>Guiding your care.</h3>
-                <p>How can I assist you  today?</p>
+                <p>Guiding your care.</p>
+                <br>
+                <span>HealthNavy is a medical information platform intended for use by qualified healthcare professionals as a clinical reference tool <br> to access evidence-based medical information.</span>
+                <br><br>
             </div>
         </div>
     `;

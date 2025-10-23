@@ -129,7 +129,7 @@
                                     <span class="logo-health">Health</span><span class="logo-navy">Navy</span>
                                 </h2>
                                 <h3>Welcome to HealthNavy</h3>
-                                <p>I can serve as an information source to support you with differential diagnoses, drug details, clinical guidelines, and treatment options.</p>
+                                <p></p>
                             </div>
                         </div>
                         </div>
@@ -143,7 +143,7 @@
                             </div>
                             <textarea 
                                 id="landingMessageInput" 
-                                placeholder="Describe symptoms or ask a medical question..."
+                                placeholder="Welcome to HealthNavy! How can I assist you today?"
                                 rows="1"
                                 aria-label="Message input"
                             ></textarea>
@@ -176,29 +176,17 @@
                         <div class="sample-grid">
                             <!-- Category: Ask about drug dosing -->
                             <div class="sample-category">
-                                <h5><i class="fas fa-prescription-bottle-alt"></i> Ask about drug dosing</h5>
+                                <h5><i class="fas fa-prescription-bottle-alt"></i> Ask about drug dosing and interactions</h5>
                                 <button class="sample-question" onclick="useSamplePrompt('dosing_ceftriaxone_pneumonia_adult60')">
                                     <i class="fas fa-syringe"></i>
                                     <span>Calculate the dose for ceftriaxone for a 60kg adult with severe pneumonia</span>
-                                </button>
-                                <button class="sample-question" onclick="useSamplePrompt('dosing_insulin_dka')">
-                                    <i class="fas fa-vial"></i>
-                                    <span>How is insulin dosed during diabetic ketoacidosis(DKA) management?</span>
-                                </button>
-                            </div>
-
-                            <!-- Category: Ask about Drug interactions -->
-                            <div class="sample-category">
-                                <h5><i class="fas fa-exclamation-triangle"></i> Ask about Drug interactions</h5>
-                                <button class="sample-question" onclick="useSamplePrompt('interact_ritonavir_simvastatin')">
-                                    <i class="fas fa-pills"></i>
-                                    <span>An HIV patient on ritonavir is started on simvastatin. What adverse effect might occur and why?</span>
                                 </button>
                                 <button class="sample-question" onclick="useSamplePrompt('interact_warfarin_greens')">
                                     <i class="fas fa-leaf"></i>
                                     <span>What happens when green leafy vegetables are taken in large amounts while on warfarin?</span>
                                 </button>
                             </div>
+
 
                             <!-- Category: About Guidelines -->
                             <div class="sample-category">
