@@ -1,5 +1,5 @@
 // Modern JavaScript for HealthNavi AI - Inspired by Glass Health and OpenEvidence
-const API_URL = 'http://localhost:8050/api/v2';
+const API_URL = '/api/v2';
 let chatHistory = [];
 let accessToken = null;
 let currentUser = null;
