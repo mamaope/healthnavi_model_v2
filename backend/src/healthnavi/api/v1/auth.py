@@ -477,7 +477,7 @@ def resend_verification_email(resend_data: ResendVerificationRequest, db: Sessio
             if email_service:
                 email_sent = email_service.send_verification_email(
                     email=user.email,
-                    username=user.username,
+                    username=user.full_name,
                     verification_token=verification_token
                 )
             
