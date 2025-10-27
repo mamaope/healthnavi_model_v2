@@ -249,7 +249,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
             if email_service:
                 email_sent = email_service.send_verification_email(
                     email=user.email,
-                    username=user.username,
+                    username=user.full_name,
                     verification_token=verification_token
                 )
             
