@@ -433,6 +433,11 @@ async function handleAuthSubmit(event) {
             showAuthError('Password must be at least 8 characters long');
             return;
         }
+        const strongPwd = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+        if (!strongPwd.test(password)) {
+            showAuthError('Password must include uppercase, lowercase, number, and special character');
+            return;
+        }
     }
     
     // Show loading state
@@ -515,15 +520,36 @@ async function registerUser(fullName, email, password) {
             
     const data = await response.json();
                 
-    if (data.success) {
+    if (response.ok && data.success) {
         // Registration successful, switch to login
         showAuthError('Registration successful! Please sign in with your credentials.', 'success');
                 setTimeout(() => {
             showAuthModal('login');
                 }, 2000);
-            } else {
-        const errorMessage = data.metadata?.errors?.join(', ') || data.data?.message || 'Registration failed';
-        throw new Error(errorMessage);
+        } else {
+        let message = '';
+        if (data && typeof data === 'object') {
+            if (data.metadata && Array.isArray(data.metadata.errors) && data.metadata.errors.length) {
+                message = data.metadata.errors.join(', ');
+            }
+            if (!message && data.data && typeof data.data.message === 'string') {
+                message = data.data.message;
+            }
+            if (!message && typeof data.message === 'string') {
+                message = data.message;
+            }
+            if (!message && data.detail) {
+                if (Array.isArray(data.detail)) {
+                    message = data.detail.map(d => d.msg || d.message || (typeof d === 'string' ? d : '')).filter(Boolean).join(', ');
+                } else if (typeof data.detail === 'string') {
+                    message = data.detail;
+                }
+            }
+        }
+        if (!message) {
+            message = 'Registration failed: please check your input and try again';
+        }
+        throw new Error(message);
     }
 }
 
