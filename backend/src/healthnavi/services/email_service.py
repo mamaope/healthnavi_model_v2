@@ -25,7 +25,7 @@ class EmailService:
         self.smtp_port = int(os.getenv("SMTP_PORT", "587"))
         self.sender_email = os.getenv("SMTP_USERNAME", "")
         self.sender_password = os.getenv("SMTP_PASSWORD", "")
-        self.app_name = os.getenv("APP_NAME", "HealthNavi AI CDSS")
+        self.app_name = os.getenv("APP_NAME", "HealthNavy")
         self.base_url = os.getenv("BASE_URL", "http://localhost:8050")
         
         # Check if email is configured
