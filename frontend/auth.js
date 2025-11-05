@@ -176,14 +176,14 @@ class HealthNaviAuth {
         let feedback = '';
         
         // Length check
-        if (password.length >= 12) score += 1;
-        else feedback = 'Use at least 12 characters';
+        if (password.length >= 4) score += 2;
+        else feedback = 'Use at least 4 characters';
         
         // Character variety checks
-        if (/[a-z]/.test(password)) score += 1;
-        if (/[A-Z]/.test(password)) score += 1;
-        if (/[0-9]/.test(password)) score += 1;
-        if (/[^A-Za-z0-9]/.test(password)) score += 1;
+        if (/[a-z]/.test(password)) score += 2;
+        //if (/[A-Z]/.test(password)) score += 1;
+        if (/[0-9]/.test(password)) score += 2;
+       // if (/[^A-Za-z0-9]/.test(password)) score += 1;
         
         // Update strength bar
         const strengthClasses = ['weak', 'fair', 'good', 'strong'];
@@ -302,8 +302,8 @@ class HealthNaviAuth {
             return;
         }
         
-        if (password.length < 12) {
-            this.showFieldError('registerPassword', 'Password must be at least 12 characters long');
+        if (password.length < 4) {
+            this.showFieldError('registerPassword', 'Password must be at least 4 characters long');
             return;
         }
         

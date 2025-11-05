@@ -429,15 +429,15 @@ async function handleAuthSubmit(event) {
             showAuthError('Passwords do not match');
             return;
         }
-        if (password.length < 8) {
-            showAuthError('Password must be at least 8 characters long');
+        if (password.length < 4) {
+            showAuthError('Password must be at least 4 characters long');
             return;
         }
-        const strongPwd = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
-        if (!strongPwd.test(password)) {
-            showAuthError('Password must include uppercase, lowercase, number, and special character');
-            return;
-        }
+      //  const strongPwd = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+      //  if (!strongPwd.test(password)) {
+      //      showAuthError('Password must include uppercase, lowercase, number, and special character');
+      //      return;
+      //  }
     }
     
     // Show loading state

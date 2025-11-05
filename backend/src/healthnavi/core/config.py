@@ -68,7 +68,7 @@ class SecurityConfig(BaseSettings):
     encryption_key: str = Field(..., env="ENCRYPTION_KEY")
     
     # Password settings
-    min_password_length: int = Field(default=12, env="MIN_PASSWORD_LENGTH")
+    min_password_length: int = Field(default=4, env="MIN_PASSWORD_LENGTH")
     max_password_length: int = Field(default=128, env="MAX_PASSWORD_LENGTH")
     
     # Rate limiting

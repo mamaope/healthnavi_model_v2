@@ -285,7 +285,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
                 error_message = "Email or username already exists"
             elif "email" in str(e).lower() and "validation" in str(e).lower():
                 error_message = "Invalid email format"
-            elif "password" in str(e).lower():
+            elif "password" in str(e).lower( cxs):
                 error_message = "Password requirements not met"
             elif "email_service" in str(e).lower() or "smtp" in str(e).lower():
                 error_message = "Email service temporarily unavailable"

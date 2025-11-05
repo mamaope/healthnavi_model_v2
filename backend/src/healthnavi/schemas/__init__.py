@@ -130,7 +130,7 @@ class UserCreate(BaseModel):
     last_name: Optional[str] = Field(None, max_length=50, description="Last name")
     full_name: Optional[str] = Field(None, max_length=100, description="Full name")
     email: EmailStr = Field(..., description="Email address")
-    password: str = Field(..., min_length=12, max_length=128, description="Password")
+    password: str = Field(..., min_length=4, description="Password (minimum 4 characters)")
     role: str = Field(default="user", description="User role")
     
     def model_post_init(self, __context):
