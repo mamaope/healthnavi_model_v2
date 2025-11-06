@@ -3,7 +3,7 @@ Pydantic schemas for request/response validation.
 """
 
 from pydantic import BaseModel, Field, EmailStr
-from typing import Optional, Dict, Any, Generic, TypeVar, List
+from typing import Optional, Dict, Any, Generic, TypeVar, List, Union
 from datetime import datetime
 import time
 
@@ -52,7 +52,7 @@ class DiagnosisInput(BaseModel):
     """Input schema for diagnosis requests."""
     patient_data: str = Field(..., min_length=10, max_length=10000, description="Patient data for diagnosis")
     chat_history: Optional[str] = Field(default="", max_length=50000, description="Previous conversation history")
-    session_id: Optional[int] = Field(None, description="Chat session ID to store the conversation")
+    session_id: Optional[Union[int, str]] = Field(None, description="Chat session ID to store the conversation. Can be integer for authenticated users or string for guest users.")
 
 
 class DiagnosisResponse(BaseModel):
@@ -60,7 +60,7 @@ class DiagnosisResponse(BaseModel):
     model_response: str = Field(..., description="AI model response")
     diagnosis_complete: bool = Field(..., description="Whether diagnosis is complete")
     updated_chat_history: str = Field(..., description="Updated conversation history")
-    session_id: Optional[int] = Field(None, description="Chat session ID if conversation was stored")
+    session_id: Optional[Union[int, str]] = Field(None, description="Chat session ID if conversation was stored. Can be integer for authenticated users or string for guest users.")
     message_id: Optional[int] = Field(None, description="Message ID of the AI response if stored")
     prompt_type: Optional[str] = Field(None, description="Type of prompt used (differential_diagnosis, drug_information, clinical_guidance)")
 

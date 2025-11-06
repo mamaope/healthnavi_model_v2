@@ -45,34 +45,46 @@ function updateAuthenticationUI(authenticated) {
     const disclaimerSection = document.querySelector('.disclaimer-section');
     const chatMessages = document.getElementById('landingChatMessages');
 
+    // Show/hide UI elements based on authentication status
+    if (sidebar) sidebar.style.display = authenticated ? 'block' : 'none';
+    if (appContainer) appContainer.classList.toggle('authenticated', authenticated);
+    if (headerActions) headerActions.style.display = 'flex';
+    if (landingPage) landingPage.style.display = 'flex';
+    if (sampleSection) sampleSection.style.display = authenticated ? 'none' : 'block';
+    if (disclaimerSection) disclaimerSection.style.display = authenticated ? 'none' : 'block';
+    if (chatContainer) {
+        chatContainer.classList.toggle('with-sidebar', authenticated);
+        chatContainer.classList.remove('centered');
+    }
+    if (chatMessages) {
+        const welcome = chatMessages.querySelector('.welcome-message');
+        if (welcome) welcome.remove();
+        chatMessages.style.justifyContent = 'flex-start';
+        chatMessages.style.paddingTop = 'var(--spacing-md)';
+    }
+    
     if (authenticated) {
-        if (sidebar) sidebar.style.display = 'flex';
-        if (appContainer) appContainer.classList.add('authenticated');
-        if (headerActions) headerActions.style.display = 'none';
+        // For authenticated users, show user profile and load sessions
         if (headerUserProfile) headerUserProfile.style.display = 'flex';
-        if (landingPage) landingPage.style.display = 'flex';
-        if (sampleSection) sampleSection.style.display = 'none';
-        if (disclaimerSection) disclaimerSection.style.display = 'none';
-        if (chatContainer) chatContainer.classList.remove('centered');
-        if (chatMessages) {
-            const welcome = chatMessages.querySelector('.welcome-message');
-            if (welcome) welcome.remove();
-            chatMessages.style.justifyContent = 'flex-start';
-            chatMessages.style.paddingTop = 'var(--spacing-md)';
-        }
         updateUserInfo();
         updateHeaderUserInfo();
         loadUserSessions();
     } else {
-        if (sidebar) sidebar.style.display = 'none';
-        if (headerActions) headerActions.style.display = 'flex';
+        // For unauthenticated users, show login/signup buttons
         if (headerUserProfile) headerUserProfile.style.display = 'none';
-        if (appContainer) appContainer.classList.remove('authenticated');
-        if (landingPage) landingPage.style.display = 'flex';
-        if (sampleSection) sampleSection.style.display = '';
-        if (disclaimerSection) disclaimerSection.style.display = '';
-        if (chatContainer) chatContainer.classList.add('centered');
-        clearChat();
+        
+        // Add a welcome message for unauthenticated users
+        if (chatMessages && !document.querySelector('.welcome-message')) {
+            const welcomeMsg = document.createElement('div');
+            welcomeMsg.className = 'message welcome-message';
+            welcomeMsg.innerHTML = `
+                <div class="message-content">
+                    <h2>Welcome to HealthNavi AI</h2>
+                    <p>You're currently using the app in guest mode. <a href="#" onclick="showAuthModal('login')">Sign in</a> or <a href="#" onclick="showAuthModal('register')">create an account</a> to save your chat history.</p>
+                </div>
+            `;
+            chatMessages.insertBefore(welcomeMsg, chatMessages.firstChild);
+        }
     }
 }
 
@@ -700,12 +712,7 @@ async function sendMessage() {
     console.log('   Authenticated:', isAuthenticated);
     console.log('   Access token:', accessToken ? 'Present' : 'Missing');
     
-    // Check authentication
-    if (!isAuthenticated) {
-        console.log('🔐 [Frontend] Not authenticated, showing auth modal');
-        showAuthModal('login');
-            return;
-        }
+    // No authentication required - all users can send messages
         
     // Disable input and show loading
         messageInput.disabled = true;
@@ -724,32 +731,53 @@ async function sendMessage() {
     autoResizeTextarea.call(messageInput);
     
     try {
-        // Create or get current session
-        if (!currentSession) {
-            console.log('📝 [Frontend] Creating new session');
-            currentSession = await createSession();
-            if (currentSession) {
-                // Refresh the sessions list to show the new session
-                loadUserSessions();
+        let sessionId = null;
+        
+        // For authenticated users, create a server-side session
+        if (isAuthenticated) {
+            if (!currentSession) {
+                console.log('📝 [Frontend] Creating new session for authenticated user');
+                currentSession = await createSession();
+                if (currentSession) {
+                    // Refresh the sessions list to show the new session
+                    loadUserSessions();
+                    sessionId = currentSession.id;
+                }
+            } else {
+                sessionId = currentSession.id;
             }
+        } else {
+            // For unauthenticated users, use a local session ID
+            if (!localStorage.getItem('guestSessionId')) {
+                const guestSessionId = 'guest-' + Math.random().toString(36).substring(2, 15);
+                localStorage.setItem('guestSessionId', guestSessionId);
+            }
+            sessionId = localStorage.getItem('guestSessionId');
         }
         
         console.log('🔵 [Frontend] Sending diagnosis request');
-        console.log('   Session ID:', currentSession?.id);
+        console.log('   Session ID:', sessionId);
         console.log('   Chat history:', formatChatHistory());
+        
+        // Prepare headers
+        const headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        };
+        
+        // Add auth header only if user is authenticated
+        if (accessToken) {
+            headers['Authorization'] = `Bearer ${accessToken}`;
+        }
         
         // Send message to API
         const response = await fetch(`${API_URL}/diagnosis/diagnose`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'Authorization': `Bearer ${accessToken}`
-            },
+            headers: headers,
             body: JSON.stringify({
                 patient_data: message,
                 chat_history: formatChatHistory(),
-                session_id: currentSession.id
+                session_id: sessionId
             })
         });
         
@@ -762,17 +790,22 @@ async function sendMessage() {
         console.log('🔵 [Frontend] Diagnosis response received:', data);
         
         // Check if response has the expected structure
-        if (!data.data) {
-            throw new Error('Invalid response structure: missing data field');
+        if (!data || !data.data) {
+            console.error('Invalid response structure:', data);
+            throw new Error('Invalid response from server');
         }
         
+        // Check if we have a valid model response
+        const modelResponse = data.data.model_response || 'No response from the AI service';
+        const diagnosisComplete = data.data.diagnosis_complete || false;
+        
         // Add AI response to chat
-        addMessage('ai', data.data.model_response, data.data.diagnosis_complete);
+        addMessage('ai', modelResponse, diagnosisComplete);
         
         // Update chat history
         chatHistory.push({
             user: message,
-            ai: data.data.model_response
+            ai: modelResponse
         });
         
         } catch (error) {
@@ -843,10 +876,19 @@ function addMessage(type, content, diagnosisComplete = false) {
     }, 100);
     
     // Remove welcome message after first interaction
-        const welcomeMessage = chatMessages.querySelector('.welcome-message');
-        if (welcomeMessage) {
-            welcomeMessage.remove();
+    const welcomeMessage = chatMessages.querySelector('.welcome-message');
+    if (welcomeMessage) {
+        welcomeMessage.remove();
         console.log('💬 [Frontend] Welcome message removed');
+    }
+    
+    // Hide sample questions after first message
+    if (type === 'user') {
+        const sampleSection = document.querySelector('.sample-questions');
+        if (sampleSection) {
+            sampleSection.style.display = 'none';
+            console.log('💬 [Frontend] Sample questions hidden');
+        }
     }
 }
 
@@ -1980,8 +2022,16 @@ function startNewChat() {
 }
 
 function startNewSession() {
+    // Clear the current session
     currentSession = null;
     chatHistory = [];
+    
+    // Clear guest session ID if user is not authenticated
+    if (!isAuthenticated) {
+        localStorage.removeItem('guestSessionId');
+        console.log('🆕 [Frontend] Cleared guest session ID');
+    }
+    
     clearChat();
     
     // Update sidebar
