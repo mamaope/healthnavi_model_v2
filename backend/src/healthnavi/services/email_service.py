@@ -124,8 +124,9 @@ class EmailService:
             return False
         
         try:
-            # Create reset URL
-            reset_url = f"{self.base_url}/api/v2/auth/reset-password?token={reset_token}"
+            # Create reset URL - point to frontend, which will extract token and show reset modal
+            # The frontend URL should be set in BASE_URL env var (e.g., http://localhost:3000)
+            reset_url = f"{self.base_url}?token={reset_token}"
             
             # Create email content
             subject = f"Password Reset - {self.app_name}"
