@@ -50,7 +50,7 @@ class SuccessResponse(BaseModel):
 
 class DiagnosisInput(BaseModel):
     """Input schema for diagnosis requests."""
-    patient_data: str = Field(..., min_length=10, max_length=10000, description="Patient data for diagnosis")
+    patient_data: str = Field(..., min_length=3, max_length=10000, description="Patient data for diagnosis")
     chat_history: Optional[str] = Field(default="", max_length=50000, description="Previous conversation history")
     session_id: Optional[Union[int, str]] = Field(None, description="Chat session ID to store the conversation. Can be integer for authenticated users or string for guest users.")
 

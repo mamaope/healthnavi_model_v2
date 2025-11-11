@@ -75,9 +75,9 @@ async def diagnose(data: DiagnosisInput, current_user: User = Depends(get_curren
     with ResponseTimer() as timer:
         try:
             # Validate input data
-            if not data.patient_data or len(data.patient_data.strip()) < 10:
+            if not data.patient_data or len(data.patient_data.strip()) < 3:
                 return create_error_response(
-                    message="Patient data must be at least 10 characters long",
+                    message="Patient data must be at least 3 characters long",
                     status_code=400,
                     execution_time=timer.get_execution_time()
                 )
