@@ -21,6 +21,8 @@ class User(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     is_email_verified = Column(Boolean, default=False, nullable=False)
     email_verification_token = Column(String(255), nullable=True)
+    password_reset_token = Column(String(255), nullable=True)
+    password_reset_expires = Column(String, nullable=True)  # Will store ISO datetime string
     role = Column(String(20), default="user", nullable=False)
     created_at = Column(String, nullable=True)  # Will store ISO datetime string
     updated_at = Column(String, nullable=True)  # Will store ISO datetime string

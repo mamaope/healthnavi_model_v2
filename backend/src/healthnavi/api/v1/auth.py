@@ -17,7 +17,7 @@ from healthnavi.core.database import get_db
 from healthnavi.core.config import get_config
 from healthnavi.core.response_utils import create_success_response, create_error_response, ResponseTimer
 from healthnavi.models.user import User
-from healthnavi.schemas import UserCreate, UserResponse, UserUpdate, Token, LoginRequest, StandardResponse, SuccessResponse, EmailVerificationRequest, ResendVerificationRequest
+from healthnavi.schemas import UserCreate, UserResponse, UserUpdate, Token, LoginRequest, StandardResponse, SuccessResponse, EmailVerificationRequest, ResendVerificationRequest, ForgotPasswordRequest, ResetPasswordRequest
 
 # Import email service with error handling
 try:
@@ -285,7 +285,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
                 error_message = "Email or username already exists"
             elif "email" in str(e).lower() and "validation" in str(e).lower():
                 error_message = "Invalid email format"
-            elif "password" in str(e).lower( cxs):
+            elif "password" in str(e).lower():
                 error_message = "Password requirements not met"
             elif "email_service" in str(e).lower() or "smtp" in str(e).lower():
                 error_message = "Email service temporarily unavailable"
@@ -750,6 +750,150 @@ def update_user(
             
             return create_error_response(
                 message=error_message,
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
+@router.post("/forgot-password", response_model=StandardResponse)
+def forgot_password(forgot_data: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """Request password reset email."""
+    with ResponseTimer() as timer:
+        try:
+            # Find user by email
+            user = get_user_by_email(db, forgot_data.email)
+            if not user:
+                # Don't reveal if email exists for security
+                return create_success_response(
+                    data={"message": "If the email exists, a password reset link has been sent."},
+                    status_code=200,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            # Check if user is active
+            if not user.is_active:
+                return create_error_response(
+                    message="Account is deactivated",
+                    status_code=403,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            # Generate password reset token
+            if email_service:
+                reset_token = email_service.generate_verification_token()
+            else:
+                # Fallback: generate a simple token if email service is not available
+                import secrets
+                import string
+                alphabet = string.ascii_letters + string.digits
+                reset_token = ''.join(secrets.choice(alphabet) for _ in range(32))
+            
+            # Set token and expiration (1 hour from now)
+            user.password_reset_token = reset_token
+            user.password_reset_expires = (datetime.utcnow() + timedelta(hours=1)).isoformat()
+            user.updated_at = datetime.utcnow().isoformat()
+            db.commit()
+            
+            # Send password reset email
+            email_sent = False
+            if email_service:
+                email_sent = email_service.send_password_reset_email(
+                    email=user.email,
+                    username=user.full_name or user.username,
+                    reset_token=reset_token
+                )
+            
+            if email_sent:
+                message = "If the email exists, a password reset link has been sent."
+            else:
+                message = "Password reset requested. Please contact support if you don't receive an email."
+            
+            # Always return success message (don't reveal if email exists)
+            return create_success_response(
+                data={"message": message},
+                status_code=200,
+                execution_time=timer.get_execution_time()
+            )
+            
+        except Exception as e:
+            logger.error(f"Forgot password error: {str(e)}")
+            return create_error_response(
+                message="Failed to process password reset request",
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
+@router.post("/reset-password", response_model=StandardResponse)
+def reset_password(reset_data: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """Reset password with token."""
+    with ResponseTimer() as timer:
+        try:
+            # Find user by reset token
+            user = db.query(User).filter(User.password_reset_token == reset_data.token).first()
+            if not user:
+                return create_error_response(
+                    message="Invalid or expired reset token",
+                    status_code=400,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            # Check if token is expired
+            if user.password_reset_expires:
+                try:
+                    expires_at = datetime.fromisoformat(user.password_reset_expires.replace('Z', '+00:00'))
+                    if datetime.utcnow() > expires_at:
+                        # Clear expired token
+                        user.password_reset_token = None
+                        user.password_reset_expires = None
+                        user.updated_at = datetime.utcnow().isoformat()
+                        db.commit()
+                        return create_error_response(
+                            message="Reset token has expired. Please request a new one.",
+                            status_code=400,
+                            execution_time=timer.get_execution_time()
+                        )
+                except (ValueError, AttributeError) as e:
+                    logger.warning(f"Error parsing expiration date: {e}")
+                    # If we can't parse the date, treat as expired for security
+                    user.password_reset_token = None
+                    user.password_reset_expires = None
+                    user.updated_at = datetime.utcnow().isoformat()
+                    db.commit()
+                    return create_error_response(
+                        message="Invalid reset token",
+                        status_code=400,
+                        execution_time=timer.get_execution_time()
+                    )
+            
+            # Check if user is active
+            if not user.is_active:
+                return create_error_response(
+                    message="Account is deactivated",
+                    status_code=403,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            # Hash new password
+            hashed_password = get_password_hash(reset_data.new_password)
+            
+            # Update password and clear reset token
+            user.hashed_password = hashed_password
+            user.password_reset_token = None
+            user.password_reset_expires = None
+            user.updated_at = datetime.utcnow().isoformat()
+            db.commit()
+            
+            return create_success_response(
+                data={"message": "Password reset successfully. You can now login with your new password."},
+                status_code=200,
+                execution_time=timer.get_execution_time()
+            )
+            
+        except Exception as e:
+            logger.error(f"Reset password error: {str(e)}")
+            return create_error_response(
+                message="Failed to reset password",
                 status_code=500,
                 execution_time=timer.get_execution_time()
             )

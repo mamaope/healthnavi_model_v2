@@ -50,13 +50,12 @@ services:
       retries: 5
 
   frontend:
-    image: nginx:alpine
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: healthnavi_cdss_frontend
     ports:
       - "3000:80"
-    volumes:
-      - ./frontend:/usr/share/nginx/html
-      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf
     restart: unless-stopped
     depends_on:
       - api

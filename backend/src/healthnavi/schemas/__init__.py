@@ -196,6 +196,17 @@ class ResendVerificationRequest(BaseModel):
     email: EmailStr = Field(..., description="Email address to resend verification to")
 
 
+class ForgotPasswordRequest(BaseModel):
+    """Schema for forgot password requests."""
+    email: EmailStr = Field(..., description="Email address to send password reset link to")
+
+
+class ResetPasswordRequest(BaseModel):
+    """Schema for reset password requests."""
+    token: str = Field(..., description="Password reset token")
+    new_password: str = Field(..., min_length=4, description="New password (minimum 4 characters)")
+
+
 class HealthCheckResponse(BaseModel):
     """Schema for health check responses."""
     status: str = Field(..., description="Service status")
