@@ -61,7 +61,6 @@ app = FastAPI(
     description=config.application.app_description,
     version=config.application.app_version,
     lifespan=lifespan,
-    root_path=config.application.api_root_path,
 )
 
 # Add CORS middleware
@@ -151,12 +150,12 @@ async def health_check():
             execution_time=timer.get_execution_time()
         )
 
+API_VERSION_PREFIX = "/api/v2"
 
 # Include API routers
-app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
-app.include_router(diagnosis.router, prefix="/diagnosis", tags=["Diagnosis"])
-app.include_router(chat_sessions.router, prefix="/chat", tags=["Chat Sessions"])
-
+app.include_router(auth.router, prefix=f"{API_VERSION_PREFIX}/auth", tags=["Authentication"])
+app.include_router(diagnosis.router, prefix=f"{API_VERSION_PREFIX}/diagnosis", tags=["Diagnosis"])
+app.include_router(chat_sessions.router, prefix=f"{API_VERSION_PREFIX}/chat", tags=["Chat Sessions"])
 
 if __name__ == "__main__":
     import uvicorn

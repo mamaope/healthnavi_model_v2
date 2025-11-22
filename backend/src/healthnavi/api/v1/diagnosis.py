@@ -12,8 +12,7 @@ from healthnavi.models.user import User
 from healthnavi.schemas import DiagnosisInput, DiagnosisResponse, StandardResponse, SuccessResponse, ChatMessageCreate
 from healthnavi.services.conversational_service import generate_response
 from healthnavi.services.diagnosis_session_service import DiagnosisSessionService
-from healthnavi.api.v1.auth import require_user_role
-
+from healthnavi.api.v1.auth import get_current_user, require_user_role, require_admin_role, get_current_user_safe_v2
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -68,22 +67,24 @@ async def diagnosis_health():
 
 
 @router.post("/diagnose", response_model=StandardResponse)
-async def diagnose(data: DiagnosisInput, current_user: User = Depends(require_user_role), db: Session = Depends(get_db)):
+async def diagnose(data: DiagnosisInput, current_user: User = Depends(get_current_user_safe_v2), db: Session = Depends(get_db)):
     """
     Generate AI-powered diagnosis based on patient data.
-    Requires authentication - only logged-in users can access this endpoint.
+    Now allows unauthenticated access for demo purposes.
     """
     with ResponseTimer() as timer:
         try:
             # Validate input data
-            if not data.patient_data or len(data.patient_data.strip()) < 10:
+            if not data.patient_data or len(data.patient_data.strip()) < 3:
                 return create_error_response(
-                    message="Patient data must be at least 10 characters long",
+                    message="Patient data must be at least 3 characters long",
                     status_code=400,
                     execution_time=timer.get_execution_time()
                 )
 
-            logger.info(f"Diagnosis request from user: {current_user.username} (role: {current_user.role})")
+            # Handle both authenticated and unauthenticated users
+            user_info = f"{current_user.username} (role: {current_user.role})" if current_user else "unauthenticated user"
+            logger.info(f"Diagnosis request from: {user_info}")
             logger.info(f"Patient data length: {len(data.patient_data)} characters")
 
             # Get chat history from session if session_id is provided
@@ -101,19 +102,23 @@ async def diagnose(data: DiagnosisInput, current_user: User = Depends(require_us
                     logger.warning(f"Could not get chat history from session {session_id}: {e}")
                     # Continue with provided chat_history
             else:
-                # Auto-create a new session if none provided
-                try:
-                    from healthnavi.schemas import ChatSessionCreate
-                    new_session_data = ChatSessionCreate(
-                        session_name=f"Diagnosis Session - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
-                        patient_summary=data.patient_data[:200] + "..." if len(data.patient_data) > 200 else data.patient_data
-                    )
-                    new_session = session_service.create_session(current_user, new_session_data)
-                    session_id = new_session.id
-                    logger.info(f"Auto-created new diagnosis session {session_id} for user {current_user.id}")
-                except Exception as e:
-                    logger.warning(f"Could not auto-create session: {e}")
-                    # Continue without session
+                # Auto-create a new session if none provided and user is authenticated
+                if current_user:  # Only create session for authenticated users
+                    try:
+                        from healthnavi.schemas import ChatSessionCreate
+                        new_session_data = ChatSessionCreate(
+                            session_name=f"Diagnosis Session - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
+                            patient_summary=data.patient_data[:200] + "..." if len(data.patient_data) > 200 else data.patient_data
+                        )
+                        new_session = session_service.create_session(current_user, new_session_data)
+                        session_id = new_session.id
+                        logger.info(f"Auto-created new diagnosis session {session_id} for user {current_user.id}")
+                    except Exception as e:
+                        logger.warning(f"Could not auto-create session: {e}")
+                        # Continue without session
+                else:
+                    # For unauthenticated users, use the provided session_id or None
+                    logger.info("Skipping session creation for unauthenticated user")
 
             # Use the real AI service to generate response
             try:
@@ -139,8 +144,8 @@ async def diagnose(data: DiagnosisInput, current_user: User = Depends(require_us
                     execution_time=timer.get_execution_time()
                 )
 
-            # Store messages in session (session should exist now)
-            if session_id:
+            # Store messages in session only for authenticated users
+            if session_id and current_user:  # Only store messages for authenticated users
                 try:
                     # Add user message
                     user_message = ChatMessageCreate(
@@ -166,6 +171,8 @@ async def diagnose(data: DiagnosisInput, current_user: User = Depends(require_us
                 except Exception as e:
                     logger.warning(f"Could not store messages in session {session_id}: {e}")
                     # Continue without storing
+            else:
+                logger.info("Skipping message storage for unauthenticated user")
 
             # Build updated chat history
             updated_chat_history = (

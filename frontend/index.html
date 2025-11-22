@@ -1,303 +1,35 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HealthNavi AI - Clinical Decision Support</title>
-    <link rel="icon" type="image/x-icon" href="https://healthnavi.mamaope.com/favicon.ico">
-    <link rel="stylesheet" href="style.css?v=20241014-heading-split-fix">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-</head>
-<body>
-    <div class="app-container" id="appContainer">
-        <!-- Sidebar for Authenticated Users (Hidden by default) -->
-        <aside class="sidebar" id="sidebar" style="display: none;">
-            <div class="sidebar-header">
-                <div class="sidebar-logo">
-                    <h2 class="welcome-logo">
-                        <span class="logo-health">Health</span><span class="logo-navy">Navy</span>
-                    </h2>
-                </div>
-                <button class="btn-new-chat" onclick="startNewChat()">
-                    <i class="fas fa-plus"></i>
-                    <span>New Chat</span>
-                </button>
-            </div>
-            
-            <div class="sidebar-content">
-                <div class="sessions-header">
-                    <h3>Sessions</h3>
-                </div>
-                <div class="sessions-list" id="sessionsList">
-                    <!-- Sessions will be dynamically loaded here -->
-                    <div class="empty-state" id="emptySessionsState">
-                        <i class="fas fa-comments"></i>
-                        <p>No conversations yet</p>
-                        <small>Start a new chat to begin</small>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="sidebar-footer">
-                <button class="btn-logout btn-logout-full" onclick="logout()" title="Logout">
-                    <i class="fas fa-sign-out-alt"></i>
-                    <span>Sign Out</span>
-                </button>
-            </div>
-        </aside>
-
-        <!-- Landing Page for Unauthenticated Users -->
-        <div class="landing-page" id="landingPage">
-            <!-- Header -->
-            <header class="header">
-                <div class="logo">
-                    <h2 class="welcome-logo">
-                        <span class="logo-health">Health</span><span class="logo-navy">Navy</span>
-                    </h2>
-                    </div>
-                <div class="header-actions">
-                    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme" title="Toggle light/dark theme">
-                        <div class="theme-toggle-slider">
-                            <i class="theme-toggle-icon fas fa-sun" id="themeIcon"></i>
-                        </div>
-                    </button>
-                    <button class="btn btn-outline" onclick="showAuthModal('login')">Sign In</button>
-                    <button class="btn btn-primary" onclick="showAuthModal('register')">Get Started</button>
-                </div>
-                
-                <!-- User Profile (Shown when authenticated) -->
-                <div class="header-user-profile" id="headerUserProfile" style="display: none;">
-                    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme" title="Toggle light/dark theme">
-                        <div class="theme-toggle-slider">
-                            <i class="theme-toggle-icon fas fa-sun" id="headerThemeIcon"></i>
-                        </div>
-                    </button>
-                    
-                    <div class="header-user-menu">
-                        <button class="header-user-button" onclick="toggleUserMenu()" aria-label="User menu" aria-expanded="false" aria-haspopup="true">
-                            <div class="header-user-avatar">
-                                <i class="fas fa-user-md"></i>
-                            </div>
-                            <div class="header-user-info">
-                                <span class="header-user-name" id="headerUserName">User</span>
-                                <span class="header-user-role" id="headerUserRole">Healthcare Professional</span>
-                            </div>
-                            <i class="fas fa-chevron-down header-dropdown-icon"></i>
-                        </button>
-                        
-                        <div class="user-dropdown-menu" id="userDropdownMenu" style="display: none;">
-                            <div class="user-dropdown-header">
-                                <div class="user-dropdown-avatar">
-                                    <i class="fas fa-user-md"></i>
-                                </div>
-                                <div class="user-dropdown-info">
-                                    <div class="user-dropdown-name" id="dropdownUserName">User</div>
-                                    <div class="user-dropdown-email" id="dropdownUserEmail">user@example.com</div>
-                                </div>
-                            </div>
-                            <div class="user-dropdown-divider"></div>
-                            <a href="#" class="user-dropdown-item" onclick="showProfile(); return false;">
-                                <i class="fas fa-user"></i>
-                                <span>My Profile</span>
-                            </a>
-                            <a href="#" class="user-dropdown-item" onclick="showSettings(); return false;">
-                                <i class="fas fa-cog"></i>
-                                <span>Settings</span>
-                            </a>
-                            <a href="#" class="user-dropdown-item" onclick="showHelp(); return false;">
-                                <i class="fas fa-question-circle"></i>
-                                <span>Help & Support</span>
-                            </a>
-                            <div class="user-dropdown-divider"></div>
-                            <a href="#" class="user-dropdown-item user-dropdown-item-danger" onclick="logout(); return false;">
-                                <i class="fas fa-sign-out-alt"></i>
-                                <span>Sign Out</span>
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </header>
-
-            <!-- Main Chat Interface -->
-            <main class="main-content">
-                <div class="chat-container">
-                    <div class="chat-messages" id="landingChatMessages">
-                        <div class="welcome-message">
-                            <div class="welcome-content">
-                                <h2 class="welcome-logo">
-                                    <span class="logo-health">Health</span><span class="logo-navy">Navy</span>
-                                </h2>
-                                <h3>Welcome to HealthNavy</h3>
-                                <p>I can help you with differential diagnosis, drug information, clinical guidelines, and treatment recommendations.</p>
-                            </div>
-                        </div>
-                        </div>
-                        
-                    <div class="input-area">
-                        <div class="input-container">
-                            <div class="input-icons">
-                                <div class="icon-deep-reasoning" title="AI-powered clinical reasoning">
-                                    <i class="fas fa-brain"></i>
-                                </div>
-                            </div>
-                            <textarea 
-                                id="landingMessageInput" 
-                                placeholder="Describe symptoms or ask a medical question..."
-                                rows="1"
-                                aria-label="Message input"
-                            ></textarea>
-                            <button id="landingSendButton" onclick="sendMessage()" disabled aria-label="Send message">
-                                <i class="fas fa-paper-plane"></i>
-                            </button>
-                        </div>
-                        <!-- Loading indicator -->
-                        <div class="loading-indicator" id="loadingIndicator" style="display: none;">
-                            <div class="loading-dots">
-                                <span></span>
-                                <span></span>
-                                <span></span>
-                            </div>
-                            <span class="loading-text">Analyzing...</span>
-                        </div>
-                        </div>
-                        
-                    <!-- Disclaimer Section -->
-                    <div class="disclaimer-section">
-                        <div class="disclaimer">
-                            <i class="fas fa-info-circle"></i>
-                            <span>For informational purposes only. Not a substitute for professional medical advice.</span>
-                        </div>
-                    </div>
-
-                    <!-- Sample Questions -->
-                    <div class="sample-questions">
-                        <h3>Try these examples:</h3>
-                        <div class="sample-grid">
-                            <!-- Category: Ask about drug dosing -->
-                            <div class="sample-category">
-                                <h5><i class="fas fa-prescription-bottle-alt"></i> Ask about drug dosing</h5>
-                                <button class="sample-question" onclick="useSamplePrompt('dosing_ceftriaxone_pneumonia_adult60')">
-                                    <i class="fas fa-syringe"></i>
-                                    <span>Calculate the dose for ceftriaxone for a 60kg adult with severe pneumonia</span>
-                                </button>
-                                <button class="sample-question" onclick="useSamplePrompt('dosing_insulin_dka')">
-                                    <i class="fas fa-vial"></i>
-                                    <span>How is insulin dosed during diabetic ketoacidosis(DKA) management?</span>
-                                </button>
-                            </div>
-
-                            <!-- Category: Ask about Drug interactions -->
-                            <div class="sample-category">
-                                <h5><i class="fas fa-exclamation-triangle"></i> Ask about Drug interactions</h5>
-                                <button class="sample-question" onclick="useSamplePrompt('interact_ritonavir_simvastatin')">
-                                    <i class="fas fa-pills"></i>
-                                    <span>An HIV patient on ritonavir is started on simvastatin. What adverse effect might occur and why?</span>
-                                </button>
-                                <button class="sample-question" onclick="useSamplePrompt('interact_warfarin_greens')">
-                                    <i class="fas fa-leaf"></i>
-                                    <span>What happens when green leafy vegetables are taken in large amounts while on warfarin?</span>
-                                </button>
-                            </div>
-
-                            <!-- Category: About Guidelines -->
-                            <div class="sample-category">
-                                <h5><i class="fas fa-book-medical"></i> About Guidelines</h5>
-                                <button class="sample-question" onclick="useSamplePrompt('guideline_ada_t2dm_insulin_init')">
-                                    <i class="fas fa-notes-medical"></i>
-                                    <span>What are the ADA(American Diabates Association) recommendations for initiating insulin therapy in type 2 diabetes</span>
-                                </button>
-                                <button class="sample-question" onclick="useSamplePrompt('guideline_who_malaria_pregnancy')">
-                                    <i class="fas fa-baby"></i>
-                                    <span>According to Who Malaria guidelines, how should malaria in pregnancy be treated?</span>
-                                </button>
-                            </div>
-
-                            <!-- Category: Treatment Options -->
-                            <div class="sample-category">
-                                <h5><i class="fas fa-stethoscope"></i> Treatment Options</h5>
-                                <button class="sample-question" onclick="useSamplePrompt('tx_severe_malnutrition_u5')">
-                                    <i class="fas fa-child"></i>
-                                    <span>What are the treatmmet options for severe malnutrition in children under 5</span>
-                                </button>
-                                <button class="sample-question" onclick="useSamplePrompt('tx_stage1_hypertension_firstline')">
-                                    <i class="fas fa-heartbeat"></i>
-                                    <span>What is the first line antihypertensive medications for stage 1 hypertension?</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </main>
-
-            <!-- Footer -->
-            <footer class="footer">
-                <div class="footer-content">
-                    <div class="footer-brand">
-                        <div class="footer-logo">
-                            <span class="logo-health">Health</span><span class="logo-navy">Navy</span>
-                        </div>
-                    </div>
-                    <div class="footer-copyright">
-                        <span>&copy; 2025 HealthNavy AI. All rights reserved.</span>
-                    </div>
-                    <div class="footer-links">
-                        <a href="#" onclick="showTerms()">Terms of Service</a>
-                        <a href="#" onclick="showPrivacy()">Privacy Policy</a>
-                        <a href="#" onclick="showSupport()">Support</a>
-                    </div>
-                </div>
-            </footer>
-        </div>
-
-    </div>
-
-    <!-- Authentication Modal -->
-    <div class="modal" id="authModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="modalTitle">Sign In</h2>
-                <button class="modal-close" onclick="closeAuthModal()">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form id="authForm">
-                    <div class="form-group">
-                        <label for="email">Email</label>
-                        <input type="email" id="email" name="email" autocomplete="email" placeholder="Enter your email address" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="password">Password</label>
-                        <input type="password" id="password" name="password" placeholder="Enter your password" required autocomplete="current-password">
-                    </div>
-                    <div class="form-group" id="confirmPasswordGroup" style="display: none;">
-                        <label for="confirmPassword">Confirm Password</label>
-                        <input type="password" id="confirmPassword" name="confirmPassword" placeholder="Re-enter your password" autocomplete="new-password">
-                    </div>
-                    <div class="form-group" id="fullNameGroup" style="display: none;">
-                        <label for="fullName">Full Name</label>
-                        <input type="text" id="fullName" name="fullName" placeholder="Enter your full name">
-                    </div>
-                    <button type="submit" class="btn btn-primary" id="submitBtn">Sign In</button>
-                </form>
-                <div class="modal-footer">
-                    <p id="modalFooterText">Don't have an account? <a href="#" onclick="toggleAuthMode()">Sign up</a></p>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Markdown Parser and Sanitizer -->
-    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>
-    <!-- AGGRESSIVE CACHE BUST - Using timestamp in filename -->
-    <script>
-        // Load script with timestamp to force browser to fetch new version
-        const timestamp = new Date().getTime();
-        const script = document.createElement('script');
-        script.src = `script.js?cachebust=${timestamp}`;
-        script.onload = () => console.log('✅ Script loaded successfully at:', new Date().toISOString());
-        script.onerror = () => console.error('❌ Failed to load script.js');
-        document.body.appendChild(script);
-    </script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0"
+    />
+    <title>HealthNavy AI — Clinical Decision Support</title>
+    <link rel="icon" type="image/x-icon" href="https://healthnavi.mamaope.com/favicon.ico" />
+    <link
+      rel="preconnect"
+      href="https://fonts.googleapis.com"
+    />
+    <link
+      rel="preconnect"
+      href="https://fonts.gstatic.com"
+      crossorigin
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css"
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>

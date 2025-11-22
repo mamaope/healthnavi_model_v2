@@ -3,7 +3,7 @@ Pydantic schemas for request/response validation.
 """
 
 from pydantic import BaseModel, Field, EmailStr
-from typing import Optional, Dict, Any, Generic, TypeVar, List
+from typing import Optional, Dict, Any, Generic, TypeVar, List, Union
 from datetime import datetime
 import time
 
@@ -50,9 +50,9 @@ class SuccessResponse(BaseModel):
 
 class DiagnosisInput(BaseModel):
     """Input schema for diagnosis requests."""
-    patient_data: str = Field(..., min_length=10, max_length=10000, description="Patient data for diagnosis")
+    patient_data: str = Field(..., min_length=3, max_length=10000, description="Patient data for diagnosis")
     chat_history: Optional[str] = Field(default="", max_length=50000, description="Previous conversation history")
-    session_id: Optional[int] = Field(None, description="Chat session ID to store the conversation")
+    session_id: Optional[Union[int, str]] = Field(None, description="Chat session ID to store the conversation. Can be integer for authenticated users or string for guest users.")
 
 
 class DiagnosisResponse(BaseModel):
@@ -60,7 +60,7 @@ class DiagnosisResponse(BaseModel):
     model_response: str = Field(..., description="AI model response")
     diagnosis_complete: bool = Field(..., description="Whether diagnosis is complete")
     updated_chat_history: str = Field(..., description="Updated conversation history")
-    session_id: Optional[int] = Field(None, description="Chat session ID if conversation was stored")
+    session_id: Optional[Union[int, str]] = Field(None, description="Chat session ID if conversation was stored. Can be integer for authenticated users or string for guest users.")
     message_id: Optional[int] = Field(None, description="Message ID of the AI response if stored")
     prompt_type: Optional[str] = Field(None, description="Type of prompt used (differential_diagnosis, drug_information, clinical_guidance)")
 
@@ -130,7 +130,7 @@ class UserCreate(BaseModel):
     last_name: Optional[str] = Field(None, max_length=50, description="Last name")
     full_name: Optional[str] = Field(None, max_length=100, description="Full name")
     email: EmailStr = Field(..., description="Email address")
-    password: str = Field(..., min_length=12, max_length=128, description="Password")
+    password: str = Field(..., min_length=4, description="Password (minimum 4 characters)")
     role: str = Field(default="user", description="User role")
     
     def model_post_init(self, __context):
@@ -194,6 +194,17 @@ class EmailVerificationRequest(BaseModel):
 class ResendVerificationRequest(BaseModel):
     """Schema for resending verification email requests."""
     email: EmailStr = Field(..., description="Email address to resend verification to")
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Schema for forgot password requests."""
+    email: EmailStr = Field(..., description="Email address to send password reset link to")
+
+
+class ResetPasswordRequest(BaseModel):
+    """Schema for reset password requests."""
+    token: str = Field(..., description="Password reset token")
+    new_password: str = Field(..., min_length=4, description="New password (minimum 4 characters)")
 
 
 class HealthCheckResponse(BaseModel):

@@ -2,6 +2,7 @@ from healthnavi.services.vectordb_service import ZillizService
 from typing import Tuple, List
 import time
 import logging
+import os
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,79 +29,47 @@ def initialize_vectorstore():
             logger.error(error_message)
             raise RuntimeError(error_message)
 
-def search_all_collections(query: str, patient_data: str, k: int = 8) -> Tuple[str, List[str]]:
+def search_all_collections(query: str, patient_data: str, k: int = 3) -> Tuple[List, List[str]]:
     """
-    Performs a search across the medical knowledge collection.
-    Combines query and patient data for richer context.
-    Extracts patient age for age-appropriate source prioritization.
+    Perform semantic retrieval and return optimized context for LLM.
+    - Only top-k chunks (most relevant) are included.
     """
-    manager_start = time.time()
-    
-    if not vectorstore_initialized:
+    start_time = time.time()
+    client = vectordb_service.client
+    collection_name = vectordb_service.collection_name
+
+    if not vectorstore_initialized or not client:
         logger.error("Vector store not initialized.")
-        raise RuntimeError("Vector store not initialized. Call initialize_vectorstore() at startup.")
+        raise RuntimeError("Vector store not initialized. Call initialize_vectorstore() first.")
 
-    # Combine query and patient data
-    full_search_query = f"{query}\n{patient_data}".strip()
-    combined_length = len(full_search_query)
-    
-    # Extract patient age from query or patient data
-    patient_age = extract_patient_age(full_search_query)
-    
-    logger.info(f"🔍 VectorStore Manager: Processing combined query ({combined_length} chars, patient_age={patient_age})")
-    
+    full_search_query = f"{query.strip()}\n{patient_data.strip()}".strip()
+    logger.info(f"🔍 Running semantic retrieval (query length={len(full_search_query)})")
+
     try:
-        context, sources = vectordb_service.search_medical_knowledge(
-            full_search_query, 
-            k=k,
-            patient_age=patient_age
-        )
-        
-        manager_time = time.time() - manager_start
-        logger.info(f"📋 VectorStore Manager completed in {manager_time:.3f}s")
-        
-        return context, sources
-    except Exception as e:
-        manager_time = time.time() - manager_start
-        logger.error(f"Error searching collections (took {manager_time:.3f}s): {e}")
-        return f"An error occurred during search: {str(e)}", []
+        # OPTIMIZATION: Retrieve only 2x chunks
+        # This reduces vector search time significantly
+        raw_chunks, all_sources = vectordb_service.search_medical_knowledge(full_search_query, k=k*2)
 
-def extract_patient_age(text: str) -> int:
-    """
-    Extract patient age from query or patient data text.
-    Returns None if age cannot be determined.
-    
-    Examples:
-        "65-year-old woman" -> 65
-        "5 year old child" -> 5
-        "68-year-old male" -> 68
-        "Patient is 42 years old" -> 42
-    """
-    import re
-    
-    # Pattern 1: "X-year-old" or "X year old" or "X y/o" or "X yo"
-    pattern1 = r'\b(\d{1,3})\s*[-\s]*(year|yr|y)[\s-]*(old|o)\b'
-    match = re.search(pattern1, text.lower())
-    if match:
-        age = int(match.group(1))
-        logger.info(f"📅 Extracted patient age: {age} years")
-        return age
-    
-    # Pattern 2: "X years old" or "aged X"
-    pattern2 = r'\b(?:aged|age)\s+(\d{1,3})\b|\b(\d{1,3})\s+years?\s+old\b'
-    match = re.search(pattern2, text.lower())
-    if match:
-        age = int(match.group(1) or match.group(2))
-        logger.info(f"📅 Extracted patient age: {age} years")
-        return age
-    
-    # Pattern 3: Month old (for infants) - convert to 0
-    pattern3 = r'\b(\d{1,2})\s*[-\s]*(month|mo)[\s-]*(old|o)\b'
-    match = re.search(pattern3, text.lower())
-    if match:
-        logger.info(f"📅 Extracted patient age: infant (<1 year)")
-        return 0
-    
-    logger.info("📅 Could not extract patient age from query")
-    return None
+        if not raw_chunks or not all_sources:
+            logger.warning("No relevant context found by vectordb_service.")
+            return [], []
+        
+        # OPTIMIZATION: Skip enrichment to avoid extra DB queries
+        # Use raw chunks directly - they already have all needed information
+        top_chunks = raw_chunks[:k]
+
+        unique_top_sources = set()
+        for chunk in top_chunks:
+            file_name = os.path.basename(chunk.get("file_path", "Unknown document"))
+            # Clean up source name: remove .pdf extension and clean formatting
+            file_name = file_name.replace('.pdf', '').replace('_', ' ').replace('-', ' ')
+            unique_top_sources.add(file_name)
+
+        total_time = time.time() - start_time
+        logger.info(f"� Retrieved {len(top_chunks)} top chunks in {total_time:.2f}s from {len(unique_top_sources)} sources.")
+        return top_chunks, list(unique_top_sources)
+
+    except Exception as e:
+        logger.error(f"❌ Error during search_all_collections: {e}", exc_info=True)
+        return [], []
     
