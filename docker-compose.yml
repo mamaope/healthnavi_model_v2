@@ -18,7 +18,7 @@ services:
       - ./logs:/backend/logs
       - ./regal-autonomy-454806-d1-edf68610c57a.json:/backend/regal-autonomy-454806-d1-edf68610c57a.json  # commented for local dev
 
-    command: sh -c "alembic upgrade head && uvicorn healthnavi.main:app --host 0.0.0.0 --port 8050 --reload"
+    command: sh -c "alembic upgrade head && uvicorn healthnavi.main:app --host 0.0.0.0 --port 8050 --reload --timeout-keep-alive 180"
     restart: unless-stopped
     depends_on:
       db:

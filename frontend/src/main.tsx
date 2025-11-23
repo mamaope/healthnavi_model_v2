@@ -13,7 +13,7 @@ const queryClient = new QueryClient({
       retry: 1,
     },
     mutations: {
-      retry: 1,
+      retry: false, // Disable retries for mutations to prevent duplicate requests
     },
   },
 })
