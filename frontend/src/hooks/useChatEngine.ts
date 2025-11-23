@@ -39,18 +39,18 @@ export function useChatEngine() {
   const { isAuthenticated } = useAuth()
 
   const messages = useChatMessages()
-  const sessions = useChatStore((state) => state.sessions)
-  const currentSession = useChatStore((state) => state.currentSession)
-  const isSending = useChatStore((state) => state.isSending)
-  const setSessions = useChatStore((state) => state.setSessions)
-  const setCurrentSession = useChatStore((state) => state.setCurrentSession)
+  const sessions = useChatStore((state: any) => state.sessions)
+  const currentSession = useChatStore((state: any) => state.currentSession)
+  const isSending = useChatStore((state: any) => state.isSending)
+  const setSessions = useChatStore((state: any) => state.setSessions)
+  const setCurrentSession = useChatStore((state: any) => state.setCurrentSession)
   const ensureGuestSessionId = useChatStore(
-    (state) => state.ensureGuestSessionId,
+    (state: any) => state.ensureGuestSessionId,
   )
-  const addMessage = useChatStore((state) => state.addMessage)
-  const clearMessages = useChatStore((state) => state.clearMessages)
-  const setIsSending = useChatStore((state) => state.setIsSending)
-  const setGuestSessionId = useChatStore((state) => state.setGuestSessionId)
+  const addMessage = useChatStore((state: any) => state.addMessage)
+  const clearMessages = useChatStore((state: any) => state.clearMessages)
+  const setIsSending = useChatStore((state: any) => state.setIsSending)
+  const setGuestSessionId = useChatStore((state: any) => state.setGuestSessionId)
 
   const {
     data: fetchedSessions,
@@ -131,6 +131,10 @@ export function useChatEngine() {
         throw new Error('Message cannot be empty.')
       }
 
+      if (isSending) {
+        throw new Error('Already processing a message')
+      }
+
       const chatHistory = formatChatHistory(messages)
       const sessionId = await createSessionIfNeeded()
 
@@ -176,7 +180,7 @@ export function useChatEngine() {
 
       return aiMessage
     },
-    onError: (error) => {
+    onError: (error: any) => {
       console.error('Failed to send message', error)
       addMessage({
         id: crypto.randomUUID?.() ?? Math.random().toString(36).slice(2),
