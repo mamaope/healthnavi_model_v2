@@ -86,7 +86,7 @@ class ZillizService:
         search_results.sort(key=lambda x: x.get('distance', 0), reverse=True)
         return search_results[:k]
 
-    def search_medical_knowledge(self, query: str, k: int = 5) -> Tuple[List[Dict[str, Any]], List[str]]:
+    def search_medical_knowledge(self, query: str, k: int = 8) -> Tuple[List[Dict[str, Any]], List[str]]:
         """
         Searches the medical knowledge collection using semantic similarity.
         Applies MMR diversity reranking to ensure balanced representation across sources.
@@ -109,7 +109,7 @@ class ZillizService:
             query_embedding = self.generate_query_embedding(query)
             embedding_time = time.time() - embedding_start
 
-            retrieve_k = min(k * 3, 30)
+            retrieve_k = min(k * 3, 100)
             vector_search_start = time.time()
             logger.info(f"🎯 Vector search in '{self.collection_name}' (retrieving {retrieve_k}, returning {k})...")
             

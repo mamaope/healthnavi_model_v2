@@ -107,9 +107,9 @@ async def generate_response(query: str, chat_history: str, patient_data: str) ->
                 diagnosis_complete = is_diagnosis_complete(cached_response)
                 return cached_response, diagnosis_complete, "success"
 
-        context, actual_sources = search_all_collections(query, patient_data, k=3)
-        optimized_context = optimize_context_for_llm(context, max_chunks=3)
-        logger.info(f"Context optimized: {len(context)} -> {len(optimized_context)} chars")
+        context, actual_sources = search_all_collections(query, patient_data, k=20)
+        optimized_context = optimize_context_for_llm(context, max_chunks=20)
+        logger.info(f"Context optimized: {len(context)} chunks -> {len(optimized_context)} chars from {len(actual_sources)} sources")
 
         sources_text = ", ".join(actual_sources) if actual_sources else "No sources available"
 
@@ -139,7 +139,7 @@ async def generate_response(query: str, chat_history: str, patient_data: str) ->
                 contents=[{"role": "user", "parts": [{"text": full_prompt}]}],
                 config={
                     "temperature": 0.2,
-                    "max_output_tokens": 2000,
+                    "max_output_tokens": 8000,
                     "top_p": 0.95,
                     "top_k": 20,
                     "candidate_count": 1
