@@ -195,10 +195,12 @@ export const chatApi = {
     message: string
     chatHistory: string
     sessionId: string | null
+    deepSearch: boolean
   }) {
     const requestBody = {
       patient_data: payload.message,
       chat_history: payload.chatHistory,
+      deep_search: payload.deepSearch,
       ...(payload.sessionId !== null && { session_id: payload.sessionId }),
     }
     console.log('Sending diagnosis request:', {

@@ -125,7 +125,8 @@ async def diagnose(data: DiagnosisInput, current_user: User = Depends(get_curren
                 response, diagnosis_complete, prompt_type = await generate_response(
                     query=data.patient_data,
                     chat_history=chat_history,
-                    patient_data=data.patient_data
+                    patient_data=data.patient_data,
+                    deep_search=bool(data.deep_search)
                 )
                 logger.info(f"🎯 Prompt type used: {prompt_type}")
                 # Validate AI response

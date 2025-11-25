@@ -31,6 +31,7 @@ export default function App() {
   const [resetPasswordModalOpen, setResetPasswordModalOpen] = useState(false)
   const [resetToken, setResetToken] = useState<string | null>(null)
   const [inputValue, setInputValue] = useState('')
+  const [isDeepSearchEnabled, setIsDeepSearchEnabled] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Check for reset token in URL on mount
@@ -46,7 +47,10 @@ export default function App() {
   }, [])
 
   const handleSendMessage = async (message: string) => {
-    await sendMessage(message)
+    await sendMessage({
+      message,
+      deepSearch: isDeepSearchEnabled,
+    })
     setInputValue('')
     textareaRef.current?.focus()
   }
@@ -104,6 +108,10 @@ export default function App() {
               onChange={setInputValue}
               onSend={handleSendMessage}
               isSending={isSending || initializing}
+              isDeepSearchEnabled={isDeepSearchEnabled}
+              onToggleDeepSearch={() =>
+                setIsDeepSearchEnabled((previous) => !previous)
+              }
               placeholder={
                 isAuthenticated
                   ? 'Document the case details to continue the session…'

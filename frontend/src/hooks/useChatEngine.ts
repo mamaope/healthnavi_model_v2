@@ -126,7 +126,13 @@ export function useChatEngine() {
 
   const sendMessageMutation = useMutation({
     mutationKey: ['chat', 'send'],
-    mutationFn: async (message: string) => {
+    mutationFn: async ({
+      message,
+      deepSearch,
+    }: {
+      message: string
+      deepSearch: boolean
+    }) => {
       if (!message.trim()) {
         throw new Error('Message cannot be empty.')
       }
@@ -152,6 +158,7 @@ export function useChatEngine() {
         message: message.trim(),
         chatHistory,
         sessionId,
+        deepSearch,
       })
 
       if (!response.success || !response.data) {
