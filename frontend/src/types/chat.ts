@@ -6,6 +6,7 @@ export interface ChatMessage {
   content: string
   diagnosisComplete?: boolean
   createdAt: string
+  messageId?: number // Backend database message ID for feedback
 }
 
 export interface ChatSession {
@@ -28,6 +29,7 @@ export interface DiagnosisResponse {
     model_response: string
     diagnosis_complete?: boolean
     session_id?: string
+    message_id?: number
     metadata?: Record<string, unknown>
   }
   metadata?: Record<string, unknown>

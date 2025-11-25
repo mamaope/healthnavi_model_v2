@@ -5,14 +5,15 @@ Diagnosis router for HealthNavi AI CDSS.
 import logging
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from healthnavi.core.database import get_db
 from healthnavi.core.response_utils import create_success_response, create_error_response, ResponseTimer
 from healthnavi.models.user import User
-from healthnavi.schemas import DiagnosisInput, DiagnosisResponse, StandardResponse, SuccessResponse, ChatMessageCreate
+from healthnavi.schemas import DiagnosisInput, DiagnosisResponse, StandardResponse, SuccessResponse, ChatMessageCreate, MessageFeedbackRequest, MessageFeedbackResponse
 from healthnavi.services.conversational_service import generate_response
 from healthnavi.services.diagnosis_session_service import DiagnosisSessionService
 from healthnavi.api.v1.auth import get_current_user, require_user_role, require_admin_role, get_current_user_safe_v2
+from healthnavi.models.diagnosis_session import ChatMessage, MessageFeedback
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -208,6 +209,174 @@ async def diagnose(data: DiagnosisInput, current_user: User = Depends(get_curren
             elif "ai" in str(e).lower() or "model" in str(e).lower():
                 error_message = "AI service temporarily unavailable"
             
+            return create_error_response(
+                message=error_message,
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
+@router.post("/feedback", response_model=StandardResponse)
+async def submit_feedback(
+    feedback_data: MessageFeedbackRequest,
+    current_user: User = Depends(require_user_role),
+    db: Session = Depends(get_db)
+):
+    """
+    Submit feedback on an AI assistant message.
+    Users can mark messages as helpful or not helpful.
+    """
+    with ResponseTimer() as timer:
+        try:
+            # Validate feedback type
+            if feedback_data.feedback_type not in ['helpful', 'not_helpful']:
+                return create_error_response(
+                    message="Invalid feedback type. Must be 'helpful' or 'not_helpful'",
+                    status_code=400,
+                    execution_time=timer.get_execution_time()
+                )
+
+            # Verify message exists and belongs to the user
+            message = db.query(ChatMessage).options(
+                joinedload(ChatMessage.session)
+            ).filter(
+                ChatMessage.id == feedback_data.message_id,
+                ChatMessage.message_type == 'assistant'  # Only allow feedback on AI messages
+            ).first()
+
+            if not message:
+                return create_error_response(
+                    message="Message not found or feedback not allowed on this message type",
+                    status_code=404,
+                    execution_time=timer.get_execution_time()
+                )
+
+            # Verify the message belongs to a session owned by the user
+            if message.session.user_id != current_user.id:
+                return create_error_response(
+                    message="You can only provide feedback on your own messages",
+                    status_code=403,
+                    execution_time=timer.get_execution_time()
+                )
+
+            # Check if feedback already exists for this message
+            existing_feedback = db.query(MessageFeedback).filter(
+                MessageFeedback.message_id == feedback_data.message_id
+            ).first()
+
+            if existing_feedback:
+                # Update existing feedback
+                existing_feedback.feedback_type = feedback_data.feedback_type
+                existing_feedback.updated_at = datetime.utcnow().isoformat()
+                db.commit()
+                db.refresh(existing_feedback)
+
+                logger.info(f"Updated feedback {existing_feedback.id} for message {feedback_data.message_id} by user {current_user.id}")
+
+                feedback_response = MessageFeedbackResponse(
+                    id=existing_feedback.id,
+                    message_id=existing_feedback.message_id,
+                    user_id=existing_feedback.user_id,
+                    feedback_type=existing_feedback.feedback_type,
+                    created_at=existing_feedback.created_at,
+                    updated_at=existing_feedback.updated_at
+                )
+
+                return create_success_response(
+                    data=feedback_response,
+                    status_code=200,
+                    message="Feedback updated successfully",
+                    execution_time=timer.get_execution_time()
+                )
+            else:
+                # Create new feedback
+                new_feedback = MessageFeedback(
+                    message_id=feedback_data.message_id,
+                    user_id=current_user.id,
+                    feedback_type=feedback_data.feedback_type,
+                    created_at=datetime.utcnow().isoformat(),
+                    updated_at=datetime.utcnow().isoformat()
+                )
+
+                db.add(new_feedback)
+                db.commit()
+                db.refresh(new_feedback)
+
+                logger.info(f"Created feedback {new_feedback.id} for message {feedback_data.message_id} by user {current_user.id}")
+
+                feedback_response = MessageFeedbackResponse(
+                    id=new_feedback.id,
+                    message_id=new_feedback.message_id,
+                    user_id=new_feedback.user_id,
+                    feedback_type=new_feedback.feedback_type,
+                    created_at=new_feedback.created_at,
+                    updated_at=new_feedback.updated_at
+                )
+
+                return create_success_response(
+                    data=feedback_response,
+                    status_code=201,
+                    message="Feedback submitted successfully",
+                    execution_time=timer.get_execution_time()
+                )
+
+        except Exception as e:
+            logger.error(f"Error submitting feedback: {str(e)}")
+            db.rollback()
+            error_message = "Failed to submit feedback"
+            if "database" in str(e).lower() or "connection" in str(e).lower():
+                error_message = "Service temporarily unavailable"
+
+            return create_error_response(
+                message=error_message,
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
+@router.delete("/feedback/{message_id}", response_model=StandardResponse)
+async def remove_feedback(
+    message_id: int,
+    current_user: User = Depends(require_user_role),
+    db: Session = Depends(get_db)
+):
+    """
+    Remove feedback from an AI assistant message.
+    """
+    with ResponseTimer() as timer:
+        try:
+            # Find the feedback
+            feedback = db.query(MessageFeedback).filter(
+                MessageFeedback.message_id == message_id,
+                MessageFeedback.user_id == current_user.id
+            ).first()
+
+            if not feedback:
+                return create_error_response(
+                    message="Feedback not found",
+                    status_code=404,
+                    execution_time=timer.get_execution_time()
+                )
+
+            db.delete(feedback)
+            db.commit()
+
+            logger.info(f"Removed feedback for message {message_id} by user {current_user.id}")
+
+            return create_success_response(
+                data={"message_id": message_id},
+                status_code=200,
+                message="Feedback removed successfully",
+                execution_time=timer.get_execution_time()
+            )
+
+        except Exception as e:
+            logger.error(f"Error removing feedback: {str(e)}")
+            db.rollback()
+            error_message = "Failed to remove feedback"
+            if "database" in str(e).lower() or "connection" in str(e).lower():
+                error_message = "Service temporarily unavailable"
+
             return create_error_response(
                 message=error_message,
                 status_code=500,

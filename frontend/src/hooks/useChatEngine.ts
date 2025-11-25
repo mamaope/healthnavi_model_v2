@@ -31,6 +31,7 @@ function toChatMessage(message: {
     content: message.content,
     diagnosisComplete: message.diagnosis_complete,
     createdAt: message.created_at ?? nowIso(),
+    messageId: typeof message.id === 'number' ? message.id : undefined, // Store numeric ID if available
   }
 }
 
@@ -171,6 +172,7 @@ export function useChatEngine() {
         content: response.data.model_response,
         diagnosisComplete: response.data.diagnosis_complete,
         createdAt: nowIso(),
+        messageId: response.data.message_id, // Store backend message ID for feedback
       }
 
       addMessage(aiMessage)

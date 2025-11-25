@@ -213,5 +213,29 @@ export const chatApi = {
       body: JSON.stringify(requestBody),
     })
   },
+  submitFeedback(messageId: number, feedbackType: 'helpful' | 'not_helpful') {
+    return apiFetch<{
+      success: boolean
+      data: {
+        id: number
+        message_id: number
+        user_id: number
+        feedback_type: string
+        created_at: string | null
+        updated_at: string | null
+      }
+    }>('/diagnosis/feedback', 'POST', {
+      body: JSON.stringify({
+        message_id: messageId,
+        feedback_type: feedbackType,
+      }),
+    })
+  },
+  removeFeedback(messageId: number) {
+    return apiFetch<{
+      success: boolean
+      data: { message_id: number }
+    }>(`/diagnosis/feedback/${messageId}`, 'DELETE')
+  },
 }
 

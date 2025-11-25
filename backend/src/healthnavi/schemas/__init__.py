@@ -124,6 +124,22 @@ class ChatSessionListResponse(BaseModel):
     per_page: int
 
 
+class MessageFeedbackRequest(BaseModel):
+    """Schema for submitting message feedback."""
+    message_id: int = Field(..., description="ID of the chat message to provide feedback for")
+    feedback_type: str = Field(..., description="Type of feedback: 'helpful' or 'not_helpful'")
+
+
+class MessageFeedbackResponse(BaseModel):
+    """Schema for message feedback response."""
+    id: int
+    message_id: int
+    user_id: int
+    feedback_type: str
+    created_at: Optional[str]
+    updated_at: Optional[str]
+
+
 class UserCreate(BaseModel):
     """Schema for user creation."""
     username: Optional[str] = Field(None, min_length=3, max_length=50, description="Username")

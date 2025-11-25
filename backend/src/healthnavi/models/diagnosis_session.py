@@ -50,6 +50,29 @@ class ChatMessage(Base):
 
     # Relationships
     session = relationship("DiagnosisSession", back_populates="chat_messages")
+    feedback = relationship("MessageFeedback", back_populates="message", cascade="all, delete-orphan", uselist=False)
 
     def __repr__(self):
         return f"<ChatMessage(id={self.id}, session_id={self.session_id}, type='{self.message_type}')>"
+
+
+class MessageFeedback(Base):
+    """
+    Represents user feedback on AI assistant messages.
+    Stores whether a message was helpful or not helpful.
+    """
+    __tablename__ = "message_feedback"
+
+    id = Column(Integer, primary_key=True, index=True)
+    message_id = Column(Integer, ForeignKey("chat_messages.id"), nullable=False, unique=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    feedback_type = Column(String(20), nullable=False)  # 'helpful' or 'not_helpful'
+    created_at = Column(String, nullable=True, default=lambda: datetime.utcnow().isoformat())
+    updated_at = Column(String, nullable=True, default=lambda: datetime.utcnow().isoformat())
+
+    # Relationships
+    message = relationship("ChatMessage", back_populates="feedback")
+    user = relationship("User")
+
+    def __repr__(self):
+        return f"<MessageFeedback(id={self.id}, message_id={self.message_id}, feedback_type='{self.feedback_type}')>"
