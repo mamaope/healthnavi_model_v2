@@ -122,14 +122,21 @@ async def diagnose(data: DiagnosisInput, current_user: User = Depends(get_curren
                     logger.info("Skipping session creation for unauthenticated user")
 
             # Use the real AI service to generate response
+            # Explicitly default to False if not provided or None
+            deep_search_enabled = data.deep_search if data.deep_search is not None else False
+            logger.info(f"Search mode: {'DEEP SEARCH' if deep_search_enabled else 'QUICK SEARCH'}")
+            
             try:
-                response, diagnosis_complete, prompt_type = await generate_response(
+                response, diagnosis_complete, prompt_type, followup_questions = await generate_response(
                     query=data.patient_data,
                     chat_history=chat_history,
                     patient_data=data.patient_data,
-                    deep_search=bool(data.deep_search)
+                    deep_search=deep_search_enabled
                 )
-                logger.info(f"🎯 Prompt type used: {prompt_type}")
+                logger.info(f"Prompt type used: {prompt_type}")
+                # Ensure followup_questions is always a list
+                if followup_questions is None:
+                    followup_questions = []
                 # Validate AI response
                 if not response or len(response.strip()) < 10:
                     return create_error_response(
@@ -185,14 +192,31 @@ async def diagnose(data: DiagnosisInput, current_user: User = Depends(get_curren
 
             logger.info(f"AI diagnosis completed successfully. Response length: {len(response)} characters")
             
-            diagnosis_data = DiagnosisResponse(
-                model_response=response,
-                diagnosis_complete=diagnosis_complete,
-                updated_chat_history=updated_chat_history,
-                session_id=session_id,
-                message_id=message_id,
-                prompt_type=prompt_type
-            )
+            if followup_questions is None:
+                followup_questions = []
+            
+            try:
+                diagnosis_data = DiagnosisResponse(
+                    model_response=response,
+                    diagnosis_complete=diagnosis_complete,
+                    updated_chat_history=updated_chat_history,
+                    session_id=session_id,
+                    message_id=message_id,
+                    prompt_type=prompt_type,
+                    followup_questions=followup_questions
+                )
+            except Exception as schema_error:
+                logger.error(f"Error creating DiagnosisResponse schema: {schema_error}", exc_info=True)
+                # Return with empty followup_questions as fallback
+                diagnosis_data = DiagnosisResponse(
+                    model_response=response,
+                    diagnosis_complete=diagnosis_complete,
+                    updated_chat_history=updated_chat_history,
+                    session_id=session_id,
+                    message_id=message_id,
+                    prompt_type=prompt_type,
+                    followup_questions=[]
+                )
             
             return create_success_response(
                 data=diagnosis_data,

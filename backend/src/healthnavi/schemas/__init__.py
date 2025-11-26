@@ -63,7 +63,8 @@ class DiagnosisResponse(BaseModel):
     updated_chat_history: str = Field(..., description="Updated conversation history")
     session_id: Optional[Union[int, str]] = Field(None, description="Chat session ID if conversation was stored. Can be integer for authenticated users or string for guest users.")
     message_id: Optional[int] = Field(None, description="Message ID of the AI response if stored")
-    prompt_type: Optional[str] = Field(None, description="Type of prompt used (differential_diagnosis, drug_information, clinical_guidance)")
+    prompt_type: Optional[str] = Field(None, description="Type of prompt used (deep_search, quick_search)")
+    followup_questions: Optional[list[str]] = Field(default=[], description="List of follow-up questions generated based on the response")
 
 
 # Chat Session Management Schemas

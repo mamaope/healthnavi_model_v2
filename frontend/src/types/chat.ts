@@ -30,6 +30,8 @@ export interface DiagnosisResponse {
     diagnosis_complete?: boolean
     session_id?: string
     message_id?: number
+    prompt_type?: string
+    followup_questions?: string[]
     metadata?: Record<string, unknown>
   }
   metadata?: Record<string, unknown>
