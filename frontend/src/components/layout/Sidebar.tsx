@@ -9,6 +9,7 @@ interface SidebarProps {
   onStartNewChat: () => void
   onSelectSession: (session: ChatSession) => void
   isLoading?: boolean
+  onHomeClick?: () => void
 }
 
 export function Sidebar({
@@ -18,6 +19,7 @@ export function Sidebar({
   onStartNewChat,
   onSelectSession,
   isLoading,
+  onHomeClick,
 }: SidebarProps) {
   const { isAuthenticated, logout } = useAuth()
 
@@ -36,7 +38,11 @@ export function Sidebar({
     <aside className={sidebarClass}>
       <div className="sidebar-header">
         <div className="sidebar-logo">
-          <h2 className="welcome-logo">
+          <h2 
+            className="welcome-logo" 
+            onClick={onHomeClick}
+            style={{ cursor: onHomeClick ? 'pointer' : 'default' }}
+          >
             <span className="logo-health">Health</span>
             <span className="logo-navy">Navy</span>
           </h2>

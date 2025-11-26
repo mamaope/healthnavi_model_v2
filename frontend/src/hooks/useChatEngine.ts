@@ -166,6 +166,7 @@ export function useChatEngine() {
         throw new Error('Failed to receive response from the assistant.')
       }
 
+
       const aiMessage: ChatMessage = {
         id: crypto.randomUUID?.() ?? Math.random().toString(36).slice(2),
         author: 'assistant',
@@ -187,7 +188,11 @@ export function useChatEngine() {
         queryClient.invalidateQueries({ queryKey: ['chat', 'sessions'] })
       }
 
-      return aiMessage
+      // Return follow-up questions to be displayed above input
+      return {
+        message: aiMessage,
+        followupQuestions: response.data.followup_questions || []
+      }
     },
     onError: (error: any) => {
       console.error('Failed to send message', error)

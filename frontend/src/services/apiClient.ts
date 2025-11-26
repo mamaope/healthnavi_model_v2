@@ -196,19 +196,13 @@ export const chatApi = {
     chatHistory: string
     sessionId: string | null
     deepSearch: boolean
-  }) {
+  }): Promise<DiagnosisResponse> {
     const requestBody = {
       patient_data: payload.message,
       chat_history: payload.chatHistory,
-      deep_search: payload.deepSearch,
+      deep_search: payload.deepSearch ?? false, // Explicitly default to false
       ...(payload.sessionId !== null && { session_id: payload.sessionId }),
     }
-    console.log('Sending diagnosis request:', {
-      patient_data_length: payload.message.length,
-      chat_history_length: payload.chatHistory.length,
-      session_id: payload.sessionId,
-      body: requestBody,
-    })
     return apiFetch<DiagnosisResponse>('/diagnosis/diagnose', 'POST', {
       body: JSON.stringify(requestBody),
     })

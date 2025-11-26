@@ -52,12 +52,18 @@ services:
       retries: 5
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: node:20-alpine
     container_name: healthnavi_cdss_frontend
+    working_dir: /app
     ports:
-      - "3000:80"
+      - "3000:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules  # Prevent overwriting node_modules
+    environment:
+      - NODE_ENV=development
+      - VITE_PROXY_TARGET=http://api:8050
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
     restart: unless-stopped
     depends_on:
       - api

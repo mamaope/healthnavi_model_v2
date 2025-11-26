@@ -5,9 +5,10 @@ import { ThemeToggle } from '../common/ThemeToggle'
 interface HeaderProps {
   onSignIn: () => void
   onRegister: () => void
+  onHomeClick?: () => void
 }
 
-export function Header({ onSignIn, onRegister }: HeaderProps) {
+export function Header({ onSignIn, onRegister, onHomeClick }: HeaderProps) {
   const { isAuthenticated, user, logout } = useAuth()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -34,7 +35,11 @@ export function Header({ onSignIn, onRegister }: HeaderProps) {
   return (
     <header className="header">
       <div className="logo">
-        <h1 className="welcome-logo">
+        <h1 
+          className="welcome-logo" 
+          onClick={onHomeClick}
+          style={{ cursor: onHomeClick ? 'pointer' : 'default' }}
+        >
           <span className="logo-health">Health</span>
           <span className="logo-navy">Navy</span>
         </h1>

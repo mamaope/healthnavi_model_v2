@@ -39,10 +39,10 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
       const textarea = textareaRef.current
       if (!textarea) return
       textarea.style.height = 'auto'
-      const maxHeight = 120
-      textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`
-      textarea.style.overflowY =
-        textarea.scrollHeight > maxHeight ? 'auto' : 'hidden'
+      const maxHeight = 150
+      const newHeight = Math.min(textarea.scrollHeight, maxHeight)
+      textarea.style.height = `${newHeight}px`
+      textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden'
     }, [value, isSending])
 
     const handleSend = useCallback(async () => {
@@ -84,43 +84,44 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
             aria-label="Message input"
           />
           <div className="input-actions">
-            {value.length > 0 && (
-              <div
-                className={`char-counter ${isNearLimit ? 'warning' : ''} ${isOverLimit ? 'error' : ''}`}
+            <div className="input-actions-left">
+              <button
+                type="button"
+                className={`deep-search-toggle ${isDeepSearchEnabled ? 'active' : ''}`}
+                onClick={onToggleDeepSearch}
+                aria-pressed={isDeepSearchEnabled}
+                aria-label="Toggle deep search for broader clinical context"
+                disabled={isSending}
               >
-                {value.length} / {MAX_MESSAGE_LENGTH}
-              </div>
-            )}
-            <button
-              type="button"
-              className={`deep-search-toggle ${isDeepSearchEnabled ? 'active' : ''}`}
-              onClick={onToggleDeepSearch}
-              aria-pressed={isDeepSearchEnabled}
-              aria-label="Toggle deep search for broader clinical context"
-              disabled={isSending}
-            >
-              <span className="deep-search-icon">
-                <i className="fas fa-brain" aria-hidden="true" />
-              </span>
-              <span className="deep-search-text">
-                <span className="deep-search-title">Deep Search</span>
-                <span className="deep-search-caption">
-                  {isDeepSearchEnabled ? 'Broader medical context on' : 'Standard response'}
+                <span className="deep-search-icon">
+                  <i className="fas fa-brain" aria-hidden="true" />
                 </span>
-              </span>
-            </button>
-            <button
-              className="send-button"
-              onClick={() => void handleSend()}
-              disabled={isSending || value.trim().length === 0}
-              aria-label="Send message"
-            >
-              {isSending ? (
-                <i className="fas fa-spinner fa-spin" />
-              ) : (
-                <i className="fas fa-paper-plane" />
+                <span className="deep-search-text">
+                  <span className="deep-search-title">Deep Reasoning</span>
+                </span>
+              </button>
+            </div>
+            <div className="input-actions-right">
+              {value.length > 0 && (
+                <div
+                  className={`char-counter ${isNearLimit ? 'warning' : ''} ${isOverLimit ? 'error' : ''}`}
+                >
+                  {value.length} / {MAX_MESSAGE_LENGTH}
+                </div>
               )}
-            </button>
+              <button
+                className="send-button"
+                onClick={() => void handleSend()}
+                disabled={isSending || value.trim().length === 0}
+                aria-label="Send message"
+              >
+                {isSending ? (
+                  <i className="fas fa-spinner fa-spin" />
+                ) : (
+                  <i className="fas fa-arrow-up" />
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>

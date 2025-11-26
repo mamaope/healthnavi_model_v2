@@ -11,14 +11,13 @@ from dotenv import load_dotenv
 from typing import Dict, Tuple
 from google.api_core import exceptions
 from enum import Enum
-# import concurrent.futures  # Not used in this implementation
 from datetime import datetime, timedelta
 
 from healthnavi.core.constants import (
     MODEL_NAME, PROMPT_TOKEN_LIMIT, CACHE_TTL_MINUTES, MAX_CACHE_SIZE,
     DEFAULT_CONTEXT_MAX_CHARS, BALANCED_CONTEXT_MAX_CHARS,
     MAX_RETRY_ATTEMPTS, RETRY_MULTIPLIER, RETRY_MIN_WAIT, RETRY_MAX_WAIT,
-    GENERAL_PROMPT
+    QUICK_SEARCH_PROMPT, DEEP_SEARCH_PROMPT
 )
 
 logging.basicConfig(
@@ -28,8 +27,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 load_dotenv()
-
-# GenAI client will be initialized at startup
 
 # Simple in-memory cache for responses
 RESPONSE_CACHE: Dict[str, Tuple[str, datetime]] = {}
@@ -50,6 +47,81 @@ def optimize_context_for_llm(chunks: list[dict], max_chunks: int = 3) -> str:
 
 def is_diagnosis_complete(response: str) -> bool:
     return "question:" not in response.lower().strip()
+
+
+def generate_followup_questions_sync(original_query: str, response: str) -> list[str]:
+    """
+    Generate 3-4 relevant follow-up questions based on the original query and AI response.
+    """
+    import re
+    client = get_genai_client()
+    
+    try:
+        followup_prompt = f"""Generate 3 follow-up questions for this query:
+
+        Q: {original_query[:200]}
+
+        A: {response[:800]}
+
+        Write 3 questions:"""
+        
+        logger.info("Generating follow-up questions...")
+        
+        followup_response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=[{"role": "user", "parts": [{"text": followup_prompt}]}],
+            config={
+                "temperature": 0.5,
+                "max_output_tokens": 1000,  
+                "top_p": 0.9,
+                "top_k": 40,
+                "candidate_count": 1
+            }
+        )
+        
+        logger.info(f"Follow-up response received: {followup_response}")
+        
+        if followup_response and hasattr(followup_response, 'candidates') and followup_response.candidates:
+            candidate = followup_response.candidates[0]
+            logger.info(f"Candidate: {candidate}")
+            logger.info(f"Finish reason: {getattr(candidate, 'finish_reason', 'unknown')}")
+            
+            if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts') and candidate.content.parts:
+                questions_text = candidate.content.parts[0].text.strip()
+                logger.info(f"Raw questions text: {questions_text}")
+                
+                questions = []
+                lines = [q.strip() for q in questions_text.split('\n') if q.strip()]
+                
+                for line in lines:
+                    # Remove numbering/bullets 
+                    cleaned = re.sub(r'^[\d.\-*•)\s]+', '', line).strip()
+                    
+                    # Skip intro/header lines
+                    if any(skip in cleaned.lower() for skip in ['follow-up questions', 'here are', 'following questions']):
+                        continue
+                    
+                    # Accept any line that looks like a question (minimum 20 chars for a real question)
+                    if cleaned and len(cleaned) > 20:
+                        if not cleaned.endswith('?'):
+                            cleaned = cleaned.rstrip('.') + '?'
+                        questions.append(cleaned)
+                        logger.info(f"Parsed question: {cleaned}")
+                
+                if questions:
+                    result = questions[:4]
+                    logger.info(f"Returning {len(result)} follow-up questions")
+                    return result
+            else:
+                logger.warning(f"No content parts. Candidate content: {getattr(candidate, 'content', 'none')}")
+        else:
+            logger.warning(f"No candidates in response")
+            
+    except Exception as e:
+        logger.error(f"Error generating follow-up questions: {e}", exc_info=True)
+    
+    logger.warning("Could not generate follow-up questions")
+    return []
 
 
 def _generate_cache_key(query: str, patient_data: str, deep_search: bool = False) -> str:
@@ -93,7 +165,7 @@ def _cache_response(cache_key: str, response: str):
     reraise=True,
     retry=retry_if_not_exception_type(HTTPException)
 )
-async def generate_response(query: str, chat_history: str, patient_data: str, deep_search: bool = False) -> tuple[str, bool, str]:
+async def generate_response(query: str, chat_history: str, patient_data: str, deep_search: bool = False) -> tuple[str, bool, str, list[str]]:
     total_start_time = time.time()
     full_response_text = ""
     actual_sources = []
@@ -106,15 +178,49 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
             if cached_response:
                 logger.info(f"⚡ Cached response returned in {time.time() - total_start_time:.3f}s")
                 diagnosis_complete = is_diagnosis_complete(cached_response)
-                return cached_response, diagnosis_complete, "success"
+                prompt_type = "deep_search" if deep_search else "quick_search"
+                # Generate follow-up questions even for cached responses
+                followup_questions = []
+                try:
+                    followup_questions = generate_followup_questions_sync(query, cached_response)
+                except Exception as e:
+                    logger.warning(f"Failed to generate follow-up questions for cached response: {e}")
+                return cached_response, diagnosis_complete, prompt_type, followup_questions
 
-        context, actual_sources = search_all_collections(query, patient_data, k=20)
-        optimized_context = optimize_context_for_llm(context, max_chunks=20)
+        # Adjust chunks and sources based on search type
+        # Default to quick search unless explicitly enabled
+        if deep_search:
+            max_chunks = 20
+            max_books = 8
+            min_chunks = 10
+            min_books = 5
+            max_output_tokens = 7000
+            prompt_template = DEEP_SEARCH_PROMPT
+            prompt_type = "deep_search"
+            logger.info("🔍 Using DEEP SEARCH mode")
+        else:
+            max_chunks = 8
+            max_books = 4
+            min_chunks = 5
+            min_books = 3
+            max_output_tokens = 3000
+            prompt_template = QUICK_SEARCH_PROMPT
+            prompt_type = "quick_search"
+        
+        context, actual_sources = search_all_collections(
+            query, 
+            patient_data, 
+            max_chunks=max_chunks,
+            max_books=max_books,
+            min_chunks=min_chunks,
+            min_books=min_books
+        )
+        optimized_context = optimize_context_for_llm(context, max_chunks=max_chunks)
         logger.info(f"Context optimized: {len(context)} chunks -> {len(optimized_context)} chars from {len(actual_sources)} sources")
 
         sources_text = ", ".join(actual_sources) if actual_sources else "No sources available"
 
-        full_prompt = GENERAL_PROMPT.format(sources=sources_text, context=optimized_context)
+        full_prompt = prompt_template.format(sources=sources_text, context=optimized_context)
         user_context_block = f"""
             ### USER QUESTION:
             {query}
@@ -140,7 +246,7 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
                 contents=[{"role": "user", "parts": [{"text": full_prompt}]}],
                 config={
                     "temperature": 0.2,
-                    "max_output_tokens": 8000,
+                    "max_output_tokens": max_output_tokens,
                     "top_p": 0.95,
                     "top_k": 20,
                     "candidate_count": 1
@@ -148,7 +254,8 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
             )
         except Exception as e:
             logger.error(f"Failed to generate content: {e}", exc_info=True)
-            return f"⚠️ Failed to generate content: {str(e)}", False, "error"
+            prompt_type = "deep_search" if deep_search else "quick_search"
+            return f"⚠️ Failed to generate content: {str(e)}", False, prompt_type, []
 
         try:
             if response and hasattr(response, 'candidates') and response.candidates:
@@ -156,7 +263,8 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
 
                 if not (hasattr(candidate, 'content') and hasattr(candidate.content, 'parts') and candidate.content.parts):
                     logger.error("Empty or blocked response (no content parts).")
-                    return "⚠️ The content was blocked. Please rephrase your question.", False, "error"
+                    prompt_type = "deep_search" if deep_search else "quick_search"
+                    return "⚠️ The content was blocked. Please rephrase your question.", False, prompt_type, []
 
                 full_response_text = candidate.content.parts[0].text.strip()
                 finish_reason = getattr(candidate, 'finish_reason', 'UNKNOWN')
@@ -169,11 +277,13 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
 
             else:
                 logger.error("Model returned no candidates or empty response.")
-                return "⚠️ No valid response was generated. Please try again.", False, "error"
+                prompt_type = "deep_search" if deep_search else "quick_search"
+                return "⚠️ No valid response was generated. Please try again.", False, prompt_type, []
 
         except Exception as e:
             logger.error(f"Error processing model output: {e}", exc_info=True)
-            return f"An error occurred while processing the response: {str(e)}", False, "error"
+            prompt_type = "deep_search" if deep_search else "quick_search"
+            return f"An error occurred while processing the response: {str(e)}", False, prompt_type, []
 
         # Cache the response for future use
         if cache_key and full_response_text:
@@ -185,8 +295,16 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
         # Determine if diagnosis is complete
         diagnosis_complete = is_diagnosis_complete(full_response_text)
         
-        return full_response_text, diagnosis_complete, "success"
+        # Generate follow-up questions from the response
+        followup_questions = []
+        try:
+            followup_questions = generate_followup_questions_sync(query, full_response_text)
+        except Exception as e:
+            logger.warning(f"Failed to generate follow-up questions: {e}")
+        
+        return full_response_text, diagnosis_complete, prompt_type, followup_questions
 
     except Exception as e:
         logger.error(f"FATAL error in generate_response: {e}", exc_info=True)
-        return f"🚨 Unexpected error: {str(e)}", False, "error"
+        prompt_type = "deep_search" if deep_search else "quick_search"
+        return f"🚨 Unexpected error: {str(e)}", False, prompt_type, []

@@ -32,6 +32,7 @@ export default function App() {
   const [resetToken, setResetToken] = useState<string | null>(null)
   const [inputValue, setInputValue] = useState('')
   const [isDeepSearchEnabled, setIsDeepSearchEnabled] = useState(false)
+  const [followupQuestions, setFollowupQuestions] = useState<string[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Check for reset token or OAuth callback in URL on mount
@@ -95,11 +96,20 @@ export default function App() {
   }, [refreshProfile])
 
   const handleSendMessage = async (message: string) => {
-    await sendMessage({
-      message,
-      deepSearch: isDeepSearchEnabled,
-    })
-    setInputValue('')
+    setFollowupQuestions([]) // Clear previous follow-up questions
+    try {
+      const result = await sendMessage({
+        message,
+        deepSearch: isDeepSearchEnabled,
+      })
+      setInputValue('')
+      // Store follow-up questions to display above input
+      if (result && result.followupQuestions) {
+        setFollowupQuestions(result.followupQuestions)
+      }
+    } catch (error) {
+      console.error('Error sending message:', error)
+    }
     textareaRef.current?.focus()
   }
 
@@ -122,6 +132,29 @@ export default function App() {
       <MessageList messages={messages} />
 
       <LoadingIndicator isVisible={isSending} />
+
+      {followupQuestions && followupQuestions.length > 0 && (
+        <div className="followup-questions-container">
+          <div className="followup-questions-title">Follow-Up Questions</div>
+          <div className="followup-questions-list">
+            {followupQuestions.map((question, index) => (
+              <button
+                key={index}
+                type="button"
+                className="followup-question"
+                onClick={() => {
+                  setInputValue(question)
+                  setFollowupQuestions([])
+                  textareaRef.current?.focus()
+                }}
+              >
+                <i className="fas fa-arrow-right" aria-hidden="true" />
+                <span>{question}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <ChatInput
         ref={textareaRef}
@@ -180,6 +213,11 @@ export default function App() {
           void loadSession(session)
         }}
         isLoading={sessionsLoading}
+        onHomeClick={() => {
+          startNewSession()
+          setFollowupQuestions([])
+          setInputValue('')
+        }}
       />
 
       <div className="main-area">
@@ -191,6 +229,11 @@ export default function App() {
           onRegister={() => {
             setAuthMode('register')
             setAuthModalOpen(true)
+          }}
+          onHomeClick={() => {
+            startNewSession()
+            setFollowupQuestions([])
+            setInputValue('')
           }}
         />
 

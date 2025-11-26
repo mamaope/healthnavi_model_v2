@@ -30,10 +30,17 @@ def initialize_vectorstore():
             logger.error(error_message)
             raise RuntimeError(error_message)
 
-def search_all_collections(query: str, patient_data: str, k: int = 20) -> Tuple[List, List[str]]:
+def search_all_collections(
+    query: str, 
+    patient_data: str, 
+    max_chunks: int = 20, 
+    max_books: int = 8,
+    min_chunks: int = 5,
+    min_books: int = 3
+) -> Tuple[List, List[str]]:
     """
     Perform semantic retrieval and return optimized context for LLM.
-    - Retrieves k chunks with diversity across multiple books.
+    - Retrieves chunks with diversity across multiple sources.
     """
     start_time = time.time()
     client = vectordb_service.client
@@ -47,15 +54,23 @@ def search_all_collections(query: str, patient_data: str, k: int = 20) -> Tuple[
     logger.info(f"🔍 Running semantic retrieval (query length={len(full_search_query)})")
 
     try:
-        # Retrieve more chunks to ensure diversity across multiple books
-        raw_chunks, all_sources = vectordb_service.search_medical_knowledge(full_search_query, k=k*3)
+        # Retrieve more chunks to ensure diversity across multiple sources
+        # For quick search, retrieve fewer chunks initially (2x instead of 3x)
+        retrieval_multiplier = 2 if max_chunks <= 8 else 3
+        raw_chunks, all_sources = vectordb_service.search_medical_knowledge(full_search_query, k=max_chunks * retrieval_multiplier)
 
         if not raw_chunks or not all_sources:
             logger.warning("No relevant context found by vectordb_service.")
             return [], []
         
-        # Apply book diversity: ensure we get chunks from multiple different books
-        top_chunks = _apply_book_diversity(raw_chunks, target_chunks=k, min_books=8)
+        # Apply source diversity: ensure we get chunks from multiple different sources
+        top_chunks = _apply_book_diversity(
+            raw_chunks, 
+            max_chunks=max_chunks,
+            max_books=max_books,
+            min_chunks=min_chunks,
+            min_books=min_books
+        )
 
         unique_top_sources = set()
         for chunk in top_chunks:
@@ -73,17 +88,16 @@ def search_all_collections(query: str, patient_data: str, k: int = 20) -> Tuple[
         return [], []
 
 
-def _apply_book_diversity(chunks: List, target_chunks: int = 20, min_books: int = 8) -> List:
+def _apply_book_diversity(
+    chunks: List, 
+    max_chunks: int = 20,
+    max_books: int = 8,
+    min_chunks: int = 5,
+    min_books: int = 3
+) -> List:
     """
-    Apply book diversity to ensure chunks come from multiple different books.
-    
-    Args:
-        chunks: List of all retrieved chunks
-        target_chunks: Number of chunks to return
-        min_books: Minimum number of different books to include
-        
-    Returns:
-        List of chunks with diversity across books
+    Apply source diversity to ensure chunks come from multiple different sources.
+    Ensures minimums for diversity while respecting maximums.
     """
     if not chunks:
         return [] 
@@ -93,39 +107,50 @@ def _apply_book_diversity(chunks: List, target_chunks: int = 20, min_books: int 
         file_name = os.path.basename(chunk.get("file_path", "Unknown"))
         book_chunks[file_name].append(chunk)
     
-    # If we have fewer books than min_books, just return top chunks
-    if len(book_chunks) < min_books:
-        logger.warning(f"Only {len(book_chunks)} books found, less than minimum {min_books}")
+    available_books = len(book_chunks)
+    
+    # Ensure we have at least min_books, but don't exceed max_books
+    target_books = min(max(min_books, available_books), max_books)
+    
+    # Ensure we have at least min_chunks, but don't exceed max_chunks
+    target_chunks = min(max(min_chunks, len(chunks)), max_chunks)
+    
+    # If we have fewer books than min_books, just return top chunks up to max_chunks
+    if available_books < min_books:
+        logger.warning(f"Only {available_books} books found, less than minimum {min_books}")
         return chunks[:target_chunks]
     
     # Distribute chunks across books round-robin to ensure diversity
     selected_chunks = []
-    book_lists = list(book_chunks.values())
-    book_names = list(book_chunks.keys())
+    book_lists = list(book_chunks.values())[:target_books]  # Limit to max_books
     
-    # First, get at least one chunk from each of the top min_books books
-    for i in range(min_books):
-        if i < len(book_lists) and book_lists[i]:
+    # First, get at least one chunk from each of the target_books
+    for i in range(min(target_books, len(book_lists))):
+        if book_lists[i]:
             selected_chunks.append(book_lists[i].pop(0))
     
+    # Continue round-robin until we reach target_chunks or run out
     book_idx = 0
     while len(selected_chunks) < target_chunks:
         # Find next book with remaining chunks
         attempts = 0
+        found = False
         while attempts < len(book_lists):
             if book_idx >= len(book_lists):
                 book_idx = 0
             if book_lists[book_idx]:
                 selected_chunks.append(book_lists[book_idx].pop(0))
                 book_idx += 1
+                found = True
                 break
             book_idx += 1
             attempts += 1
         
         # If no more chunks available, break
-        if attempts >= len(book_lists):
+        if not found:
             break
     
-    logger.info(f"📖 Diversity selection: {len(selected_chunks)} chunks from {len(set(os.path.basename(c.get('file_path', '')) for c in selected_chunks))} different books")
+    final_books = len(set(os.path.basename(c.get('file_path', '')) for c in selected_chunks))
+    logger.info(f"📖 Diversity selection: {len(selected_chunks)} chunks from {final_books} different books")
     return selected_chunks
     
