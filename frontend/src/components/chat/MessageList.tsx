@@ -14,7 +14,7 @@ export function MessageList({ messages }: MessageListProps) {
   const [feedback, setFeedback] = useState<Record<string, 'helpful' | 'not_helpful' | null>>({})
   const [shareStatus, setShareStatus] = useState<Record<string, 'shared' | 'copied' | null>>({})
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState<Record<string, boolean>>({})
-  const shareTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const shareTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (!containerRef.current) return
