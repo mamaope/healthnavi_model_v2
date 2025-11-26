@@ -31,6 +31,7 @@ function toChatMessage(message: {
     content: message.content,
     diagnosisComplete: message.diagnosis_complete,
     createdAt: message.created_at ?? nowIso(),
+    messageId: typeof message.id === 'number' ? message.id : undefined, // Store numeric ID if available
   }
 }
 
@@ -126,7 +127,13 @@ export function useChatEngine() {
 
   const sendMessageMutation = useMutation({
     mutationKey: ['chat', 'send'],
-    mutationFn: async (message: string) => {
+    mutationFn: async ({
+      message,
+      deepSearch,
+    }: {
+      message: string
+      deepSearch: boolean
+    }) => {
       if (!message.trim()) {
         throw new Error('Message cannot be empty.')
       }
@@ -152,6 +159,7 @@ export function useChatEngine() {
         message: message.trim(),
         chatHistory,
         sessionId,
+        deepSearch,
       })
 
       if (!response.success || !response.data) {
@@ -164,6 +172,7 @@ export function useChatEngine() {
         content: response.data.model_response,
         diagnosisComplete: response.data.diagnosis_complete,
         createdAt: nowIso(),
+        messageId: response.data.message_id, // Store backend message ID for feedback
       }
 
       addMessage(aiMessage)

@@ -53,6 +53,7 @@ class DiagnosisInput(BaseModel):
     patient_data: str = Field(..., min_length=3, max_length=10000, description="Patient data for diagnosis")
     chat_history: Optional[str] = Field(default="", max_length=50000, description="Previous conversation history")
     session_id: Optional[Union[int, str]] = Field(None, description="Chat session ID to store the conversation. Can be integer for authenticated users or string for guest users.")
+    deep_search: Optional[bool] = Field(default=False, description="Enable deeper retrieval for AI reasoning")
 
 
 class DiagnosisResponse(BaseModel):
@@ -121,6 +122,22 @@ class ChatSessionListResponse(BaseModel):
     total: int
     page: int
     per_page: int
+
+
+class MessageFeedbackRequest(BaseModel):
+    """Schema for submitting message feedback."""
+    message_id: int = Field(..., description="ID of the chat message to provide feedback for")
+    feedback_type: str = Field(..., description="Type of feedback: 'helpful' or 'not_helpful'")
+
+
+class MessageFeedbackResponse(BaseModel):
+    """Schema for message feedback response."""
+    id: int
+    message_id: int
+    user_id: int
+    feedback_type: str
+    created_at: Optional[str]
+    updated_at: Optional[str]
 
 
 class UserCreate(BaseModel):

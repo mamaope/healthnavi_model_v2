@@ -52,9 +52,10 @@ def is_diagnosis_complete(response: str) -> bool:
     return "question:" not in response.lower().strip()
 
 
-def _generate_cache_key(query: str, patient_data: str) -> str:
+def _generate_cache_key(query: str, patient_data: str, deep_search: bool = False) -> str:
     """Generate a cache key from query and patient data."""
-    combined = f"{query}|{patient_data}".lower().strip()
+    mode = "deep" if deep_search else "standard"
+    combined = f"{query}|{patient_data}|{mode}".lower().strip()
     return hashlib.md5(combined.encode()).hexdigest()
 
 
@@ -92,7 +93,7 @@ def _cache_response(cache_key: str, response: str):
     reraise=True,
     retry=retry_if_not_exception_type(HTTPException)
 )
-async def generate_response(query: str, chat_history: str, patient_data: str) -> tuple[str, bool, str]:
+async def generate_response(query: str, chat_history: str, patient_data: str, deep_search: bool = False) -> tuple[str, bool, str]:
     total_start_time = time.time()
     full_response_text = ""
     actual_sources = []
@@ -100,7 +101,7 @@ async def generate_response(query: str, chat_history: str, patient_data: str) ->
         # Check cache first (skip for queries with chat history)
         cache_key = None
         if not chat_history or chat_history == "No previous conversation":
-            cache_key = _generate_cache_key(query, patient_data)
+            cache_key = _generate_cache_key(query, patient_data, deep_search)
             cached_response = _get_cached_response(cache_key)
             if cached_response:
                 logger.info(f"⚡ Cached response returned in {time.time() - total_start_time:.3f}s")

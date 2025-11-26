@@ -12,12 +12,25 @@ interface ChatInputProps {
   onSend: (message: string) => Promise<void>
   isSending: boolean
   placeholder?: string
+  isDeepSearchEnabled: boolean
+  onToggleDeepSearch: () => void
 }
 
 export const MAX_MESSAGE_LENGTH = 2000
 
 export const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
-  ({ value, onChange, onSend, isSending, placeholder = 'How can I help you today?' }, ref) => {
+  (
+    {
+      value,
+      onChange,
+      onSend,
+      isSending,
+      placeholder = 'How can I help you today?',
+      isDeepSearchEnabled,
+      onToggleDeepSearch,
+    },
+    ref,
+  ) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null)
 
     useImperativeHandle(ref, () => textareaRef.current as HTMLTextAreaElement, [])
@@ -60,11 +73,6 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
     return (
       <div className="input-area">
         <div className="input-container">
-          <div className="input-icons">
-            <div className="icon-deep-reasoning" title="AI-powered clinical reasoning">
-              <i className="fas fa-brain" />
-            </div>
-          </div>
           <textarea
             ref={textareaRef}
             value={value}
@@ -83,6 +91,24 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
                 {value.length} / {MAX_MESSAGE_LENGTH}
               </div>
             )}
+            <button
+              type="button"
+              className={`deep-search-toggle ${isDeepSearchEnabled ? 'active' : ''}`}
+              onClick={onToggleDeepSearch}
+              aria-pressed={isDeepSearchEnabled}
+              aria-label="Toggle deep search for broader clinical context"
+              disabled={isSending}
+            >
+              <span className="deep-search-icon">
+                <i className="fas fa-brain" aria-hidden="true" />
+              </span>
+              <span className="deep-search-text">
+                <span className="deep-search-title">Deep Search</span>
+                <span className="deep-search-caption">
+                  {isDeepSearchEnabled ? 'Broader medical context on' : 'Standard response'}
+                </span>
+              </span>
+            </button>
             <button
               className="send-button"
               onClick={() => void handleSend()}
