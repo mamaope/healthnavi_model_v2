@@ -8,10 +8,14 @@ from typing import Optional
 import time
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from jose import jwt
 import os
+import secrets
+import string
+from urllib.parse import urlencode
 
 from healthnavi.core.database import get_db
 from healthnavi.core.config import get_config
@@ -311,10 +315,18 @@ def login_for_access_token(login_data: LoginRequest, db: Session = Depends(get_d
                     execution_time=timer.get_execution_time()
                 )
             
-            # Verify password
-            if not verify_password(login_data.password, user.hashed_password):
+            # Verify password (skip for OAuth users who don't have passwords)
+            if user.hashed_password:
+                if not verify_password(login_data.password, user.hashed_password):
+                    return create_error_response(
+                        message="Incorrect email or password",
+                        status_code=401,
+                        execution_time=timer.get_execution_time()
+                    )
+            else:
+                # User registered via OAuth, cannot login with password
                 return create_error_response(
-                    message="Incorrect email or password",
+                    message="This account was created with Google. Please use Google Sign-In.",
                     status_code=401,
                     execution_time=timer.get_execution_time()
                 )
@@ -547,6 +559,28 @@ def manual_verify_email(email: str, db: Session = Depends(get_db)):
                 status_code=500,
                 execution_time=timer.get_execution_time()
             )
+
+
+@router.get("/me", response_model=StandardResponse)
+def get_current_user_me(
+    current_user: User = Depends(get_current_user_safe_v2)
+):
+    """
+    Get current authenticated user profile.
+    Alias for /profile endpoint for compatibility.
+    """
+    return get_user_profile(current_user=current_user)
+
+
+@router.get("/me", response_model=StandardResponse)
+def get_current_user_me(
+    current_user: User = Depends(get_current_user_safe_v2)
+):
+    """
+    Get current authenticated user profile.
+    Alias for /profile endpoint for compatibility.
+    """
+    return get_user_profile(current_user=current_user)
 
 
 @router.get("/profile", response_model=StandardResponse)
@@ -897,3 +931,224 @@ def reset_password(reset_data: ResetPasswordRequest, db: Session = Depends(get_d
                 status_code=500,
                 execution_time=timer.get_execution_time()
             )
+
+
+@router.get("/google/login")
+def google_login():
+    """
+    Initiate Google OAuth login flow.
+    Redirects user to Google's OAuth consent screen.
+    """
+    with ResponseTimer() as timer:
+        try:
+            if not config.security.google_client_id or not config.security.google_client_secret:
+                return create_error_response(
+                    message="Google OAuth is not configured",
+                    status_code=503,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            # Generate state token for CSRF protection
+            state = secrets.token_urlsafe(32)
+            
+            # Build Google OAuth URL - redirect to backend callback endpoint
+            backend_url = os.getenv('BACKEND_URL', 'http://localhost:8050')
+            redirect_uri = config.security.google_redirect_uri or f"{backend_url}/api/v2/auth/google/callback"
+            
+            google_oauth_url = (
+                "https://accounts.google.com/o/oauth2/v2/auth?"
+                f"client_id={config.security.google_client_id}&"
+                f"redirect_uri={redirect_uri}&"
+                "response_type=code&"
+                "scope=openid email profile&"
+                "prompt=select_account&"
+                "access_type=offline&"
+                "include_granted_scopes=true&"
+                f"state={state}"
+            )
+            
+            # Store state in response (in production, use secure session storage)
+            response = RedirectResponse(url=google_oauth_url)
+            response.set_cookie(key="oauth_state", value=state, httponly=True, samesite="lax", max_age=600)
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Google login initiation error: {str(e)}")
+            return create_error_response(
+                message="Failed to initiate Google login",
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
+@router.get("/google/callback")
+async def google_callback(
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+    request: Request = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Handle Google OAuth callback.
+    Exchanges authorization code for user info and creates/authenticates user.
+    """
+    with ResponseTimer() as timer:
+        try:
+            if error:
+                logger.error(f"Google OAuth error: {error}")
+                redirect_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/auth/google/error?error={error}"
+                return RedirectResponse(url=redirect_url)
+            
+            if not code or not state:
+                redirect_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/auth/google/error?error=missing_parameters"
+                return RedirectResponse(url=redirect_url)
+            
+            # Verify state token (CSRF protection)
+            cookie_state = request.cookies.get("oauth_state")
+            if not cookie_state or cookie_state != state:
+                logger.warning("OAuth state mismatch - possible CSRF attack")
+                redirect_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/auth/google/error?error=invalid_state"
+                return RedirectResponse(url=redirect_url)
+            
+            # Exchange code for token
+            try:
+                import httpx
+                
+                backend_url = os.getenv('BACKEND_URL', 'http://localhost:8050')
+                redirect_uri = config.security.google_redirect_uri or f"{backend_url}/api/v2/auth/google/callback"
+                
+                token_response = httpx.post(
+                    "https://oauth2.googleapis.com/token",
+                    data={
+                        "code": code,
+                        "client_id": config.security.google_client_id,
+                        "client_secret": config.security.google_client_secret,
+                        "redirect_uri": redirect_uri,
+                        "grant_type": "authorization_code",
+                    },
+                    timeout=10.0
+                )
+                
+                if token_response.status_code != 200:
+                    logger.error(f"Token exchange failed: {token_response.text}")
+                    redirect_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/auth/google/error?error=token_exchange_failed"
+                    return RedirectResponse(url=redirect_url)
+                
+                token_data = token_response.json()
+                access_token = token_data.get("id_token") or token_data.get("access_token")
+                
+                if not access_token:
+                    logger.error("No access token in response")
+                    redirect_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/auth/google/error?error=no_token"
+                    return RedirectResponse(url=redirect_url)
+                
+                # Get user info from Google
+                userinfo_response = httpx.get(
+                    "https://www.googleapis.com/oauth2/v2/userinfo",
+                    headers={"Authorization": f"Bearer {token_data.get('access_token')}"},
+                    timeout=10.0
+                )
+                
+                if userinfo_response.status_code != 200:
+                    logger.error(f"User info fetch failed: {userinfo_response.text}")
+                    redirect_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/auth/google/error?error=userinfo_failed"
+                    return RedirectResponse(url=redirect_url)
+                
+                google_user_data = userinfo_response.json()
+                google_id = google_user_data.get("id")
+                email = google_user_data.get("email")
+                name = google_user_data.get("name", "")
+                given_name = google_user_data.get("given_name", "")
+                family_name = google_user_data.get("family_name", "")
+                picture = google_user_data.get("picture")
+                
+                if not google_id or not email:
+                    logger.error("Missing required Google user data")
+                    redirect_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/auth/google/error?error=missing_user_data"
+                    return RedirectResponse(url=redirect_url)
+                
+                # Check if user exists by Google ID
+                user = db.query(User).filter(User.google_id == google_id).first()
+                
+                if not user:
+                    # Check if user exists by email (link accounts)
+                    user = db.query(User).filter(User.email == email).first()
+                    
+                    if user:
+                        # Link Google account to existing user
+                        user.google_id = google_id
+                        if not user.full_name and name:
+                            user.full_name = name
+                        user.is_email_verified = True  # Google emails are verified
+                        user.updated_at = datetime.utcnow().isoformat()
+                        db.commit()
+                        db.refresh(user)
+                        logger.info(f"Linked Google account to existing user {user.id}")
+                    else:
+                        # Create new user
+                        # Generate username from email
+                        username_base = email.split("@")[0]
+                        username = username_base
+                        counter = 1
+                        while db.query(User).filter(User.username == username).first():
+                            username = f"{username_base}{counter}"
+                            counter += 1
+                        
+                        new_user = User(
+                            username=username,
+                            full_name=name or f"{given_name} {family_name}".strip() or username,
+                            email=email,
+                            hashed_password=None,  # OAuth users don't have passwords
+                            google_id=google_id,
+                            is_active=True,
+                            is_email_verified=True,  # Google emails are verified
+                            role="user",
+                            created_at=datetime.utcnow().isoformat(),
+                            updated_at=datetime.utcnow().isoformat()
+                        )
+                        
+                        db.add(new_user)
+                        db.commit()
+                        db.refresh(new_user)
+                        user = new_user
+                        logger.info(f"Created new user from Google OAuth: {user.id}")
+                
+                # Check if user is active
+                if not user.is_active:
+                    redirect_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/auth/google/error?error=account_deactivated"
+                    return RedirectResponse(url=redirect_url)
+                
+                # Create JWT token
+                access_token_expires = timedelta(minutes=config.security.access_token_expire_minutes)
+                jwt_token = create_access_token(
+                    data={"sub": user.username, "role": user.role},
+                    expires_delta=access_token_expires
+                )
+                
+                # Redirect to frontend with token
+                # Try to get frontend URL from environment, with fallbacks
+                frontend_url = os.getenv('FRONTEND_URL')
+                if not frontend_url:
+                    # Default to port 3000 for Docker, or 5173 for dev
+                    frontend_url = 'http://localhost:3000'
+                # Ensure no trailing slash
+                frontend_url = frontend_url.rstrip('/')
+                redirect_url = f"{frontend_url}/auth/google/success?token={jwt_token}"
+                logger.info(f"OAuth success - Redirecting to frontend: {redirect_url}")
+                
+                response = RedirectResponse(url=redirect_url)
+                response.delete_cookie(key="oauth_state")
+                
+                return response
+                
+            except Exception as e:
+                logger.error(f"Error processing Google OAuth callback: {str(e)}")
+                redirect_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/auth/google/error?error=processing_failed"
+                return RedirectResponse(url=redirect_url)
+            
+        except Exception as e:
+            logger.error(f"Google callback error: {str(e)}")
+            redirect_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/auth/google/error?error=callback_failed"
+            return RedirectResponse(url=redirect_url)

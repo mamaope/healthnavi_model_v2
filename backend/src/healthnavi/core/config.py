@@ -75,6 +75,11 @@ class SecurityConfig(BaseSettings):
     max_login_attempts: int = Field(default=5, env="MAX_LOGIN_ATTEMPTS")
     login_lockout_minutes: int = Field(default=15, env="LOGIN_LOCKOUT_MINUTES")
     
+    # Google OAuth settings
+    google_client_id: Optional[str] = Field(default=None, env="GOOGLE_CLIENT_ID")
+    google_client_secret: Optional[str] = Field(default=None, env="GOOGLE_CLIENT_SECRET")
+    google_redirect_uri: Optional[str] = Field(default=None, env="GOOGLE_REDIRECT_URI")
+    
     @field_validator('secret_key')
     def validate_secret_key(cls, v):
         """Validate secret key strength."""

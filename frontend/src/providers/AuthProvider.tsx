@@ -102,7 +102,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
+      console.log('Refreshing profile with token:', stored.token ? 'present' : 'missing')
       const response = await authApi.me(stored.token)
+      console.log('Profile refresh response:', response.success ? 'success' : 'failed', response.data ? 'with data' : 'no data')
       if (response.success && response.data) {
         persistAuth(stored.token, response.data)
         setAuthState({
@@ -111,6 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           initializing: false,
           isAuthenticated: true,
         })
+        console.log('Auth state updated - user authenticated:', response.data.email)
       } else {
         clearPersistedAuth()
         setAuthState({

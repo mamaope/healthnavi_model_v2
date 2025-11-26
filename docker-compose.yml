@@ -12,6 +12,8 @@ services:
       - ENV=development
       - GOOGLE_APPLICATION_CREDENTIALS=/backend/regal-autonomy-454806-d1-edf68610c57a.json 
       - LOG_LEVEL=info
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - BACKEND_URL=${BACKEND_URL:-http://localhost:8050}
     volumes:
       - ./backend:/backend
       - /backend/venv
