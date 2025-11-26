@@ -7,6 +7,12 @@ const proxyTarget =
 export default defineConfig({
   plugins: [react()],
   server: {
+    host: '0.0.0.0',
+    allowedHosts: [
+      'healthnavy.mamaope.com',
+      'localhost',
+      '.mamaope.com',
+    ],
     proxy: {
       '/api/v2': {
         target: proxyTarget,
