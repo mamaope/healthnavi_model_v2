@@ -74,3 +74,6 @@ docker-compose restart api
 2. You should be redirected to Google's login page
 3. After authentication, you'll be redirected back and logged in
 
+
+
+

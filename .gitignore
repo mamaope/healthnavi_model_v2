@@ -312,3 +312,15 @@ development/
 *.local
 *.dev
 *.development
+
+# Android / Gradle
+.gradle/
+**/build/
+local.properties
+*.iml
+*.apk
+*.aab
+captures/
+.cxx/
+/mobile/app/google-services.json
+/mobile/app/google-services.plist

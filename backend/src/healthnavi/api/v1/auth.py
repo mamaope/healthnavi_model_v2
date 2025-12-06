@@ -21,7 +21,7 @@ from healthnavi.core.database import get_db
 from healthnavi.core.config import get_config
 from healthnavi.core.response_utils import create_success_response, create_error_response, ResponseTimer
 from healthnavi.models.user import User
-from healthnavi.schemas import UserCreate, UserResponse, UserUpdate, Token, LoginRequest, StandardResponse, SuccessResponse, EmailVerificationRequest, ResendVerificationRequest, ForgotPasswordRequest, ResetPasswordRequest
+from healthnavi.schemas import UserCreate, UserResponse, UserUpdate, Token, LoginRequest, StandardResponse, SuccessResponse, EmailVerificationRequest, ResendVerificationRequest, ForgotPasswordRequest, ResetPasswordRequest, GoogleSignInMobileRequest
 
 # Import email service with error handling
 try:
@@ -1152,3 +1152,160 @@ async def google_callback(
             logger.error(f"Google callback error: {str(e)}")
             redirect_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/auth/google/error?error=callback_failed"
             return RedirectResponse(url=redirect_url)
+
+
+@router.post("/google/mobile", response_model=StandardResponse)
+def google_sign_in_mobile(
+    request_data: GoogleSignInMobileRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Handle Google Sign-In for mobile apps.
+    Verifies the Google ID token and creates/authenticates user.
+    """
+    with ResponseTimer() as timer:
+        try:
+            id_token = request_data.id_token
+            
+            if not id_token:
+                return create_error_response(
+                    message="ID token is required",
+                    status_code=400,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            # Verify ID token with Google
+            try:
+                import httpx
+                
+                # Verify the ID token with Google
+                token_info_response = httpx.get(
+                    f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token}",
+                    timeout=10.0
+                )
+                
+                if token_info_response.status_code != 200:
+                    logger.error(f"Token verification failed: {token_info_response.text}")
+                    return create_error_response(
+                        message="Invalid Google ID token",
+                        status_code=401,
+                        execution_time=timer.get_execution_time()
+                    )
+                
+                token_info = token_info_response.json()
+                
+                # Verify the token is for our client
+                if token_info.get("aud") != config.security.google_client_id:
+                    logger.error(f"Token audience mismatch: {token_info.get('aud')} != {config.security.google_client_id}")
+                    return create_error_response(
+                        message="Invalid token audience",
+                        status_code=401,
+                        execution_time=timer.get_execution_time()
+                    )
+                
+                # Extract user info from token
+                google_id = token_info.get("sub")
+                email = token_info.get("email")
+                name = token_info.get("name", "")
+                given_name = token_info.get("given_name", "")
+                family_name = token_info.get("family_name", "")
+                
+                if not google_id or not email:
+                    logger.error("Missing required user data in token")
+                    return create_error_response(
+                        message="Invalid token: missing user data",
+                        status_code=401,
+                        execution_time=timer.get_execution_time()
+                    )
+                
+                # Check if user exists by Google ID
+                user = db.query(User).filter(User.google_id == google_id).first()
+                
+                if not user:
+                    # Check if user exists by email (link accounts)
+                    user = db.query(User).filter(User.email == email).first()
+                    
+                    if user:
+                        # Link Google account to existing user
+                        user.google_id = google_id
+                        db.commit()
+                        db.refresh(user)
+                        logger.info(f"Linked Google account to existing user: {user.id}")
+                    else:
+                        # Create new user
+                        username = email.split("@")[0] + "_" + str(int(time.time()))
+                        new_user = User(
+                            username=username,
+                            full_name=name or f"{given_name} {family_name}".strip() or username,
+                            email=email,
+                            hashed_password=None,  # OAuth users don't have passwords
+                            google_id=google_id,
+                            is_active=True,
+                            is_email_verified=True,  # Google emails are verified
+                            role="user",
+                            created_at=datetime.utcnow().isoformat(),
+                            updated_at=datetime.utcnow().isoformat()
+                        )
+                        
+                        db.add(new_user)
+                        db.commit()
+                        db.refresh(new_user)
+                        user = new_user
+                        logger.info(f"Created new user from Google Sign-In: {user.id}")
+                
+                # Check if user is active
+                if not user.is_active:
+                    return create_error_response(
+                        message="Account is deactivated",
+                        status_code=403,
+                        execution_time=timer.get_execution_time()
+                    )
+                
+                # Create JWT token
+                access_token_expires = timedelta(minutes=config.security.access_token_expire_minutes)
+                jwt_token = create_access_token(
+                    data={"sub": user.username, "role": user.role},
+                    expires_delta=access_token_expires
+                )
+                
+                # Create user profile data
+                user_profile = UserResponse(
+                    id=user.id,
+                    username=user.username,
+                    email=user.email,
+                    full_name=user.full_name,
+                    role=user.role,
+                    is_active=user.is_active,
+                    is_email_verified=user.is_email_verified,
+                    created_at=user.created_at_str,
+                    updated_at=user.updated_at_str
+                )
+                
+                # Create response data with token and profile
+                response_data = {
+                    "access_token": jwt_token,
+                    "token_type": "bearer",
+                    "user": user_profile
+                }
+                
+                return create_success_response(
+                    data=response_data,
+                    status_code=200,
+                    execution_time=timer.get_execution_time()
+                )
+                
+            except Exception as e:
+                logger.error(f"Error verifying Google ID token: {str(e)}")
+                return create_error_response(
+                    message="Failed to verify Google ID token",
+                    status_code=500,
+                    execution_time=timer.get_execution_time()
+                )
+            
+        except Exception as e:
+            logger.error(f"Google mobile sign-in error: {str(e)}")
+            return create_error_response(
+                message="Google Sign-In failed",
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
