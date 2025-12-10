@@ -12,7 +12,7 @@ import time
 from healthnavi.core.config import get_config
 from healthnavi.core.response_utils import create_success_response, create_error_response, ResponseTimer
 from healthnavi.schemas import StandardResponse
-from healthnavi.api.v1 import auth, diagnosis, chat_sessions
+from healthnavi.api.v1 import auth, diagnosis, chat_sessions, partner
 
 config = get_config()
 logger = logging.getLogger(__name__)
@@ -156,6 +156,7 @@ API_VERSION_PREFIX = "/api/v2"
 app.include_router(auth.router, prefix=f"{API_VERSION_PREFIX}/auth", tags=["Authentication"])
 app.include_router(diagnosis.router, prefix=f"{API_VERSION_PREFIX}/diagnosis", tags=["Diagnosis"])
 app.include_router(chat_sessions.router, prefix=f"{API_VERSION_PREFIX}/chat", tags=["Chat Sessions"])
+app.include_router(partner.router, prefix="/partner/diagnosis", tags=["Partner Diagnosis"])
 
 if __name__ == "__main__":
     import uvicorn
