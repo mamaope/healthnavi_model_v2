@@ -12,7 +12,7 @@ import time
 from healthnavi.core.config import get_config
 from healthnavi.core.response_utils import create_success_response, create_error_response, ResponseTimer
 from healthnavi.schemas import StandardResponse
-from healthnavi.api.v1 import auth, diagnosis, chat_sessions, transcription
+from healthnavi.api.v1 import auth, diagnosis, chat_sessions, transcription, partner
 
 config = get_config()
 logger = logging.getLogger(__name__)
