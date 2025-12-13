@@ -98,6 +98,9 @@ terraform.tfstate.*
 *.hdf5
 *.model
 *.weights
+*.pt
+*.pth
+.cache/
 embeddings/
 checkpoints/
 wandb/

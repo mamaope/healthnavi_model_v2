@@ -12,9 +12,10 @@ import type {
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
-interface RequestOptions extends RequestInit {
+interface RequestOptions extends Omit<RequestInit, 'headers'> {
   token?: string | null
   skipAuthHeader?: boolean
+  headers?: HeadersInit | null
 }
 
 const defaultHeaders: HeadersInit = {
@@ -83,9 +84,22 @@ async function apiFetch<TResponse>(
       ? window.localStorage.getItem(STORAGE_KEYS.accessToken)
       : null)
 
+  // For FormData (when headers is explicitly null), only set auth header
+  let headers: Headers
+  if (options.headers === null) {
+    // FormData case - don't set Content-Type, let browser handle it
+    headers = new Headers()
+    if (token && !options.skipAuthHeader) {
+      headers.set('Authorization', `Bearer ${token}`)
+    }
+  } else {
+    // Normal JSON case
+    headers = buildHeaders(token, options.skipAuthHeader)
+  }
+
   const response = await fetch(`${API_URL}${path}`, {
     method,
-    headers: buildHeaders(token, options.skipAuthHeader),
+    headers,
     body: options.body,
     signal: options.signal,
   })
@@ -230,6 +244,37 @@ export const chatApi = {
       success: boolean
       data: { message_id: number }
     }>(`/diagnosis/feedback/${messageId}`, 'DELETE')
+  },
+}
+
+export const transcriptionApi = {
+  transcribe(audioBlob: Blob, language: string = 'en'): Promise<{
+    success: boolean
+    data: {
+      text: string
+      language: string
+      duration?: number
+    }
+    message: string
+  }> {
+    const formData = new FormData()
+    formData.append('audio', audioBlob, 'recording.webm')
+    // Always send language, defaults to English
+    formData.append('language', language)
+
+    return apiFetch<{
+      success: boolean
+      data: {
+        text: string
+        language: string
+        duration?: number
+      }
+      message: string
+    }>('/transcription/transcribe', 'POST', {
+      body: formData,
+      // Don't set Content-Type header for FormData - browser will set it with boundary
+      headers: null,
+    })
   },
 }
 

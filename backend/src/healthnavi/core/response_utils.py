@@ -19,11 +19,15 @@ def create_success_response(
     """Create a standardized success response."""
     
     # Wrap data in success response if it's not already wrapped
-    if not isinstance(data, SuccessResponse) and message:
+    if not isinstance(data, SuccessResponse) and message and not isinstance(data, dict):
         wrapped_data = SuccessResponse(
             message=message,
             details=additional_details
         )
+    elif isinstance(data, dict) and message:
+        wrapped_data = data
+        if "message" not in wrapped_data:
+            wrapped_data["message"] = message
     else:
         wrapped_data = data
     

@@ -127,7 +127,7 @@ export default function App() {
 
   const chatArea = (
     <div
-      className={`chat-container ${isAuthenticated ? 'with-sidebar' : ''}`}
+      className={`chat-container ${isAuthenticated ? 'with-sidebar' : ''} ${messages.length === 0 ? 'centered' : 'has-messages'}`}
     >
       <MessageList messages={messages} />
 
@@ -173,15 +173,10 @@ export default function App() {
         }
       />
 
-      {isAuthenticated && (
-        <div className="authenticated-disclaimer">
-          <i className="fas fa-info-circle" aria-hidden="true" />
-          <span>
-            HealthNavy offers AI-assisted clinical decision support. Always verify
-            outputs with your professional judgment and institutional protocols.
-          </span>
-        </div>
-      )}
+      <SamplePrompts
+        hidden={!showSamplePrompts}
+        onSelectPrompt={handleSelectPrompt}
+      />
 
       {!isAuthenticated && messages.length === 0 && (
         <div className="disclaimer-section">
@@ -195,10 +190,15 @@ export default function App() {
         </div>
       )}
 
-      <SamplePrompts
-        hidden={!showSamplePrompts}
-        onSelectPrompt={handleSelectPrompt}
-      />
+      {isAuthenticated && (
+        <div className="authenticated-disclaimer">
+          <i className="fas fa-info-circle" aria-hidden="true" />
+          <span>
+            HealthNavy offers AI-assisted clinical decision support. Always verify
+            outputs with your professional judgment and institutional protocols.
+          </span>
+        </div>
+      )}
     </div>
   )
 

@@ -12,7 +12,7 @@ import time
 from healthnavi.core.config import get_config
 from healthnavi.core.response_utils import create_success_response, create_error_response, ResponseTimer
 from healthnavi.schemas import StandardResponse
-from healthnavi.api.v1 import auth, diagnosis, chat_sessions, partner
+from healthnavi.api.v1 import auth, diagnosis, chat_sessions, transcription
 
 config = get_config()
 logger = logging.getLogger(__name__)
@@ -47,6 +47,16 @@ async def lifespan(app: FastAPI):
         logger.warning(f"GenAI client initialization failed during startup: {e}")
         logger.info("Application will continue - AI functionality may be limited")
     
+    try:
+        from healthnavi.services.transcription_service import preload_model
+        # Run in background or just log that it's loading
+        logger.info("Preloading Whisper model...")
+        preload_model()
+        logger.info("Whisper model preloading completed")
+    except Exception as e:
+        logger.warning(f"Whisper model preloading failed: {e}")
+        logger.info("Application will continue - Transcription will load on first use")
+
     logger.info("Application startup completed successfully")
     
     yield
@@ -156,6 +166,7 @@ API_VERSION_PREFIX = "/api/v2"
 app.include_router(auth.router, prefix=f"{API_VERSION_PREFIX}/auth", tags=["Authentication"])
 app.include_router(diagnosis.router, prefix=f"{API_VERSION_PREFIX}/diagnosis", tags=["Diagnosis"])
 app.include_router(chat_sessions.router, prefix=f"{API_VERSION_PREFIX}/chat", tags=["Chat Sessions"])
+app.include_router(transcription.router, prefix=f"{API_VERSION_PREFIX}/transcription", tags=["Transcription"])
 app.include_router(partner.router, prefix="/partner/diagnosis", tags=["Partner Diagnosis"])
 
 if __name__ == "__main__":
