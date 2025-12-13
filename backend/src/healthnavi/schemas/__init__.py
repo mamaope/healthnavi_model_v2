@@ -204,6 +204,11 @@ class LoginFormRequest(BaseModel):
     password: str = Field(..., description="Password")
 
 
+class GoogleSignInMobileRequest(BaseModel):
+    """Schema for mobile Google Sign-In requests."""
+    id_token: str = Field(..., description="Google ID token from mobile app")
+
+
 class EmailVerificationRequest(BaseModel):
     """Schema for email verification requests."""
     token: str = Field(..., description="Email verification token")

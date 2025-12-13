@@ -167,6 +167,7 @@ app.include_router(auth.router, prefix=f"{API_VERSION_PREFIX}/auth", tags=["Auth
 app.include_router(diagnosis.router, prefix=f"{API_VERSION_PREFIX}/diagnosis", tags=["Diagnosis"])
 app.include_router(chat_sessions.router, prefix=f"{API_VERSION_PREFIX}/chat", tags=["Chat Sessions"])
 app.include_router(transcription.router, prefix=f"{API_VERSION_PREFIX}/transcription", tags=["Transcription"])
+app.include_router(partner.router, prefix="/partner/diagnosis", tags=["Partner Diagnosis"])
 
 if __name__ == "__main__":
     import uvicorn
