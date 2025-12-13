@@ -4,7 +4,10 @@ import {
   useEffect,
   useImperativeHandle,
   useRef,
+  useState,
 } from 'react'
+import { useAudioRecorder } from '../../hooks/useAudioRecorder'
+import { transcriptionApi } from '../../services/apiClient'
 
 interface ChatInputProps {
   value: string
@@ -32,6 +35,18 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
     ref,
   ) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null)
+    const [isTranscribing, setIsTranscribing] = useState(false)
+    const [transcriptionError, setTranscriptionError] = useState<string | null>(null)
+
+    const {
+      isRecording,
+      audioBlob,
+      startRecording,
+      stopRecording,
+      clearRecording,
+      error: recordingError,
+      duration,
+    } = useAudioRecorder()
 
     useImperativeHandle(ref, () => textareaRef.current as HTMLTextAreaElement, [])
 
@@ -44,6 +59,54 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
       textarea.style.height = `${newHeight}px`
       textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden'
     }, [value, isSending])
+
+    // Handle transcription when recording stops
+    useEffect(() => {
+      if (audioBlob && !isRecording) {
+        handleTranscription(audioBlob)
+      }
+    }, [audioBlob, isRecording])
+
+    const handleTranscription = async (blob: Blob) => {
+      setIsTranscribing(true)
+      setTranscriptionError(null)
+
+      try {
+        const response = await transcriptionApi.transcribe(blob)
+        console.log('Transcription response:', response)
+        
+        // Extract text from response - handle both success formats
+        const transcribedText = response?.data?.text || (response?.data as any)?.data?.text
+        
+        if (transcribedText) {
+          // Append transcribed text to current value
+          const newText = value ? `${value} ${transcribedText}` : transcribedText
+          onChange(newText)
+          clearRecording()
+          
+          // Focus the textarea after transcription
+          if (textareaRef.current) {
+            textareaRef.current.focus()
+          }
+        } else {
+          console.error('No text in transcription response:', response)
+          setTranscriptionError('No text received from transcription')
+        }
+      } catch (error) {
+        console.error('Transcription error:', error)
+        setTranscriptionError('Failed to transcribe audio. Please try again.')
+      } finally {
+        setIsTranscribing(false)
+      }
+    }
+
+    const handleMicClick = async () => {
+      if (isRecording) {
+        stopRecording()
+      } else {
+        await startRecording()
+      }
+    }
 
     const handleSend = useCallback(async () => {
       const trimmed = value.trim()
@@ -70,8 +133,15 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
     const isNearLimit = value.length > MAX_MESSAGE_LENGTH * 0.9
     const isOverLimit = value.length > MAX_MESSAGE_LENGTH
 
+    const micButtonDisabled = isSending || isTranscribing
+
     return (
       <div className="input-area">
+        {(recordingError || transcriptionError) && (
+          <div className="recording-error">
+            {recordingError || transcriptionError}
+          </div>
+        )}
         <div className="input-container">
           <textarea
             ref={textareaRef}
@@ -80,7 +150,7 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
             rows={1}
             onChange={onTextareaChange}
             onKeyDown={onKeyDown}
-            disabled={isSending}
+            disabled={isSending || isRecording}
             aria-label="Message input"
           />
           <div className="input-actions">
@@ -99,6 +169,20 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
                 <span className="deep-search-text">
                   <span className="deep-search-title">Deep Reasoning</span>
                 </span>
+              </button>
+              <button
+                type="button"
+                className={`mic-button ${isRecording ? 'recording' : ''} ${isTranscribing ? 'transcribing' : ''}`}
+                onClick={() => void handleMicClick()}
+                disabled={micButtonDisabled}
+                aria-label={isRecording ? 'Stop recording' : 'Start voice input'}
+                title={isRecording ? `Recording: ${duration.toFixed(1)}s` : 'Click to speak'}
+              >
+                {isTranscribing ? (
+                  <i className="fas fa-spinner fa-spin" aria-hidden="true" />
+                ) : (
+                  <i className={`fas fa-microphone ${isRecording ? 'pulse' : ''}`} aria-hidden="true" />
+                )}
               </button>
             </div>
             <div className="input-actions-right">
