@@ -124,16 +124,22 @@ async def transcribe_audio(
     start_time = time.time()
     
     try:
+        logger.info(f"[TRANSCRIPTION_SERVICE] Starting transcription process")
+        logger.info(f"[TRANSCRIPTION_SERVICE] Audio size: {len(audio_file_bytes) / (1024*1024):.2f} MB")
+        
         # Save uploaded audio to temporary file
+        logger.info("[TRANSCRIPTION_SERVICE] Saving audio to temporary file...")
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
             temp_audio.write(audio_file_bytes)
             temp_audio_path = temp_audio.name
         
         file_size_mb = len(audio_file_bytes) / (1024 * 1024)
-        logger.info(f"Transcribing audio file: {temp_audio_path} ({file_size_mb:.2f} MB)")
+        logger.info(f"[TRANSCRIPTION_SERVICE] Audio saved to: {temp_audio_path} ({file_size_mb:.2f} MB)")
         
         # Get the Whisper model
+        logger.info("[TRANSCRIPTION_SERVICE] Loading Whisper model...")
         model = get_whisper_model()
+        logger.info(f"[TRANSCRIPTION_SERVICE] Whisper model loaded on device: {model.device}")
         
         use_fp16 = USE_FP16
         if model.device.type == "cpu":
@@ -160,12 +166,19 @@ async def transcribe_audio(
             transcribe_options["initial_prompt"] = prompt
             logger.debug(f"Using initial prompt: {prompt[:50]}...")
         
-        logger.debug(f"Transcribe options: {transcribe_options}")
+        logger.info(f"[TRANSCRIPTION_SERVICE] Transcribe options: {transcribe_options}")
         
         # Transcribe using the model
+        logger.info("[TRANSCRIPTION_SERVICE] Starting Whisper transcription...")
         transcription_start = time.time()
-        result = model.transcribe(temp_audio_path, **transcribe_options)
-        transcription_time = time.time() - transcription_start
+        try:
+            result = model.transcribe(temp_audio_path, **transcribe_options)
+            transcription_time = time.time() - transcription_start
+            logger.info(f"[TRANSCRIPTION_SERVICE] Whisper transcription completed in {transcription_time:.2f}s")
+        except Exception as transcribe_error:
+            transcription_time = time.time() - transcription_start
+            logger.error(f"[TRANSCRIPTION_SERVICE] Whisper transcription failed after {transcription_time:.2f}s: {str(transcribe_error)}")
+            raise
         
         total_time = time.time() - start_time
         

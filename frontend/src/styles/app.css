@@ -2012,6 +2012,11 @@ body,
     width: 800px !important;
 }
 
+.app-container.authenticated .input-container {
+    max-width: 800px !important;
+    width: 800px !important;
+}
+
 .input-container:focus-within {
     border-color: var(--primary);
     background: var(--bg-primary);

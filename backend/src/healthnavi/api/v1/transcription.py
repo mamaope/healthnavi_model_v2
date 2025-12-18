@@ -63,8 +63,8 @@ async def transcribe_audio_endpoint(
         try:
             # Log request info
             user_info = f"{current_user.username}" if current_user else "unauthenticated user"
-            logger.info(f"Transcription request from: {user_info}")
-            logger.info(f"Audio file: {audio.filename}, content_type: {audio.content_type}")
+            logger.info(f"[TRANSCRIPTION] Request received from: {user_info}")
+            logger.info(f"[TRANSCRIPTION] Audio file: {audio.filename}, content_type: {audio.content_type}")
             
             # Validate file type
             allowed_types = [
@@ -76,12 +76,14 @@ async def transcribe_audio_endpoint(
             ]
             
             if audio.content_type and audio.content_type not in allowed_types:
-                logger.warning(f"Unsupported audio type: {audio.content_type}")
+                logger.warning(f"[TRANSCRIPTION] Unsupported audio type: {audio.content_type}")
             
             # Read audio file
+            logger.info("[TRANSCRIPTION] Reading audio file...")
             audio_bytes = await audio.read()
             
             if len(audio_bytes) == 0:
+                logger.error("[TRANSCRIPTION] Empty audio file received")
                 return create_error_response(
                     message="Empty audio file received",
                     status_code=400,
@@ -90,16 +92,20 @@ async def transcribe_audio_endpoint(
             
             max_size = 25 * 1024 * 1024  # 25MB
             if len(audio_bytes) > max_size:
+                logger.error(f"[TRANSCRIPTION] File too large: {len(audio_bytes) / (1024*1024):.2f} MB")
                 return create_error_response(
                     message=f"Audio file too large. Maximum size is {max_size / (1024*1024):.1f}MB",
                     status_code=413,
                     execution_time=timer.get_execution_time()
                 )
             
-            logger.info(f"Audio file size: {len(audio_bytes) / 1024:.2f} KB")
+            logger.info(f"[TRANSCRIPTION] Audio file size: {len(audio_bytes) / 1024:.2f} KB")
+            logger.info("[TRANSCRIPTION] Starting transcription process...")
             
             # Transcribe audio
             result = await transcribe_audio(audio_bytes, language=language)
+            
+            logger.info(f"[TRANSCRIPTION] Transcription completed successfully")
             
             # Prepare response
             transcription_data = TranscriptionResponse(
@@ -117,7 +123,7 @@ async def transcribe_audio_endpoint(
             )
             
         except ValueError as e:
-            logger.error(f"Validation error in transcription: {str(e)}")
+            logger.error(f"[TRANSCRIPTION] Validation error: {str(e)}", exc_info=True)
             return create_error_response(
                 message=str(e),
                 status_code=400,
@@ -125,7 +131,10 @@ async def transcribe_audio_endpoint(
             )
             
         except Exception as e:
-            logger.error(f"Transcription failed: {str(e)}")
+            logger.error(f"[TRANSCRIPTION] Transcription failed: {str(e)}", exc_info=True)
+            logger.error(f"[TRANSCRIPTION] Error type: {type(e).__name__}")
+            import traceback
+            logger.error(f"[TRANSCRIPTION] Traceback: {traceback.format_exc()}")
             return create_error_response(
                 message="Failed to transcribe audio. Please try again.",
                 status_code=500,

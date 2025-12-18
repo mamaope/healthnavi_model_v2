@@ -169,6 +169,24 @@ async def health_check():
             execution_time=timer.get_execution_time()
         )
 
+# API version health check endpoint
+@app.get("/api/v2/health", response_model=StandardResponse)
+async def api_health_check():
+    """API health check endpoint."""
+    with ResponseTimer() as timer:
+        health_data = {
+            "status": "healthy",
+            "timestamp": time.time(),
+            "version": config.application.app_version,
+            "environment": config.application.environment
+        }
+        
+        return create_success_response(
+            data=health_data,
+            status_code=200,
+            execution_time=timer.get_execution_time()
+        )
+
 API_VERSION_PREFIX = "/api/v2"
 
 # Health check endpoint under API prefix (for consistency with frontend expectations)
