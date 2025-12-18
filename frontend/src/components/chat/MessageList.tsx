@@ -118,10 +118,13 @@ export function MessageList({ messages }: MessageListProps) {
       {messages.length === 0 && (
         <div className="welcome-message">
           <div className="welcome-content">
-            <h2 className="welcome-logo">
-              <span className="logo-health">Health</span>
-              <span className="logo-navy">Navy</span>
-            </h2>
+            <div className="welcome-logo">
+              <img 
+                src="/logo.png" 
+                alt="HealthNavy" 
+                className="logo-image welcome-logo-image"
+              />
+            </div>
             <h3>Welcome to HealthNavy</h3>
             <p>
               How can I assist you today? Ask clinical questions, review treatment options, or explore guidelines.

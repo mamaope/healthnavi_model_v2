@@ -31,7 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mamaope.healthnavy.data.model.ChatMessage
 import com.mamaope.healthnavy.data.model.MessageAuthor
-import com.mamaope.healthnavy.ui.theme.PrimaryBlue
+import com.mamaope.healthnavy.ui.theme.PrimaryTeal
 import com.mamaope.healthnavy.ui.viewmodel.ChatUiState
 import com.mamaope.healthnavy.ui.viewmodel.ChatViewModel
 
@@ -259,7 +259,7 @@ private fun InputArea(
                     maxLines = 6,
                     shape = RoundedCornerShape(16.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = PrimaryBlue,
+                        focusedBorderColor = PrimaryTeal,
                         unfocusedBorderColor = MaterialTheme.colorScheme.outline
                     )
                 )
@@ -279,7 +279,7 @@ private fun InputArea(
                         Icon(
                             imageVector = Icons.Default.Search,
                             contentDescription = if (isDeepSearch) "Deep search enabled" else "Deep search disabled",
-                            tint = if (isDeepSearch) PrimaryBlue else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = if (isDeepSearch) PrimaryTeal else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -287,7 +287,7 @@ private fun InputArea(
                         onClick = onSend,
                         enabled = messageText.isNotBlank() && !isSending,
                         colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(
-                            containerColor = if (messageText.isNotBlank()) PrimaryBlue else MaterialTheme.colorScheme.surfaceVariant
+                            containerColor = if (messageText.isNotBlank()) PrimaryTeal else MaterialTheme.colorScheme.surfaceVariant
                         ),
                         shape = CircleShape
                     ) {
@@ -352,7 +352,7 @@ fun MessageBubble(
             colors = CardDefaults.cardColors(
                 containerColor = when {
                     isError -> MaterialTheme.colorScheme.errorContainer
-                    isUser -> PrimaryBlue
+                    isUser -> PrimaryTeal
                     else -> MaterialTheme.colorScheme.surfaceVariant
                 }
             )

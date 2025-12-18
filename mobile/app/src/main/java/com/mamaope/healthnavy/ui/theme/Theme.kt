@@ -13,7 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = PrimaryBlueLight, // #2E66FF - lighter blue for dark theme
+    primary = PrimaryTealLight, // #33AF9F - lighter teal for dark theme
     secondary = AccentCoralLight, // #FB923C
     tertiary = SuccessGreen, // #22C55E
     background = Color(0xFF1A1816), // Dark background matching frontend
@@ -32,18 +32,18 @@ private val DarkColorScheme = darkColorScheme(
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = PrimaryBlue, // #1A4275 - Medical Blue
+    primary = PrimaryTeal, // #16A085 - Medical Teal
     secondary = AccentCoral, // #F97316 - Warm Coral
     tertiary = SuccessGreen, // #22C55E - Soft Green
-    background = Neutral0, // #FFFFFF - White
-    surface = Neutral50, // #FAFAF9 - Light gray
-    surfaceVariant = Neutral100, // #F5F5F4 - Slightly darker gray
+    background = MedicalBackground, // #F2F2F5 - Medical background
+    surface = MedicalSurface, // #FFFFFF - Cards, panels
+    surfaceVariant = MedicalSurfaceVariant, // #E8E8EB - Subtle surfaces
     onPrimary = Neutral0, // White text on primary
     onSecondary = Neutral0, // White text on secondary
     onTertiary = Neutral0, // White text on tertiary
-    onBackground = Neutral900, // #1C1917 - Dark text
-    onSurface = Neutral900, // #1C1917 - Dark text
-    onSurfaceVariant = Neutral600, // #57534E - Medium gray text
+    onBackground = MedicalTextPrimary, // #353335 - Primary text
+    onSurface = MedicalTextPrimary, // #353335 - Primary text
+    onSurfaceVariant = MedicalTextSecondary, // #5A585A - Secondary text
     error = ErrorRed, // #EF4444
     onError = Neutral0,
     errorContainer = Color(0x1AEF4444), // Error with opacity

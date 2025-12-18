@@ -6,13 +6,28 @@ import os
 import logging
 import tempfile
 import time
-import whisper
-import torch
 from typing import Optional
 from dotenv import load_dotenv
 
+# Optional imports - handle missing dependencies gracefully
+try:
+    import whisper
+    import torch
+    WHISPER_AVAILABLE = True
+except ImportError:
+    WHISPER_AVAILABLE = False
+    whisper = None
+    torch = None
+
 logger = logging.getLogger(__name__)
 load_dotenv()
+
+if not WHISPER_AVAILABLE:
+    logger.warning(
+        "Whisper dependencies not installed. "
+        "Transcription service will be unavailable. "
+        "Install with: pip install openai-whisper torch"
+    )
 
 WHISPER_MODEL = None
 MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "base.en")  
@@ -40,6 +55,12 @@ def get_whisper_model():
     Load and cache the Whisper model.
     Lazy loading to avoid loading model at startup.
     """
+    if not WHISPER_AVAILABLE:
+        raise RuntimeError(
+            "Whisper is not available. Install dependencies with: "
+            "pip install openai-whisper torch"
+        )
+    
     global WHISPER_MODEL
     if WHISPER_MODEL is None:
         logger.info(f"Loading Whisper model: {MODEL_SIZE}")
@@ -93,6 +114,12 @@ async def transcribe_audio(
     """
     Transcribe audio file to text using Whisper
     """
+    if not WHISPER_AVAILABLE:
+        raise RuntimeError(
+            "Whisper is not available. Install dependencies with: "
+            "pip install openai-whisper torch"
+        )
+    
     temp_audio_path = None
     start_time = time.time()
     

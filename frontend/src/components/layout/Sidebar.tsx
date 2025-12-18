@@ -21,12 +21,12 @@ export function Sidebar({
   isLoading,
   onHomeClick,
 }: SidebarProps) {
-  const { isAuthenticated, logout } = useAuth()
+  const { isAuthenticated } = useAuth()
 
   const hasSessions = sessions.length > 0
 
   const sidebarClass = useMemo(
-    () => `sidebar ${isOpen ? 'open' : ''}`,
+    () => `modern-sidebar ${isOpen ? 'open' : ''}`,
     [isOpen],
   )
 
@@ -34,18 +34,49 @@ export function Sidebar({
     return null
   }
 
+  const formatSessionDate = (date: Date | string) => {
+    const d = typeof date === 'string' ? new Date(date) : date
+    const now = new Date()
+    const diffTime = Math.abs(now.getTime() - d.getTime())
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
+
+    if (diffDays === 0) {
+      return 'Today'
+    } else if (diffDays === 1) {
+      return 'Yesterday'
+    } else if (diffDays < 7) {
+      return `${diffDays} days ago`
+    } else {
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    }
+  }
+
+  const getSessionPreview = (session: ChatSession) => {
+    // Extract first message or use default
+    if (session.messages && session.messages.length > 0) {
+      const firstMessage = session.messages[0]?.content || ''
+      return firstMessage.length > 50 
+        ? firstMessage.substring(0, 50) + '...' 
+        : firstMessage
+    }
+    return 'New conversation'
+  }
+
   return (
     <aside className={sidebarClass}>
       <div className="sidebar-header">
-        <div className="sidebar-logo">
-          <h2 
-            className="welcome-logo" 
+        <div className="sidebar-brand">
+          <div 
+            className="sidebar-logo" 
             onClick={onHomeClick}
             style={{ cursor: onHomeClick ? 'pointer' : 'default' }}
           >
-            <span className="logo-health">Health</span>
-            <span className="logo-navy">Navy</span>
-          </h2>
+            <img 
+              src="/logo.png" 
+              alt="HealthNavy" 
+              className="logo-image"
+            />
+          </div>
         </div>
         <button className="btn-new-chat" onClick={onStartNewChat}>
           <i className="fas fa-plus" />
@@ -55,20 +86,22 @@ export function Sidebar({
 
       <div className="sidebar-content">
         <div className="sessions-header">
-          <h3>Sessions</h3>
+          <h3>Recent Conversations</h3>
         </div>
         <div className="sessions-list">
           {isLoading && (
             <div className="sessions-loading">
               <i className="fas fa-spinner fa-spin" />
-              <span>Loading sessions…</span>
+              <span>Loading conversations…</span>
             </div>
           )}
           {!isLoading && !hasSessions && (
             <div className="empty-state">
-              <i className="fas fa-comments" />
-              <p>No conversations yet</p>
-              <small>Start a new chat to begin</small>
+              <div className="empty-state-icon">
+                <i className="fas fa-comments" />
+              </div>
+              <p className="empty-state-title">No conversations yet</p>
+              <p className="empty-state-description">Start a new chat to begin your clinical consultation</p>
             </div>
           )}
           {!isLoading &&
@@ -81,24 +114,23 @@ export function Sidebar({
                 }`}
                 onClick={() => onSelectSession(session)}
               >
-                <div className="session-name">
-                  Session {session.id}
+                <div className="session-icon">
+                  <i className="fas fa-comment-medical" />
                 </div>
-                <div className="session-date">
-                  {new Date(session.created_at).toLocaleDateString()}
+                <div className="session-content">
+                  <div className="session-name">
+                    {getSessionPreview(session)}
+                  </div>
+                  <div className="session-meta">
+                    <span className="session-date">
+                      {formatSessionDate(session.created_at)}
+                    </span>
+                  </div>
                 </div>
               </button>
             ))}
         </div>
       </div>
-
-      <div className="sidebar-footer">
-        <button className="btn-logout btn-logout-full" onClick={logout}>
-          <i className="fas fa-sign-out-alt" />
-          <span>Sign Out</span>
-        </button>
-      </div>
     </aside>
   )
 }
-

@@ -90,6 +90,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(errorMessage = null)
     }
     
+    fun setError(message: String) {
+        _uiState.value = _uiState.value.copy(errorMessage = message)
+    }
+    
     fun checkAuth() {
         viewModelScope.launch {
             authRepository.getCurrentUser()

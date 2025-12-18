@@ -8,12 +8,21 @@ from pydantic import BaseModel
 from typing import Optional
 from healthnavi.core.response_utils import create_success_response, create_error_response, ResponseTimer
 from healthnavi.schemas import StandardResponse
-from healthnavi.services.transcription_service import transcribe_audio
 from healthnavi.api.v1.auth import get_current_user_safe_v2
 from healthnavi.models.user import User
 
+# Conditionally import transcription service
+try:
+    from healthnavi.services.transcription_service import transcribe_audio, WHISPER_AVAILABLE
+except ImportError:
+    WHISPER_AVAILABLE = False
+    transcribe_audio = None
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+if not WHISPER_AVAILABLE:
+    logger.warning("Transcription service not available - Whisper dependencies not installed")
 
 
 class TranscriptionResponse(BaseModel):
@@ -43,6 +52,13 @@ async def transcribe_audio_endpoint(
     Returns:
         Transcribed text and detected language
     """
+    if not WHISPER_AVAILABLE or transcribe_audio is None:
+        return create_error_response(
+            message="Transcription service is not available. Install dependencies with: pip install openai-whisper torch",
+            status_code=503,
+            execution_time=0.0
+        )
+    
     with ResponseTimer() as timer:
         try:
             # Log request info
@@ -123,6 +139,13 @@ async def transcription_health():
     Health check endpoint for transcription service.
     """
     with ResponseTimer() as timer:
+        if not WHISPER_AVAILABLE:
+            return create_error_response(
+                message="Transcription service not available - Whisper dependencies not installed",
+                status_code=503,
+                execution_time=timer.get_execution_time()
+            )
+        
         try:
             from healthnavi.services.transcription_service import get_whisper_model
             
@@ -146,7 +169,7 @@ async def transcription_health():
         except Exception as e:
             logger.error(f"Transcription health check failed: {str(e)}")
             return create_error_response(
-                message="Transcription service unavailable",
+                message=f"Transcription service unavailable: {str(e)}",
                 status_code=503,
                 execution_time=timer.get_execution_time()
             )

@@ -21,7 +21,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
+import com.mamaope.healthnavy.ui.theme.AccentCoralDark
 import com.mamaope.healthnavy.ui.theme.PrimaryBlue
+import com.mamaope.healthnavy.ui.theme.PrimaryTeal
 import com.mamaope.healthnavy.ui.viewmodel.AuthViewModel
 import com.mamaope.healthnavy.util.GoogleSignInHelper
 
@@ -53,20 +55,35 @@ fun LoginScreen(
             try {
                 val account = task.getResult(ApiException::class.java)
                 account?.idToken?.let { idToken ->
+                    // ID token received, proceed with sign-in
                     viewModel.googleSignIn(idToken)
                 } ?: run {
-                    viewModel.clearError()
+                    // ID token is null - this shouldn't happen but handle gracefully
+                    viewModel.setError("Google Sign-In failed: No ID token received")
                 }
             } catch (e: ApiException) {
+                // Handle Google Sign-In API exceptions
                 val errorMessage = when (e.statusCode) {
                     7 -> "Network error. Please check your connection."
                     12501 -> "Sign in cancelled"
                     4 -> "Sign in required"
+                    10 -> "Developer error - check Google Sign-In configuration"
+                    8 -> "Internal error - please try again"
                     else -> "Google Sign-In failed: ${e.statusCode}"
                 }
+                viewModel.setError(errorMessage)
+            } catch (e: Exception) {
+                // Handle any other exceptions
+                viewModel.setError("Google Sign-In error: ${e.message ?: "Unknown error"}")
             }
         } else {
-            viewModel.clearError()
+            // User cancelled or sign-in failed
+            if (result.resultCode == Activity.RESULT_CANCELED) {
+                // User cancelled - don't show error, just clear any previous errors
+                viewModel.clearError()
+            } else {
+                viewModel.setError("Google Sign-In was cancelled or failed")
+            }
         }
     }
     
@@ -94,7 +111,7 @@ fun LoginScreen(
                 text = "Health",
                 style = MaterialTheme.typography.displayMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground
+                color = AccentCoralDark
             )
             Text(
                 text = "Navy",
@@ -106,7 +123,7 @@ fun LoginScreen(
             Spacer(modifier = Modifier.height(8.dp))
             
             Text(
-                text = "Clinical Decision Support System",
+                text = "Evidence Based Medical System",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -145,7 +162,7 @@ fun LoginScreen(
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = PrimaryBlue,
+                    focusedBorderColor = PrimaryTeal,
                     unfocusedBorderColor = MaterialTheme.colorScheme.outline
                 )
             )
@@ -171,7 +188,7 @@ fun LoginScreen(
                     }
                 },
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = PrimaryBlue,
+                    focusedBorderColor = PrimaryTeal,
                     unfocusedBorderColor = MaterialTheme.colorScheme.outline
                 )
             )
@@ -185,7 +202,7 @@ fun LoginScreen(
                 enabled = !uiState.isLoading && email.isNotBlank() && password.isNotBlank(),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = PrimaryBlue
+                    containerColor = PrimaryTeal
                 )
             ) {
                 if (uiState.isLoading) {
@@ -261,7 +278,7 @@ fun LoginScreen(
                         "Sign Up",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = PrimaryBlue
+                        color = PrimaryTeal
                     )
                 }
             }

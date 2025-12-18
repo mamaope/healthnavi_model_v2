@@ -33,109 +33,130 @@ export function Header({ onSignIn, onRegister, onHomeClick }: HeaderProps) {
   }, [isMenuOpen])
 
   return (
-    <header className="header">
-      <div className="logo">
-        <h1 
-          className="welcome-logo" 
-          onClick={onHomeClick}
-          style={{ cursor: onHomeClick ? 'pointer' : 'default' }}
-        >
-          <span className="logo-health">Health</span>
-          <span className="logo-navy">Navy</span>
-        </h1>
-      </div>
-
-      {!isAuthenticated && (
-        <div className="header-actions">
-          <ThemeToggle ariaLabel="Toggle light/dark theme" />
-          <button className="btn btn-outline" onClick={onSignIn}>
-            Sign In
-          </button>
-          <button className="btn btn-primary" onClick={onRegister}>
-            Get Started
-          </button>
+    <header className="modern-header">
+      <div className="header-content">
+        <div className="header-brand">
+          <div 
+            className="header-logo" 
+            onClick={onHomeClick}
+            style={{ cursor: onHomeClick ? 'pointer' : 'default' }}
+          >
+            <img 
+              src="/logo.png" 
+              alt="HealthNavy" 
+              className="logo-image"
+              onError={(e) => {
+                // Fallback to text if image fails to load
+                const target = e.target as HTMLImageElement
+                target.style.display = 'none'
+                const parent = target.parentElement
+                if (parent && !parent.querySelector('.logo-fallback')) {
+                  const fallback = document.createElement('div')
+                  fallback.className = 'logo-fallback'
+                  fallback.innerHTML = '<span class="logo-health">Health</span><span class="logo-navy">Navy</span>'
+                  parent.appendChild(fallback)
+                }
+              }}
+            />
+          </div>
+          {isAuthenticated && (
+            <span className="header-tagline"></span>
+          )}
         </div>
-      )}
 
-      {isAuthenticated && (
-        <div className="header-user-profile">
-          <ThemeToggle ariaLabel="Toggle light/dark theme" variant="header" />
-          <div className="header-user-menu" ref={menuRef}>
-            <button
-              className="header-user-button"
-              onClick={() => setIsMenuOpen((open) => !open)}
-              aria-haspopup="menu"
-              aria-expanded={isMenuOpen}
-            >
-              <div className="header-user-avatar">
-                <i className="fas fa-user-md" />
-              </div>
-              <div className="header-user-info">
-                <span className="header-user-name">{userName}</span>
-                <span className="header-user-role">{userRole}</span>
-              </div>
-              <i className="fas fa-chevron-down header-dropdown-icon" />
-            </button>
+        <div className="header-actions-wrapper">
+          {!isAuthenticated && (
+            <div className="header-actions">
+              <ThemeToggle ariaLabel="Toggle light/dark theme" />
+              <button className="btn btn-ghost" onClick={onSignIn}>
+                Sign In
+              </button>
+              <button className="btn btn-primary" onClick={onRegister}>
+                Get Started
+              </button>
+            </div>
+          )}
 
-            {isMenuOpen && (
-              <div className="user-dropdown-menu" role="menu">
-                <div className="user-dropdown-header">
-                  <div className="user-dropdown-avatar">
+          {isAuthenticated && (
+            <div className="header-user-section">
+              <ThemeToggle ariaLabel="Toggle light/dark theme" variant="header" />
+              <div className="header-user-menu" ref={menuRef}>
+                <button
+                  className="header-user-button"
+                  onClick={() => setIsMenuOpen((open) => !open)}
+                  aria-haspopup="menu"
+                  aria-expanded={isMenuOpen}
+                >
+                  <div className="header-user-avatar">
                     <i className="fas fa-user-md" />
                   </div>
-                  <div className="user-dropdown-info">
-                    <div className="user-dropdown-name">{userName}</div>
-                    <div className="user-dropdown-email">{user?.email}</div>
+                  <div className="header-user-info">
+                    <span className="header-user-name">{userName}</span>
+                    <span className="header-user-role">{userRole}</span>
                   </div>
-                </div>
-                <div className="user-dropdown-divider" />
-                <button
-                  className="user-dropdown-item"
-                  onClick={() => {
-                    setIsMenuOpen(false)
-                    window.alert('Profile page coming soon!')
-                  }}
-                >
-                  <i className="fas fa-user" />
-                  <span>My Profile</span>
+                  <i className={`fas fa-chevron-${isMenuOpen ? 'up' : 'down'} header-dropdown-icon`} />
                 </button>
-                <button
-                  className="user-dropdown-item"
-                  onClick={() => {
-                    setIsMenuOpen(false)
-                    window.alert('Settings page coming soon!')
-                  }}
-                >
-                  <i className="fas fa-cog" />
-                  <span>Settings</span>
-                </button>
-                <button
-                  className="user-dropdown-item"
-                  onClick={() => {
-                    setIsMenuOpen(false)
-                    window.alert('Help & Support coming soon!')
-                  }}
-                >
-                  <i className="fas fa-question-circle" />
-                  <span>Help & Support</span>
-                </button>
-                <div className="user-dropdown-divider" />
-                <button
-                  className="user-dropdown-item user-dropdown-item-danger"
-                  onClick={() => {
-                    setIsMenuOpen(false)
-                    logout()
-                  }}
-                >
-                  <i className="fas fa-sign-out-alt" />
-                  <span>Sign Out</span>
-                </button>
+
+                {isMenuOpen && (
+                  <div className="user-dropdown-menu" role="menu">
+                    <div className="user-dropdown-header">
+                      <div className="user-dropdown-avatar">
+                        <i className="fas fa-user-md" />
+                      </div>
+                      <div className="user-dropdown-info">
+                        <div className="user-dropdown-name">{userName}</div>
+                        <div className="user-dropdown-email">{user?.email}</div>
+                      </div>
+                    </div>
+                    <div className="user-dropdown-divider" />
+                    <button
+                      className="user-dropdown-item"
+                      onClick={() => {
+                        setIsMenuOpen(false)
+                        window.alert('Profile page coming soon!')
+                      }}
+                    >
+                      <i className="fas fa-user" />
+                      <span>My Profile</span>
+                    </button>
+                    <button
+                      className="user-dropdown-item"
+                      onClick={() => {
+                        setIsMenuOpen(false)
+                        window.alert('Settings page coming soon!')
+                      }}
+                    >
+                      <i className="fas fa-cog" />
+                      <span>Settings</span>
+                    </button>
+                    <button
+                      className="user-dropdown-item"
+                      onClick={() => {
+                        setIsMenuOpen(false)
+                        window.alert('Help & Support coming soon!')
+                      }}
+                    >
+                      <i className="fas fa-question-circle" />
+                      <span>Help & Support</span>
+                    </button>
+                    <div className="user-dropdown-divider" />
+                    <button
+                      className="user-dropdown-item user-dropdown-item-danger"
+                      onClick={() => {
+                        setIsMenuOpen(false)
+                        logout()
+                      }}
+                    >
+                      <i className="fas fa-sign-out-alt" />
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </header>
   )
 }
-

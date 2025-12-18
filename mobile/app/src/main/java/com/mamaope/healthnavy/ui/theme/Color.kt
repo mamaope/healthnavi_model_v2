@@ -2,12 +2,18 @@ package com.mamaope.healthnavy.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// HealthNavy Brand Colors - Matching Frontend
-// Primary: Medical Blue (#1A4275) - Trust, professionalism, reliability
-val PrimaryBlue = Color(0xFF1A4275) // Primary-600
-val PrimaryBlueLight = Color(0xFF2E66FF) // Primary-500
-val PrimaryBlueDark = Color(0xFF14356B) // Primary-700
-val PrimaryBlueDarker = Color(0xFF0F2A5A) // Primary-800
+// HealthNavy Medical Brand Colors - Matching Frontend
+// Primary: Medical Teal (#16a085) - Trust & Action
+val PrimaryTeal = Color(0xFF16A085)      // Primary-500
+val PrimaryTealLight = Color(0xFF33AF9F)  // Primary-400
+val PrimaryTealDark = Color(0xFF12806A)   // Primary-600
+val PrimaryTealDarker = Color(0xFF0E604F) // Primary-700
+
+// Legacy name for compatibility
+val PrimaryBlue = PrimaryTeal
+val PrimaryBlueLight = PrimaryTealLight
+val PrimaryBlueDark = PrimaryTealDark
+val PrimaryBlueDarker = PrimaryTealDarker
 
 // Accent: Warm Coral - Attention, important actions
 val AccentCoral = Color(0xFFF97316) // Accent-500
@@ -29,18 +35,29 @@ val WarningAmber = Color(0xFFEAB308) // Warning-500
 val WarningAmberLight = Color(0xFFFACC15) // Warning-400
 val WarningAmberDark = Color(0xFFCA8A04) // Warning-600
 
-// Neutral Colors - Warm Gray Palette (matching frontend)
+// Medical Background Color - Calm Light Gray (#f2f2f5)
+val MedicalBackground = Color(0xFFF2F2F5)  // Main app background
+val MedicalSurface = Color(0xFFFFFFFF)     // Cards, panels
+val MedicalSurfaceVariant = Color(0xFFE8E8EB) // Subtle surfaces
+
+// Medical Text Color - Dark Gray (#353335)
+val MedicalTextPrimary = Color(0xFF353335)   // Primary text
+val MedicalTextSecondary = Color(0xFF5A585A) // Secondary text
+val MedicalTextTertiary = Color(0xFF7D7B7D)  // Tertiary text
+val MedicalTextMuted = Color(0xFF9A989A)     // Muted text
+
+// Neutral Colors - Medical Gray Palette (matching frontend)
 val Neutral0 = Color(0xFFFFFFFF) // White
-val Neutral50 = Color(0xFFFAFAF9)
-val Neutral100 = Color(0xFFF5F5F4)
-val Neutral200 = Color(0xFFE7E5E4)
-val Neutral300 = Color(0xFFD6D3D1)
-val Neutral400 = Color(0xFFA8A29E)
-val Neutral500 = Color(0xFF78716C)
-val Neutral600 = Color(0xFF57534E)
-val Neutral700 = Color(0xFF44403C)
-val Neutral800 = Color(0xFF292524)
-val Neutral900 = Color(0xFF1C1917)
+val Neutral50 = Color(0xFFF2F2F5) // Medical background
+val Neutral100 = Color(0xFFE8E8EB) // Subtle surfaces
+val Neutral200 = Color(0xFFD8D6D8) // Light borders
+val Neutral300 = Color(0xFFB8B6B8) // Medium borders
+val Neutral400 = Color(0xFF9A989A) // Muted text
+val Neutral500 = Color(0xFF7D7B7D) // Tertiary text
+val Neutral600 = Color(0xFF5A585A) // Secondary text
+val Neutral700 = Color(0xFF353335) // Primary text
+val Neutral800 = Color(0xFF2A282A)
+val Neutral900 = Color(0xFF1F1D1F)
 
 // Legacy colors for compatibility
 val Purple80 = Color(0xFFD0BCFF)

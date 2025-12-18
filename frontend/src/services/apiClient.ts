@@ -248,20 +248,10 @@ export const chatApi = {
 }
 
 export const transcriptionApi = {
-  transcribe(audioBlob: Blob, language: string = 'en'): Promise<{
-    success: boolean
-    data: {
-      text: string
-      language: string
-      duration?: number
-    }
-    message: string
-  }> {
+  transcribe(audioBlob: Blob) {
     const formData = new FormData()
-    formData.append('audio', audioBlob, 'recording.webm')
-    // Always send language, defaults to English
-    formData.append('language', language)
-
+    formData.append('audio', audioBlob, 'audio.wav')
+    
     return apiFetch<{
       success: boolean
       data: {
@@ -269,11 +259,9 @@ export const transcriptionApi = {
         language: string
         duration?: number
       }
-      message: string
     }>('/transcription/transcribe', 'POST', {
       body: formData,
-      // Don't set Content-Type header for FormData - browser will set it with boundary
-      headers: null,
+      headers: null, // Let browser set Content-Type for FormData
     })
   },
 }
