@@ -73,7 +73,7 @@ export function Sidebar({
           >
             <img 
               src="/logo.png" 
-              alt="HealthNavy" 
+              alt="Empirico" 
               className="logo-image"
             />
           </div>

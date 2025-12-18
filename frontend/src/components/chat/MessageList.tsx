@@ -82,7 +82,7 @@ export function MessageList({ messages }: MessageListProps) {
     try {
       if (typeof navigator !== 'undefined' && navigator.share) {
         await navigator.share({
-          title: 'HealthNavy AI Response',
+          title: 'Empirico AI Response',
           text: content,
         })
         setShareStatus((prev) => ({ ...prev, [messageId]: 'shared' }))
@@ -121,11 +121,11 @@ export function MessageList({ messages }: MessageListProps) {
             <div className="welcome-logo">
               <img 
                 src="/logo.png" 
-                alt="HealthNavy" 
+                alt="Epirico" 
                 className="logo-image welcome-logo-image"
               />
             </div>
-            <h3>Welcome to HealthNavy</h3>
+            <h3>Welcome to Empirico !!!</h3>
             <p>
               How can I assist you today? Ask clinical questions, review treatment options, or explore guidelines.
             </p>

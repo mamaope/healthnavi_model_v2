@@ -43,7 +43,7 @@ export function Header({ onSignIn, onRegister, onHomeClick }: HeaderProps) {
           >
             <img 
               src="/logo.png" 
-              alt="HealthNavy" 
+              alt="Empirico" 
               className="logo-image"
               onError={(e) => {
                 // Fallback to text if image fails to load
@@ -53,7 +53,7 @@ export function Header({ onSignIn, onRegister, onHomeClick }: HeaderProps) {
                 if (parent && !parent.querySelector('.logo-fallback')) {
                   const fallback = document.createElement('div')
                   fallback.className = 'logo-fallback'
-                  fallback.innerHTML = '<span class="logo-health">Health</span><span class="logo-navy">Navy</span>'
+                  fallback.innerHTML = '<span class="logo-health">Empirico</span>'
                   parent.appendChild(fallback)
                 }
               }}

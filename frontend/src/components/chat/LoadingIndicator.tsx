@@ -5,7 +5,7 @@ interface LoadingIndicatorProps {
 
 export function LoadingIndicator({
   isVisible,
-  label = 'HealthNavy thinking',
+  label = 'Empirico thinking',
 }: LoadingIndicatorProps) {
   if (!isVisible) {
     return null
