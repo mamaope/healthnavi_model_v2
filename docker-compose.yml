@@ -10,7 +10,6 @@ services:
       - .env  
     volumes:
       - ./backend:/backend
-      - /backend/venv
       - ./logs:/backend/logs
       - ./regal-autonomy-454806-d1-edf68610c57a.json:/backend/regal-autonomy-454806-d1-edf68610c57a.json  # commented for local dev
 
@@ -53,7 +52,6 @@ services:
       - "3000:5173"
     volumes:
       - ./frontend:/app
-      - /app/node_modules  # Prevent overwriting node_modules
     environment:
       - NODE_ENV=development
       - VITE_PROXY_TARGET=http://api:8050

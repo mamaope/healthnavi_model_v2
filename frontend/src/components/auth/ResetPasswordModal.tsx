@@ -23,6 +23,8 @@ export function ResetPasswordModal({
   const [serverError, setServerError] = useState<string | null>(null)
   const [serverSuccess, setServerSuccess] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showNewPassword, setShowNewPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
   const {
     register: registerField,
@@ -138,19 +140,43 @@ export function ResetPasswordModal({
               <form onSubmit={onSubmit} className="auth-form">
                 <div className="form-group">
                   <label htmlFor="reset-password-new">New Password</label>
-                  <input
-                    id="reset-password-new"
-                    type="password"
-                    autoComplete="new-password"
-                    placeholder="Enter your new password"
-                    {...registerField('newPassword', {
-                      required: 'Password is required',
-                      minLength: {
-                        value: 4,
-                        message: 'Password must be at least 4 characters long',
-                      },
-                    })}
-                  />
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      id="reset-password-new"
+                      type={showNewPassword ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      placeholder="Enter your new password"
+                      style={{ paddingRight: '40px' }}
+                      {...registerField('newPassword', {
+                        required: 'Password is required',
+                        minLength: {
+                          value: 4,
+                          message: 'Password must be at least 4 characters long',
+                        },
+                      })}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      style={{
+                        position: 'absolute',
+                        right: '10px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: 'var(--text-tertiary)',
+                        padding: '5px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                      aria-label={showNewPassword ? 'Hide password' : 'Show password'}
+                    >
+                      <i className={showNewPassword ? 'fas fa-eye-slash' : 'fas fa-eye'} />
+                    </button>
+                  </div>
                   {errors.newPassword && (
                     <span className="form-error">
                       {errors.newPassword.message}
@@ -162,17 +188,41 @@ export function ResetPasswordModal({
                   <label htmlFor="reset-password-confirm">
                     Confirm New Password
                   </label>
-                  <input
-                    id="reset-password-confirm"
-                    type="password"
-                    autoComplete="new-password"
-                    placeholder="Re-enter your new password"
-                    {...registerField('confirmPassword', {
-                      required: 'Please confirm your password',
-                      validate: (value) =>
-                        value === confirmPassword || 'Passwords do not match',
-                    })}
-                  />
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      id="reset-password-confirm"
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      placeholder="Re-enter your new password"
+                      style={{ paddingRight: '40px' }}
+                      {...registerField('confirmPassword', {
+                        required: 'Please confirm your password',
+                        validate: (value) =>
+                          value === confirmPassword || 'Passwords do not match',
+                      })}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      style={{
+                        position: 'absolute',
+                        right: '10px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: 'var(--text-tertiary)',
+                        padding: '5px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                      aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                    >
+                      <i className={showConfirmPassword ? 'fas fa-eye-slash' : 'fas fa-eye'} />
+                    </button>
+                  </div>
                   {errors.confirmPassword && (
                     <span className="form-error">
                       {errors.confirmPassword.message}

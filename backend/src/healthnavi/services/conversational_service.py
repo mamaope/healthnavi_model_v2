@@ -218,7 +218,7 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
         optimized_context = optimize_context_for_llm(context, max_chunks=max_chunks)
         logger.info(f"Context optimized: {len(context)} chunks -> {len(optimized_context)} chars from {len(actual_sources)} sources")
 
-        sources_text = ", ".join(actual_sources) if actual_sources else "No sources available"
+        sources_text = ", ".join(actual_sources) if actual_sources else ""
 
         full_prompt = prompt_template.format(sources=sources_text, context=optimized_context)
         user_context_block = f"""
