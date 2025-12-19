@@ -1131,8 +1131,9 @@ async def google_callback(
                 # Try to get frontend URL from environment, with fallbacks
                 frontend_url = os.getenv('FRONTEND_URL')
                 if not frontend_url:
-                    # Default to port 3000 for Docker, or 5173 for dev
-                    frontend_url = 'http://localhost:3000'
+                    # Fallback to BASE_URL if FRONTEND_URL is not set
+                    base_url = os.getenv('BASE_URL', 'http://localhost:3000')
+                    frontend_url = base_url if base_url else 'http://localhost:3000'
                 # Ensure no trailing slash
                 frontend_url = frontend_url.rstrip('/')
                 redirect_url = f"{frontend_url}/auth/google/success?token={jwt_token}"

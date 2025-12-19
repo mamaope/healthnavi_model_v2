@@ -13,12 +13,12 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     allowedHosts: [
-      'healthnavy.mamaope.com',
+      'empirico.mamaope.com',
       'localhost',
       '.mamaope.com',
     ],
     hmr: disableHMR ? false : {
-      host: process.env.VITE_HMR_HOST || 'healthnavy.mamaope.com',
+      host: process.env.VITE_HMR_HOST || 'empirico.mamaope.com',
       clientPort: process.env.VITE_HMR_PORT ? parseInt(process.env.VITE_HMR_PORT) : 443,
       protocol: process.env.VITE_HMR_PROTOCOL || 'wss',
     },
