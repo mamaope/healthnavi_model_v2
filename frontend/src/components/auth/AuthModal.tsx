@@ -24,6 +24,8 @@ export function AuthModal({ isOpen, mode, onClose, onSwitchMode, onForgotPasswor
   const { login, register } = useAuth()
   const [serverError, setServerError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
   const {
     register: registerField,
@@ -206,19 +208,43 @@ export function AuthModal({ isOpen, mode, onClose, onSwitchMode, onForgotPasswor
                   </button>
                 )}
               </div>
-              <input
-                id="auth-password"
-                type="password"
-                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                placeholder="Enter your password"
-                {...registerField('password', {
-                  required: 'Password is required',
-                  minLength: {
-                    value: 4,
-                    message: 'Password must be at least 4 characters long',
-                  },
-                })}
-              />
+              <div style={{ position: 'relative' }}>
+                <input
+                  id="auth-password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                  placeholder="Enter your password"
+                  style={{ paddingRight: '40px' }}
+                  {...registerField('password', {
+                    required: 'Password is required',
+                    minLength: {
+                      value: 4,
+                      message: 'Password must be at least 4 characters long',
+                    },
+                  })}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: 'var(--text-tertiary)',
+                    padding: '5px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  <i className={showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'} />
+                </button>
+              </div>
               {errors.password && (
                 <span className="form-error">{errors.password.message}</span>
               )}
@@ -227,17 +253,41 @@ export function AuthModal({ isOpen, mode, onClose, onSwitchMode, onForgotPasswor
             {mode === 'register' && (
               <div className="form-group">
                 <label htmlFor="auth-confirm-password">Confirm Password</label>
-                <input
-                  id="auth-confirm-password"
-                  type="password"
-                  autoComplete="new-password"
-                  placeholder="Re-enter your password"
-                  {...registerField('confirmPassword', {
-                    required: 'Please confirm your password',
-                    validate: (value) =>
-                      value === confirmPassword || 'Passwords do not match',
-                  })}
-                />
+                <div style={{ position: 'relative' }}>
+                  <input
+                    id="auth-confirm-password"
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    placeholder="Re-enter your password"
+                    style={{ paddingRight: '40px' }}
+                    {...registerField('confirmPassword', {
+                      required: 'Please confirm your password',
+                      validate: (value) =>
+                        value === confirmPassword || 'Passwords do not match',
+                    })}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    style={{
+                      position: 'absolute',
+                      right: '10px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: 'var(--text-tertiary)',
+                      padding: '5px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                    aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                  >
+                    <i className={showConfirmPassword ? 'fas fa-eye-slash' : 'fas fa-eye'} />
+                  </button>
+                </div>
                 {errors.confirmPassword && (
                   <span className="form-error">
                     {errors.confirmPassword.message}

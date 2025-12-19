@@ -30,6 +30,10 @@ export default defineConfig({
         timeout: 600000, // 10 minutes for transcription
       },
     },
+    watch: {
+      ignored: ['**/node_modules/**', '**/.git/**', '**/dist/**', '**/.next/**', '**/.turbo/**'],
+      usePolling: false,
+    },
   },
   // Disable HMR in production builds
   build: {
