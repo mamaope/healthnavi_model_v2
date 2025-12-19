@@ -54,7 +54,7 @@ export default function App() {
       const oauthToken = urlParams.get('token')
       console.log('OAuth success callback - token received:', oauthToken ? 'yes' : 'no')
       if (oauthToken) {
-        localStorage.setItem('healthnavi.accessToken', oauthToken)
+        localStorage.setItem('empirico.accessToken', oauthToken)
         console.log('OAuth token stored in localStorage')
         
         window.history.replaceState({}, document.title, '/')

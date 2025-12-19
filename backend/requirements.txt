@@ -48,12 +48,10 @@ pymilvus>=2.4.9,<3.0.0
 openai>=1.70.0,<2.0.0
 
 # ============================================================================
-# Audio Transcription (Optional - large dependency ~2GB+)
+# Audio Transcription (Voice-to-text with Whisper)
 # ============================================================================
-# Uncomment the lines below if transcription service is needed
-# The app will start without these, but transcription endpoints will return 503
-# openai-whisper>=20250625
-# torch>=2.9.0,<3.0.0
+openai-whisper>=20231117
+torch>=2.0.0,<3.0.0
 
 # ============================================================================
 # Utilities

@@ -129,7 +129,7 @@ export const useChatStore = create<ChatStore>()(
       },
     }),
     {
-      name: 'healthnavi.chat',
+      name: 'empirico.chat',
       partialize: (state) => ({
         guestSessionId: state.guestSessionId,
         sessions: state.sessions,
