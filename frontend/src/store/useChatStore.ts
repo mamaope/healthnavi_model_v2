@@ -9,6 +9,7 @@ interface ChatStoreState {
   currentSession: ChatSession | null
   guestSessionId: string | null
   isSending: boolean
+  followupQuestions: string[]
 }
 
 interface ChatStoreActions {
@@ -20,6 +21,7 @@ interface ChatStoreActions {
   clearMessages: () => void
   replaceMessage: (id: string, message: Partial<ChatMessage>) => void
   setIsSending: (state: boolean) => void
+  setFollowupQuestions: (questions: string[]) => void
   reset: () => void
 }
 
@@ -60,6 +62,7 @@ export const useChatStore = create<ChatStore>()(
       currentSession: null,
       guestSessionId: hydrateGuestSession(),
       isSending: false,
+      followupQuestions: [],
       setSessions: (sessions) => {
         const sortedSessions = Array.isArray(sessions)
           ? [...sessions].sort(
@@ -117,6 +120,7 @@ export const useChatStore = create<ChatStore>()(
         })),
       clearMessages: () => set({ messages: [] }),
       setIsSending: (state) => set({ isSending: state }),
+      setFollowupQuestions: (questions) => set({ followupQuestions: questions }),
       reset: () => {
         if (typeof window !== 'undefined') {
           window.localStorage.removeItem(STORAGE_KEYS.guestSession)
@@ -133,6 +137,9 @@ export const useChatStore = create<ChatStore>()(
       partialize: (state) => ({
         guestSessionId: state.guestSessionId,
         sessions: state.sessions,
+        messages: state.messages,
+        currentSession: state.currentSession,
+        followupQuestions: state.followupQuestions,
       }),
     },
   ),

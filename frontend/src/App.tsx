@@ -10,6 +10,7 @@ import { Header } from './components/layout/Header'
 import { Sidebar } from './components/layout/Sidebar'
 import { useChatEngine } from './hooks/useChatEngine'
 import { useAuth } from './providers/AuthProvider'
+import { useChatStore } from './store/useChatStore'
 import { APP_METADATA } from './config'
 
 export default function App() {
@@ -32,7 +33,8 @@ export default function App() {
   const [resetToken, setResetToken] = useState<string | null>(null)
   const [inputValue, setInputValue] = useState('')
   const [isDeepSearchEnabled, setIsDeepSearchEnabled] = useState(false)
-  const [followupQuestions, setFollowupQuestions] = useState<string[]>([])
+  const followupQuestions = useChatStore((state) => state.followupQuestions)
+  const setFollowupQuestions = useChatStore((state) => state.setFollowupQuestions)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Check for reset token or OAuth callback in URL on mount
@@ -164,34 +166,34 @@ export default function App() {
             <div className="messages-container">
               <MessageList messages={messages} />
               <LoadingIndicator isVisible={isSending} />
+              
+              {/* Follow-up Questions */}
+              {followupQuestions && followupQuestions.length > 0 && (
+                <div className="followup-section">
+                  <div className="followup-header">
+                    <i className="fas fa-lightbulb" />
+                    <span>Suggested Questions</span>
+                  </div>
+                  <div className="followup-grid">
+                    {followupQuestions.map((question, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        className="followup-card"
+                        onClick={() => {
+                          setInputValue(question)
+                          setFollowupQuestions([])
+                          textareaRef.current?.focus()
+                        }}
+                      >
+                        <i className="fas fa-arrow-right" />
+                        <span>{question}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-
-            {/* Follow-up Questions */}
-            {followupQuestions && followupQuestions.length > 0 && (
-              <div className="followup-section">
-                <div className="followup-header">
-                  <i className="fas fa-lightbulb" />
-                  <span>Suggested Questions</span>
-                </div>
-                <div className="followup-grid">
-                  {followupQuestions.map((question, index) => (
-                    <button
-                      key={index}
-                      type="button"
-                      className="followup-card"
-                      onClick={() => {
-                        setInputValue(question)
-                        setFollowupQuestions([])
-                        textareaRef.current?.focus()
-                      }}
-                    >
-                      <i className="fas fa-arrow-right" />
-                      <span>{question}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* Input Area - Fixed at bottom */}
             <div className="input-section">

@@ -16,14 +16,7 @@ export function MessageList({ messages }: MessageListProps) {
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState<Record<string, boolean>>({})
   const shareTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  useEffect(() => {
-    if (!containerRef.current) return
-    const el = containerRef.current
-    el.scrollTo({
-      top: el.scrollHeight,
-      behavior: 'smooth',
-    })
-  }, [messages])
+  // Removed auto-scroll so users can read the response
 
   useEffect(() => {
     return () => {
