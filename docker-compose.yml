@@ -8,12 +8,6 @@ services:
       - "8050:8050"
     env_file:
       - .env
-    environment:
-      # Override for local development
-      - GOOGLE_REDIRECT_URI=http://localhost:8050/api/v2/auth/google/callback
-      - BACKEND_URL=http://localhost:8050
-      - FRONTEND_URL=http://localhost:3000
-      - BASE_URL=http://localhost:3000
     volumes:
       - ./backend:/backend
       - ./logs:/backend/logs
