@@ -34,15 +34,25 @@ RESPONSE_CACHE: Dict[str, Tuple[str, datetime]] = {}
 
 def optimize_context_for_llm(chunks: list[dict], max_chunks: int = 3) -> str:
     """
-    Take only the top most relevant chunks to include in the LLM prompt.
+    Take only the top most relevant chunks and bind them structurally to sources.
+    Each chunk is numbered and tagged with its source for mechanical grounding.
     """
     top_chunks = chunks[:max_chunks]
     context_parts = []
-    for chunk in top_chunks:
+    
+    for idx, chunk in enumerate(top_chunks, 1):
         file_name = os.path.basename(chunk['file_path'])
         file_name = file_name.replace('.pdf', '').replace('_', ' ').replace('-', ' ')
-        pdf_page = chunk.get("display_page_number", "?")
-        context_parts.append(f"[SOURCE: {file_name} (Page: {pdf_page})]\n{chunk['content'].strip()}")
+        pdf_page = chunk.get("display_page_number")
+        
+        # Create numbered, source-tagged chunks
+        if pdf_page and str(pdf_page).strip() and str(pdf_page) != "?":
+            source_tag = f"[CHUNK {idx} | SOURCE: {file_name} | PAGE: {pdf_page}]"
+        else:
+            source_tag = f"[CHUNK {idx} | SOURCE: {file_name}]"
+        
+        context_parts.append(f"{source_tag}\\n{chunk['content'].strip()}")
+    
     return "\n\n".join(context_parts)
 
 def is_diagnosis_complete(response: str) -> bool:
@@ -66,7 +76,7 @@ def generate_followup_questions_sync(original_query: str, response: str) -> list
         Write 3 questions:"""
         
         logger.info("Generating follow-up questions...")
-        
+
         followup_response = client.models.generate_content(
             model=MODEL_NAME,
             contents=[{"role": "user", "parts": [{"text": followup_prompt}]}],
@@ -122,7 +132,6 @@ def generate_followup_questions_sync(original_query: str, response: str) -> list
     
     logger.warning("Could not generate follow-up questions")
     return []
-
 
 def _generate_cache_key(query: str, patient_data: str, deep_search: bool = False) -> str:
     """Generate a cache key from query and patient data."""
@@ -218,8 +227,15 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
         optimized_context = optimize_context_for_llm(context, max_chunks=max_chunks)
         logger.info(f"Context optimized: {len(context)} chunks -> {len(optimized_context)} chars from {len(actual_sources)} sources")
 
-        sources_text = ", ".join(actual_sources) if actual_sources else ""
-
+        # Format sources - should always have sources from knowledge base
+        if actual_sources and len(actual_sources) > 0:
+            sources_text = ", ".join(actual_sources)
+            logger.info(f"✅ Sources to be cited: {sources_text}")
+        else:
+            # Log as error since this indicates a potential system issue
+            logger.error("⚠️ CRITICAL: No sources retrieved from knowledge base! Check vector store connection.")
+            sources_text = ""
+            
         full_prompt = prompt_template.format(sources=sources_text, context=optimized_context)
         user_context_block = f"""
             ### USER QUESTION:

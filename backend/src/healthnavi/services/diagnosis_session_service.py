@@ -149,19 +149,13 @@ class DiagnosisSessionService:
                 DiagnosisSession.user_id == user.id
             ).scalar()
             
-            # Get sessions with message counts
-            sessions_query = self.db.query(
-                DiagnosisSession,
-                func.count(ChatMessage.id).label('message_count')
-            ).outerjoin(
-                ChatMessage, DiagnosisSession.id == ChatMessage.session_id
-            ).filter(
+            # Get sessions WITHOUT expensive message count join
+            # Message count can be lazy-loaded if needed by the frontend
+            sessions = self.db.query(DiagnosisSession).filter(
                 DiagnosisSession.user_id == user.id
-            ).group_by(DiagnosisSession.id).order_by(
+            ).order_by(
                 desc(DiagnosisSession.updated_at)
-            ).offset(offset).limit(per_page)
-            
-            sessions = sessions_query.all()
+            ).offset(offset).limit(per_page).all()
             
             # Convert to response format
             session_responses = [
@@ -173,8 +167,8 @@ class DiagnosisSessionService:
                     is_active=session.is_active,
                     created_at=session.created_at,
                     updated_at=session.updated_at,
-                    message_count=message_count or 0
-                ) for session, message_count in sessions
+                    message_count=0  # Set to 0 to avoid expensive join - frontend doesn't display this anyway
+                ) for session in sessions
             ]
             
             return ChatSessionListResponse(
@@ -268,6 +262,21 @@ class DiagnosisSessionService:
             
             if not session:
                 return None
+            
+            # If this is the first user message and session has default name, update it
+            if message_data.message_type == 'user':
+                message_count = self.db.query(func.count(ChatMessage.id)).filter(
+                    ChatMessage.session_id == session.id
+                ).scalar() or 0
+                
+                if message_count == 0 and session.session_name and session.session_name.startswith('Diagnosis Session'):
+                    # Extract first 40 chars from user message as session name
+                    content = message_data.content or ''
+                    if len(content) > 40:
+                        session.session_name = content[:40].strip() + '...'
+                    elif content.strip():
+                        session.session_name = content.strip()
+                    logger.info(f"Updated session {session_id} name to: {session.session_name}")
             
             # Create new message
             new_message = ChatMessage(

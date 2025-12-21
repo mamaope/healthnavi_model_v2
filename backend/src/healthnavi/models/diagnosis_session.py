@@ -23,7 +23,7 @@ class DiagnosisSession(Base):
     patient_summary = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(String, nullable=True, default=lambda: datetime.utcnow().isoformat())
-    updated_at = Column(String, nullable=True, default=lambda: datetime.utcnow().isoformat())
+    updated_at = Column(String, nullable=True, default=lambda: datetime.utcnow().isoformat(), index=True)  # Add index for sorting
 
     # Relationships
     user = relationship("User", back_populates="diagnosis_sessions")

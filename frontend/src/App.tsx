@@ -14,7 +14,7 @@ import { useChatStore } from './store/useChatStore'
 import { APP_METADATA } from './config'
 
 export default function App() {
-  const { isAuthenticated, initializing, refreshProfile } = useAuth()
+  const { isAuthenticated, initializing, refreshProfile, logout } = useAuth()
   const {
     messages,
     isSending,
@@ -33,6 +33,7 @@ export default function App() {
   const [resetToken, setResetToken] = useState<string | null>(null)
   const [inputValue, setInputValue] = useState('')
   const [isDeepSearchEnabled, setIsDeepSearchEnabled] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const followupQuestions = useChatStore((state) => state.followupQuestions)
   const setFollowupQuestions = useChatStore((state) => state.setFollowupQuestions)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -113,18 +114,20 @@ export default function App() {
   }
 
   const showSamplePrompts = useMemo(
-    () => !isAuthenticated && messages.length === 0,
-    [isAuthenticated, messages.length],
+    () => messages.length === 0,
+    [messages.length],
   )
 
   const hasMessages = messages.length > 0
 
   return (
-    <div className={`app-wrapper ${isAuthenticated ? 'authenticated' : 'guest'}`}>
+    <div className={`app-wrapper ${isAuthenticated ? 'authenticated' : 'guest'} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       {/* Sidebar - Only visible when authenticated */}
       {isAuthenticated && (
         <Sidebar
           isOpen={isAuthenticated}
+          isCollapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
           sessions={sessions}
           currentSessionId={currentSession?.id}
           onStartNewChat={startNewSession}
@@ -133,6 +136,9 @@ export default function App() {
           }}
           isLoading={sessionsLoading}
           onHomeClick={() => {
+            if (isAuthenticated) {
+              logout()
+            }
             startNewSession()
             setFollowupQuestions([])
             setInputValue('')
@@ -153,6 +159,9 @@ export default function App() {
             setAuthModalOpen(true)
           }}
           onHomeClick={() => {
+            if (isAuthenticated) {
+              logout()
+            }
             startNewSession()
             setFollowupQuestions([])
             setInputValue('')
