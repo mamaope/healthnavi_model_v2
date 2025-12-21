@@ -101,6 +101,8 @@ export function useChatEngine() {
     if (!isAuthenticated) {
       setGuestSessionId(null)
     }
+    // Clear followup questions when starting a new session
+    useChatStore.getState().setFollowupQuestions([])
   }, [clearMessages, isAuthenticated, setCurrentSession, setGuestSessionId])
 
   const createSessionIfNeeded = useCallback(async () => {

@@ -219,6 +219,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await login({ email, password })
       } catch (error) {
         if (error instanceof Error) {
+          // Improve error messages based on common backend errors
+          const errorMessage = error.message.toLowerCase()
+          
+          if (errorMessage.includes('email already registered') || 
+              errorMessage.includes('email or username already exists')) {
+            throw new Error('This email is already registered. Please sign in instead.')
+          } else if (errorMessage.includes('invalid email')) {
+            throw new Error('Please enter a valid email address.')
+          } else if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+            throw new Error('Network error. Please check your connection and try again.')
+          } else if (errorMessage.includes('service temporarily unavailable')) {
+            throw new Error('Service is temporarily unavailable. Please try again later.')
+          }
+          
           throw error
         }
         throw new Error('Unable to create an account at the moment.')

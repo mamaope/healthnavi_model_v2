@@ -4,6 +4,8 @@ import type { ChatSession } from '../../types/chat'
 
 interface SidebarProps {
   isOpen: boolean
+  isCollapsed: boolean
+  onToggleCollapse: () => void
   sessions: ChatSession[]
   currentSessionId?: string | null
   onStartNewChat: () => void
@@ -14,6 +16,8 @@ interface SidebarProps {
 
 export function Sidebar({
   isOpen,
+  isCollapsed,
+  onToggleCollapse,
   sessions,
   currentSessionId,
   onStartNewChat,
@@ -26,8 +30,8 @@ export function Sidebar({
   const hasSessions = sessions.length > 0
 
   const sidebarClass = useMemo(
-    () => `modern-sidebar ${isOpen ? 'open' : ''}`,
-    [isOpen],
+    () => `modern-sidebar ${isOpen ? 'open' : ''} ${isCollapsed ? 'collapsed' : ''}`,
+    [isOpen, isCollapsed],
   )
 
   if (!isAuthenticated) {
@@ -51,85 +55,123 @@ export function Sidebar({
     }
   }
 
-  const getSessionPreview = (session: ChatSession) => {
-    // Extract first message or use default
-    if (session.messages && session.messages.length > 0) {
-      const firstMessage = session.messages[0]?.content || ''
-      return firstMessage.length > 50 
-        ? firstMessage.substring(0, 50) + '...' 
-        : firstMessage
+  const getSessionTitle = (session: ChatSession) => {
+    // Use session name from backend
+    // Backend updates it with first user message automatically
+    if (session.session_name && !session.session_name.startsWith('Diagnosis Session')) {
+      return session.session_name
     }
+    
+    // Fallback for new sessions without messages yet
     return 'New conversation'
   }
 
   return (
     <aside className={sidebarClass}>
       <div className="sidebar-header">
-        <div className="sidebar-brand">
-          <div 
-            className="sidebar-logo" 
-            onClick={onHomeClick}
-            style={{ cursor: onHomeClick ? 'pointer' : 'default' }}
-          >
-            <img 
-              src="/logo.png" 
-              alt="Empirico" 
-              className="logo-image"
-            />
+        <div className="sidebar-header-top">
+          <div className="sidebar-brand">
+            <div 
+              className="sidebar-logo" 
+              onClick={onHomeClick}
+              style={{ cursor: onHomeClick ? 'pointer' : 'default' }}
+            >
+              {!isCollapsed && (
+                <img 
+                  src="/logo.png" 
+                  alt="Empirico" 
+                  className="logo-image"
+                />
+              )}
+            </div>
           </div>
+          <button 
+            className="btn-collapse-sidebar" 
+            onClick={onToggleCollapse}
+            title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            <i className={`fas fa-${isCollapsed ? 'chevron-right' : 'chevron-left'}`} />
+          </button>
         </div>
-        <button className="btn-new-chat" onClick={onStartNewChat}>
-          <i className="fas fa-plus" />
-          <span>New Chat</span>
-        </button>
+        {!isCollapsed && (
+          <button className="btn-new-chat" onClick={onStartNewChat}>
+            <i className="fas fa-plus" />
+            <span>New Chat</span>
+          </button>
+        )}
+        {isCollapsed && (
+          <button className="btn-new-chat-collapsed" onClick={onStartNewChat} title="New Chat">
+            <i className="fas fa-plus" />
+          </button>
+        )}
       </div>
 
       <div className="sidebar-content">
-        <div className="sessions-header">
-          <h3>Recent Conversations</h3>
-        </div>
-        <div className="sessions-list">
-          {isLoading && (
-            <div className="sessions-loading">
-              <i className="fas fa-spinner fa-spin" />
-              <span>Loading conversations…</span>
+        {!isCollapsed && (
+          <>
+            <div className="sessions-header">
+              <h3>Recent Conversations</h3>
             </div>
-          )}
-          {!isLoading && !hasSessions && (
-            <div className="empty-state">
-              <div className="empty-state-icon">
-                <i className="fas fa-comments" />
-              </div>
-              <p className="empty-state-title">No conversations yet</p>
-              <p className="empty-state-description">Start a new chat to begin your clinical consultation</p>
+            <div className="sessions-list">
+              {isLoading && (
+                <div className="sessions-loading">
+                  <i className="fas fa-spinner fa-spin" />
+                  <span>Loading conversations…</span>
+                </div>
+              )}
+              {!isLoading && !hasSessions && (
+                <div className="empty-state">
+                  <div className="empty-state-icon">
+                    <i className="fas fa-comments" />
+                  </div>
+                  <p className="empty-state-title">No conversations yet</p>
+                  <p className="empty-state-description">Start a new chat to begin your clinical consultation</p>
+                </div>
+              )}
+              {!isLoading &&
+                hasSessions &&
+                sessions.map((session) => (
+                  <button
+                    key={session.id}
+                    className={`session-item ${
+                      currentSessionId === session.id ? 'active' : ''
+                    }`}
+                    onClick={() => onSelectSession(session)}
+                  >
+                    <div className="session-icon">
+                      <i className="fas fa-comment-medical" />
+                    </div>
+                    <div className="session-content">
+                      <div className="session-name">
+                        {getSessionTitle(session)}
+                      </div>
+                      <div className="session-meta">
+                        <span className="session-date">
+                          {formatSessionDate(session.created_at)}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
             </div>
-          )}
-          {!isLoading &&
-            hasSessions &&
-            sessions.map((session) => (
+          </>
+        )}
+        {isCollapsed && (
+          <div className="sessions-list-collapsed">
+            {sessions.slice(0, 5).map((session) => (
               <button
                 key={session.id}
-                className={`session-item ${
+                className={`session-item-collapsed ${
                   currentSessionId === session.id ? 'active' : ''
                 }`}
                 onClick={() => onSelectSession(session)}
+                title={getSessionTitle(session)}
               >
-                <div className="session-icon">
-                  <i className="fas fa-comment-medical" />
-                </div>
-                <div className="session-content">
-                  <div className="session-name">
-                    {getSessionPreview(session)}
-                  </div>
-                  <div className="session-meta">
-                    <span className="session-date">
-                      {formatSessionDate(session.created_at)}
-                    </span>
-                  </div>
-                </div>
+                <i className="fas fa-comment-medical" />
               </button>
             ))}
-        </div>
+          </div>
+        )}
       </div>
     </aside>
   )
