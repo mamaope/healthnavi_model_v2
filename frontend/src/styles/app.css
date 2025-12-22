@@ -6499,8 +6499,14 @@ textarea {
 }
 
 /* Adjust main layout when sidebar is open */
-.app-wrapper.authenticated .main-layout,
-.app-wrapper.guest .main-layout {
+.app-wrapper.authenticated .main-layout {
+    margin-left: 280px;
+    transition: margin-left var(--transition-default);
+    width: calc(100% - 280px);
+}
+
+/* Guest users with sidebar (after they start chatting) */
+.app-wrapper.guest.guest-with-sidebar .main-layout {
     margin-left: 280px;
     transition: margin-left var(--transition-default);
     width: calc(100% - 280px);
@@ -6512,8 +6518,12 @@ textarea {
     min-width: 70px;
 }
 
-.app-wrapper.authenticated.sidebar-collapsed .main-layout,
-.app-wrapper.guest.sidebar-collapsed .main-layout {
+.app-wrapper.authenticated.sidebar-collapsed .main-layout {
+    margin-left: 70px;
+    width: calc(100% - 70px);
+}
+
+.app-wrapper.guest.guest-with-sidebar.sidebar-collapsed .main-layout {
     margin-left: 70px;
     width: calc(100% - 70px);
 }
@@ -6624,7 +6634,7 @@ textarea {
     }
     
     .app-wrapper.authenticated .main-layout,
-    .app-wrapper.guest .main-layout {
+    .app-wrapper.guest.guest-with-sidebar .main-layout {
         margin-left: 0;
     }
     

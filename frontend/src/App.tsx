@@ -119,30 +119,34 @@ export default function App() {
   )
 
   const hasMessages = messages.length > 0
+  const showSidebarForGuest = !isAuthenticated && hasMessages
+  const showSidebar = isAuthenticated || showSidebarForGuest
 
   return (
-    <div className={`app-wrapper ${isAuthenticated ? 'authenticated' : 'guest'} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-      {/* Sidebar - Visible for all users */}
-      <Sidebar
-        isOpen={true}
-        isCollapsed={sidebarCollapsed}
-        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-        sessions={sessions}
-        currentSessionId={currentSession?.id}
-        onStartNewChat={startNewSession}
-        onSelectSession={(session) => {
-          void loadSession(session)
-        }}
-        isLoading={sessionsLoading}
-        onHomeClick={() => {
-          if (isAuthenticated) {
-            logout()
-          }
-          startNewSession()
-          setFollowupQuestions([])
-          setInputValue('')
-        }}
-      />
+    <div className={`app-wrapper ${isAuthenticated ? 'authenticated' : 'guest'} ${showSidebarForGuest ? 'guest-with-sidebar' : ''} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+      {/* Sidebar - Only visible when authenticated or guest with messages */}
+      {showSidebar && (
+        <Sidebar
+          isOpen={showSidebar}
+          isCollapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+          sessions={sessions}
+          currentSessionId={currentSession?.id}
+          onStartNewChat={startNewSession}
+          onSelectSession={(session) => {
+            void loadSession(session)
+          }}
+          isLoading={sessionsLoading}
+          onHomeClick={() => {
+            if (isAuthenticated) {
+              logout()
+            }
+            startNewSession()
+            setFollowupQuestions([])
+            setInputValue('')
+          }}
+        />
+      )}
 
       {/* Main Content Area */}
       <div className="main-layout">

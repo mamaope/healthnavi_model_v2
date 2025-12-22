@@ -235,9 +235,6 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
             logger.error("⚠️ CRITICAL: No sources retrieved from knowledge base! Check vector store connection.")
             sources_text = ""
             
-        # Log the context being sent to the model
-        logger.info(f"\n{'='*80}\n📚 CONTEXT SENT TO MODEL ({len(context)} chunks):\n{'='*80}\n{optimized_context[:1000]}...\n{'='*80}")
-            
         full_prompt = prompt_template.format(sources=sources_text, context=optimized_context)
         user_context_block = f"""
             ### USER QUESTION:
@@ -287,16 +284,6 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
                 full_response_text = candidate.content.parts[0].text.strip()
                 finish_reason = getattr(candidate, 'finish_reason', 'UNKNOWN')
                 logger.info(f"Response finish reason: {finish_reason}")
-                
-                # Log the full response for debugging
-                logger.info(f"\n{'='*80}\n📝 FULL MODEL RESPONSE:\n{'='*80}\n{full_response_text}\n{'='*80}")
-                
-                # Check if references are present in the response
-                has_references = "**REFERENCES**" in full_response_text or "**References**" in full_response_text or "REFERENCES" in full_response_text
-                logger.info(f"🔍 References section present in response: {has_references}")
-                
-                if not has_references:
-                    logger.warning(f"⚠️ NO REFERENCES FOUND in model response despite sources being provided: {sources_text}")
 
                 if finish_reason == 'MAX_TOKENS':
                     full_response_text += "\n\n**[Note: The response was truncated due to token limits. Try asking a more specific question.]**"
