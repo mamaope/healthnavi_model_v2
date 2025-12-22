@@ -9,6 +9,9 @@ interface ChatStoreState {
   currentSession: ChatSession | null
   guestSessionId: string | null
   isSending: boolean
+  isStreaming: boolean
+  streamingMessageId: string | null
+  isFetchingFollowup: boolean
   followupQuestions: string[]
 }
 
@@ -20,7 +23,12 @@ interface ChatStoreActions {
   addMessage: (message: ChatMessage) => void
   clearMessages: () => void
   replaceMessage: (id: string, message: Partial<ChatMessage>) => void
+  updateMessageContent: (id: string, content: string) => void
+  appendMessageContent: (id: string, contentChunk: string) => void
   setIsSending: (state: boolean) => void
+  setIsStreaming: (state: boolean) => void
+  setStreamingMessageId: (id: string | null) => void
+  setIsFetchingFollowup: (state: boolean) => void
   setFollowupQuestions: (questions: string[]) => void
   reset: () => void
 }
@@ -62,6 +70,9 @@ export const useChatStore = create<ChatStore>()(
       currentSession: null,
       guestSessionId: hydrateGuestSession(),
       isSending: false,
+      isStreaming: false,
+      streamingMessageId: null,
+      isFetchingFollowup: false,
       followupQuestions: [],
       setSessions: (sessions) => {
         const sortedSessions = Array.isArray(sessions)
@@ -118,8 +129,25 @@ export const useChatStore = create<ChatStore>()(
             message.id === id ? { ...message, ...patch } : message,
           ),
         })),
+      updateMessageContent: (id, content) =>
+        set((state) => ({
+          messages: state.messages.map((message) =>
+            message.id === id ? { ...message, content } : message,
+          ),
+        })),
+      appendMessageContent: (id, contentChunk) =>
+        set((state) => ({
+          messages: state.messages.map((message) =>
+            message.id === id
+              ? { ...message, content: message.content + contentChunk }
+              : message,
+          ),
+        })),
       clearMessages: () => set({ messages: [] }),
       setIsSending: (state) => set({ isSending: state }),
+      setIsStreaming: (state) => set({ isStreaming: state }),
+      setStreamingMessageId: (id) => set({ streamingMessageId: id }),
+      setIsFetchingFollowup: (state) => set({ isFetchingFollowup: state }),
       setFollowupQuestions: (questions) => set({ followupQuestions: questions }),
       reset: () => {
         if (typeof window !== 'undefined') {
@@ -129,6 +157,9 @@ export const useChatStore = create<ChatStore>()(
           messages: [],
           currentSession: null,
           guestSessionId: null,
+          isStreaming: false,
+          streamingMessageId: null,
+          isFetchingFollowup: false,
         })
       },
     }),
@@ -140,6 +171,7 @@ export const useChatStore = create<ChatStore>()(
         messages: state.messages,
         currentSession: state.currentSession,
         followupQuestions: state.followupQuestions,
+        // Don't persist streaming state - always reset on reload
       }),
     },
   ),

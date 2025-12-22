@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AuthModal, type AuthMode } from './components/auth/AuthModal'
 import { ForgotPasswordModal } from './components/auth/ForgotPasswordModal'
 import { ResetPasswordModal } from './components/auth/ResetPasswordModal'
@@ -18,6 +18,7 @@ export default function App() {
   const {
     messages,
     isSending,
+    isStreaming,
     sessions,
     currentSession,
     sessionsLoading,
@@ -25,6 +26,8 @@ export default function App() {
     startNewSession,
     loadSession,
   } = useChatEngine()
+  
+  const isFetchingFollowup = useChatStore((state) => state.isFetchingFollowup)
 
   const [authModalOpen, setAuthModalOpen] = useState(false)
   const [authMode, setAuthMode] = useState<AuthMode>('login')
@@ -34,6 +37,7 @@ export default function App() {
   const [inputValue, setInputValue] = useState('')
   const [isDeepSearchEnabled, setIsDeepSearchEnabled] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const followupQuestions = useChatStore((state) => state.followupQuestions)
   const setFollowupQuestions = useChatStore((state) => state.setFollowupQuestions)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -91,12 +95,12 @@ export default function App() {
 
   const handleSendMessage = async (message: string) => {
     setFollowupQuestions([])
+    setInputValue('') // Clear input immediately when sending
     try {
       const result = await sendMessage({
         message,
         deepSearch: isDeepSearchEnabled,
       })
-      setInputValue('')
       if (result && result.followupQuestions) {
         setFollowupQuestions(result.followupQuestions)
       }
@@ -113,21 +117,38 @@ export default function App() {
     }, 0)
   }
 
+  // Show sample prompts when there are no messages
   const showSamplePrompts = useMemo(
     () => messages.length === 0,
     [messages.length],
+  )
+  
+  // Show welcome message only for guest users when they haven't started chatting
+  // Logged-in users never see the welcome message
+  const showWelcomeMessage = useMemo(
+    () => !isAuthenticated && messages.length === 0,
+    [isAuthenticated, messages.length],
   )
 
   const hasMessages = messages.length > 0
   const showSidebarForGuest = !isAuthenticated && hasMessages
   const showSidebar = isAuthenticated || showSidebarForGuest
 
+  // Memoize sidebar handlers to prevent unnecessary re-renders
+  const handleCloseSidebar = useCallback(() => {
+    setMobileMenuOpen(false)
+  }, [])
+
+  const handleToggleSidebar = useCallback(() => {
+    setMobileMenuOpen((prev) => !prev)
+  }, [])
+
   return (
     <div className={`app-wrapper ${isAuthenticated ? 'authenticated' : 'guest'} ${showSidebarForGuest ? 'guest-with-sidebar' : ''} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       {/* Sidebar - Only visible when authenticated or guest with messages */}
       {showSidebar && (
         <Sidebar
-          isOpen={showSidebar}
+          isOpen={mobileMenuOpen}
           isCollapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
           sessions={sessions}
@@ -135,6 +156,7 @@ export default function App() {
           onStartNewChat={startNewSession}
           onSelectSession={(session) => {
             void loadSession(session)
+            setMobileMenuOpen(false) // Close mobile menu after selecting
           }}
           isLoading={sessionsLoading}
           onHomeClick={() => {
@@ -144,7 +166,9 @@ export default function App() {
             startNewSession()
             setFollowupQuestions([])
             setInputValue('')
+            setMobileMenuOpen(false)
           }}
+          onClose={handleCloseSidebar}
         />
       )}
 
@@ -168,6 +192,8 @@ export default function App() {
             setFollowupQuestions([])
             setInputValue('')
           }}
+          onMenuToggle={handleToggleSidebar}
+          showMenuButton={showSidebar}
         />
 
         {/* Chat Container */}
@@ -175,11 +201,12 @@ export default function App() {
           <div className={`chat-wrapper ${hasMessages ? 'has-messages' : 'empty'}`}>
             {/* Messages Area */}
             <div className="messages-container">
-              <MessageList messages={messages} />
-              <LoadingIndicator isVisible={isSending} />
+              <MessageList messages={messages} showWelcomeMessage={showWelcomeMessage} />
+              {/* Show loading indicator when sending, streaming, or fetching follow-up questions */}
+              <LoadingIndicator isVisible={isSending || isStreaming || isFetchingFollowup} />
               
-              {/* Follow-up Questions */}
-              {followupQuestions && followupQuestions.length > 0 && (
+              {/* Follow-up Questions - Below model response */}
+              {followupQuestions && followupQuestions.length > 0 && messages.length > 0 && (
                 <div className="followup-section">
                   <div className="followup-header">
                     <i className="fas fa-lightbulb" />
@@ -213,16 +240,12 @@ export default function App() {
                 value={inputValue}
                 onChange={setInputValue}
                 onSend={handleSendMessage}
-                isSending={isSending || initializing}
+                isSending={isSending || isStreaming || initializing}
                 isDeepSearchEnabled={isDeepSearchEnabled}
                 onToggleDeepSearch={() =>
                   setIsDeepSearchEnabled((previous) => !previous)
                 }
-                placeholder={
-                  isAuthenticated
-                    ? 'Ask a clinical question, describe symptoms, or request guidance...'
-                    : 'Ask a clinical question, describe symptoms, or request guidance...'
-                }
+                placeholder="Ask a clinical question, describe symptoms, or request guidance..."
               />
               {/* Disclaimer - Right under input area */}
               <div className="disclaimer-bar">

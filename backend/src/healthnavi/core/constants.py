@@ -7,7 +7,7 @@ MODEL_NAME = "gemini-2.5-flash"
 PROMPT_TOKEN_LIMIT = 16000
 
 # Cache Configuration
-CACHE_TTL_MINUTES = 30  # Cache responses for 30 minutes
+CACHE_TTL_MINUTES = 3  # Cache responses for 3 minutes
 MAX_CACHE_SIZE = 100  # Maximum number of cached responses
 
 # Context Optimization

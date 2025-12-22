@@ -1,5 +1,4 @@
-import { useMemo } from 'react'
-import { useAuth } from '../../providers/AuthProvider'
+import { useMemo, useEffect, useRef } from 'react'
 import type { ChatSession } from '../../types/chat'
 
 interface SidebarProps {
@@ -12,6 +11,7 @@ interface SidebarProps {
   onSelectSession: (session: ChatSession) => void
   isLoading?: boolean
   onHomeClick?: () => void
+  onClose?: () => void
 }
 
 export function Sidebar({
@@ -24,15 +24,63 @@ export function Sidebar({
   onSelectSession,
   isLoading,
   onHomeClick,
+  onClose,
 }: SidebarProps) {
-  const { isAuthenticated } = useAuth()
+  const sidebarRef = useRef<HTMLElement>(null)
 
   const hasSessions = sessions.length > 0
 
   const sidebarClass = useMemo(
-    () => `modern-sidebar ${isOpen ? 'open' : ''} ${isCollapsed ? 'collapsed' : ''}`,
+    () => {
+      // On mobile, only add 'open' class if isOpen is true
+      // On desktop, sidebar is always visible
+      const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768
+      if (isMobile) {
+        return `modern-sidebar ${isOpen ? 'open' : ''} ${isCollapsed ? 'collapsed' : ''}`
+      }
+      // Desktop: always show sidebar
+      return `modern-sidebar open ${isCollapsed ? 'collapsed' : ''}`
+    },
     [isOpen, isCollapsed],
   )
+  
+  // Close sidebar when clicking outside on mobile
+  useEffect(() => {
+    // Only on mobile screens (768px and below)
+    if (typeof window === 'undefined' || window.innerWidth > 768) return
+    if (!isOpen || !onClose) return
+
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node
+      
+      // Don't close if clicking inside the sidebar
+      if (sidebarRef.current && sidebarRef.current.contains(target)) {
+        return
+      }
+      
+      // Don't close if clicking on the hamburger menu button
+      const menuButton = document.querySelector('.mobile-menu-button')
+      if (menuButton && menuButton.contains(target)) {
+        return
+      }
+      
+      // Close sidebar when clicking outside
+      onClose()
+    }
+
+    // Add a small delay to avoid immediate closure when opening
+    // This prevents the same click that opens the menu from also closing it
+    const timeoutId = setTimeout(() => {
+      document.addEventListener('mousedown', handleClickOutside, true)
+      document.addEventListener('touchstart', handleClickOutside as any, true)
+    }, 150)
+
+    return () => {
+      clearTimeout(timeoutId)
+      document.removeEventListener('mousedown', handleClickOutside, true)
+      document.removeEventListener('touchstart', handleClickOutside as any, true)
+    }
+  }, [isOpen, onClose])
 
   const formatSessionDate = (date: Date | string) => {
     const d = typeof date === 'string' ? new Date(date) : date
@@ -52,18 +100,16 @@ export function Sidebar({
   }
 
   const getSessionTitle = (session: ChatSession) => {
-    // Use session name from backend
     // Backend updates it with first user message automatically
     if (session.session_name && !session.session_name.startsWith('Diagnosis Session')) {
       return session.session_name
     }
     
-    // Fallback for new sessions without messages yet
     return 'New conversation'
   }
 
   return (
-    <aside className={sidebarClass}>
+    <aside ref={sidebarRef} className={sidebarClass}>
       <div className="sidebar-header">
         <div className="sidebar-header-top">
           <div className="sidebar-brand">
