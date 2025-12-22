@@ -228,6 +228,68 @@ export const chatApi = {
       body: JSON.stringify(requestBody),
     })
   },
+
+  /**
+   * Stream diagnosis response in real-time.
+   * Returns a ReadableStream that yields text chunks as they are generated.
+   */
+  async *diagnoseStream(payload: {
+    message: string
+    chatHistory: string
+    sessionId: string | null
+    deepSearch: boolean
+  }): AsyncGenerator<string, void, unknown> {
+    const requestBody = {
+      patient_data: payload.message,
+      chat_history: payload.chatHistory,
+      deep_search: payload.deepSearch ?? false,
+      ...(payload.sessionId !== null && { session_id: payload.sessionId }),
+    }
+
+    const token =
+      typeof window !== 'undefined'
+        ? window.localStorage.getItem(STORAGE_KEYS.accessToken)
+        : null
+
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+      Accept: 'text/plain',
+    }
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+
+    const response = await fetch(`${API_URL}/diagnosis/diagnose/stream`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(requestBody),
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    if (!response.body) {
+      throw new Error('Response body is null')
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const chunk = decoder.decode(value, { stream: true })
+        if (chunk) {
+          yield chunk
+        }
+      }
+    } finally {
+      reader.releaseLock()
+    }
+  },
   submitFeedback(messageId: number, feedbackType: 'helpful' | 'not_helpful') {
     return apiFetch<{
       success: boolean

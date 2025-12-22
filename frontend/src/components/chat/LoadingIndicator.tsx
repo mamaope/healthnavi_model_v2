@@ -1,11 +1,9 @@
 interface LoadingIndicatorProps {
   isVisible: boolean
-  label?: string
 }
 
 export function LoadingIndicator({
   isVisible,
-  label,
 }: LoadingIndicatorProps) {
   if (!isVisible) {
     return null
