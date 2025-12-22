@@ -108,23 +108,7 @@ export function MessageList({ messages }: MessageListProps) {
 
   return (
     <div className="chat-messages" ref={containerRef}>
-      {messages.length === 0 && (
-        <div className="welcome-message">
-          <div className="welcome-content">
-            <div className="welcome-logo">
-              <img 
-                src="/logo.png" 
-                alt="Epirico" 
-                className="logo-image welcome-logo-image"
-              />
-            </div>
-            <h3>Welcome to Empirico !!!</h3>
-            <p>
-              How can I assist you today? Ask clinical questions, review treatment options, or explore guidelines.
-            </p>
-          </div>
-        </div>
-      )}
+      {/* Welcome message removed - show sample prompts instead */}
 
       {messages.map((message) => {
         if (message.author === 'assistant') {

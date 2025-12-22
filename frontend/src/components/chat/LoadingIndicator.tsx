@@ -5,7 +5,7 @@ interface LoadingIndicatorProps {
 
 export function LoadingIndicator({
   isVisible,
-  label = 'Empirico thinking',
+  label,
 }: LoadingIndicatorProps) {
   if (!isVisible) {
     return null
@@ -13,10 +13,11 @@ export function LoadingIndicator({
 
   return (
     <div className="loading-indicator" role="status">
-      <div className="loading-spinner">
-        <i className="fas fa-sync-alt" aria-hidden="true" />
+      <div className="loading-dots">
+        <span className="dot"></span>
+        <span className="dot"></span>
+        <span className="dot"></span>
       </div>
-      <span className="loading-text">{label}</span>
     </div>
   )
 }

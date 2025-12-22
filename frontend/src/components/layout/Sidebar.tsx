@@ -34,10 +34,6 @@ export function Sidebar({
     [isOpen, isCollapsed],
   )
 
-  if (!isAuthenticated) {
-    return null
-  }
-
   const formatSessionDate = (date: Date | string) => {
     const d = typeof date === 'string' ? new Date(date) : date
     const now = new Date()

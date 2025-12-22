@@ -34,13 +34,12 @@ RESPONSE_CACHE: Dict[str, Tuple[str, datetime]] = {}
 
 def optimize_context_for_llm(chunks: list[dict], max_chunks: int = 3) -> str:
     """
-    Take only the top most relevant chunks and bind them structurally to sources.
+    Take all relevant chunks and bind them structurally to sources.
     Each chunk is numbered and tagged with its source for mechanical grounding.
     """
-    top_chunks = chunks[:max_chunks]
     context_parts = []
     
-    for idx, chunk in enumerate(top_chunks, 1):
+    for idx, chunk in enumerate(chunks, 1):
         file_name = os.path.basename(chunk['file_path'])
         file_name = file_name.replace('.pdf', '').replace('_', ' ').replace('-', ' ')
         pdf_page = chunk.get("display_page_number")
@@ -230,11 +229,14 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
         # Format sources - should always have sources from knowledge base
         if actual_sources and len(actual_sources) > 0:
             sources_text = ", ".join(actual_sources)
-            logger.info(f"✅ Sources to be cited: {sources_text}")
+            logger.info(f"✅ Sources to be cited ({len(actual_sources)} sources): {sources_text}")
         else:
             # Log as error since this indicates a potential system issue
             logger.error("⚠️ CRITICAL: No sources retrieved from knowledge base! Check vector store connection.")
             sources_text = ""
+            
+        # Log the context being sent to the model
+        logger.info(f"\n{'='*80}\n📚 CONTEXT SENT TO MODEL ({len(context)} chunks):\n{'='*80}\n{optimized_context[:1000]}...\n{'='*80}")
             
         full_prompt = prompt_template.format(sources=sources_text, context=optimized_context)
         user_context_block = f"""
@@ -285,6 +287,16 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
                 full_response_text = candidate.content.parts[0].text.strip()
                 finish_reason = getattr(candidate, 'finish_reason', 'UNKNOWN')
                 logger.info(f"Response finish reason: {finish_reason}")
+                
+                # Log the full response for debugging
+                logger.info(f"\n{'='*80}\n📝 FULL MODEL RESPONSE:\n{'='*80}\n{full_response_text}\n{'='*80}")
+                
+                # Check if references are present in the response
+                has_references = "**REFERENCES**" in full_response_text or "**References**" in full_response_text or "REFERENCES" in full_response_text
+                logger.info(f"🔍 References section present in response: {has_references}")
+                
+                if not has_references:
+                    logger.warning(f"⚠️ NO REFERENCES FOUND in model response despite sources being provided: {sources_text}")
 
                 if finish_reason == 'MAX_TOKENS':
                     full_response_text += "\n\n**[Note: The response was truncated due to token limits. Try asking a more specific question.]**"

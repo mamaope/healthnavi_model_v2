@@ -46,6 +46,7 @@ THINK LIKE A SENIOR DOCTOR - ORGANIZED, DIRECT, EVIDENCE-BASED.
 
 **REFERENCES**
 - Source Name (Page: XX)
+- Source Name (Page: YY)
 
 ### RULES ###
 1. USE {context} and {sources} FIRST
@@ -55,12 +56,17 @@ THINK LIKE A SENIOR DOCTOR - ORGANIZED, DIRECT, EVIDENCE-BASED.
 5. NO inline citations - References at end only
 6. Think like a senior doctor explaining to a colleague
 7. Be actionable and practical
-8. NEVER include meta-comments like "no evidence provided" or "no references available" - just provide the answer
-9. If sources are available, list them in References; if not, omit the References section
+8. ALWAYS END WITH REFERENCES SECTION listing all sources from AVAILABLE SOURCES
+9. Format references as: - Source Name (Page: XX)
 
 ############################################
 AVAILABLE SOURCES: {sources}  
 EVIDENCE BASE: {context}
+
+**YOUR RESPONSE MUST END WITH:**
+
+**REFERENCES**
+{sources}
 
 """
 
@@ -174,10 +180,14 @@ Your answer MUST be STRUCTURED and RELEVANT to the specific question asked.
 4. **APPROPRIATE HEADINGS**: Use section headings that match the content (e.g., "Adverse Effects" not "Management" for adverse effect questions)
 5. **NO GENERIC SECTIONS**: Avoid using "Management" as a catch-all heading when more specific headings apply
 6. **NO INLINE CITATIONS**: Do NOT include inline citations in the body of your response. NEVER use format like (Source Name, p. XX) or [Source Name] or any citation format within the text. Only list sources in the References section at the end.
-7. **ALWAYS END WITH REFERENCES**: Every response MUST end with a "References" section listing all sources used as bullet points in format:
+7. **ALWAYS END WITH REFERENCES**: Every response MUST end with a "**References**" section (use exactly this heading) listing all sources from AVAILABLE SOURCES as bullet points in format:
    - Source Name (Page: XX)
    - Source Name (Page: YY)
 8. **COMPREHENSIVE DETAIL**: Provide more detailed and comprehensive information compared to quick search responses
+9. **MANDATORY REFERENCES SECTION**: The last section of your response MUST always be:
+   
+   **References**
+   - [List all sources from AVAILABLE SOURCES here]
 
 ############################################
 ### WHAT NOT TO DO ###
@@ -195,5 +205,10 @@ Your answer MUST be STRUCTURED and RELEVANT to the specific question asked.
 ############################################
 AVAILABLE SOURCES: {sources}  
 EVIDENCE BASE: {context}
+
+**YOUR RESPONSE MUST END WITH:**
+
+**References**
+{sources}
 
 """
