@@ -6,13 +6,13 @@ import logging
 import time
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends
-from fastapi.responses import StreamingResponse
+# from fastapi.responses import StreamingResponse  # Commented out - streaming disabled
 from sqlalchemy.orm import Session, joinedload
 from healthnavi.core.database import get_db
 from healthnavi.core.response_utils import create_success_response, create_error_response, ResponseTimer
 from healthnavi.models.user import User
 from healthnavi.schemas import DiagnosisInput, DiagnosisResponse, StandardResponse, SuccessResponse, ChatMessageCreate, MessageFeedbackRequest, MessageFeedbackResponse
-from healthnavi.services.conversational_service import generate_response, generate_response_stream
+from healthnavi.services.conversational_service import generate_response  # , generate_response_stream  # Commented out - streaming disabled
 from healthnavi.services.diagnosis_session_service import DiagnosisSessionService
 from healthnavi.api.v1.auth import get_current_user, require_user_role, require_admin_role, get_current_user_safe_v2
 from healthnavi.models.diagnosis_session import ChatMessage, MessageFeedback
@@ -242,69 +242,70 @@ async def diagnose(data: DiagnosisInput, current_user: User = Depends(get_curren
             )
 
 
-@router.post("/diagnose/stream")
-async def diagnose_stream(data: DiagnosisInput, current_user: User = Depends(get_current_user_safe_v2), db: Session = Depends(get_db)):
-    """
-    Generate AI-powered diagnosis with streaming response.
-    Returns a StreamingResponse that sends text chunks as they are generated.
-    """
-    request_start_time = time.time()
-    
-    # Handle both authenticated and unauthenticated users
-    user_info = f"{current_user.username} (role: {current_user.role})" if current_user else "unauthenticated user"
-    logger.info(f"Streaming diagnosis request from: {user_info}")
-
-    try:
-        # Validate input data
-        if not data.patient_data or len(data.patient_data.strip()) < 3:
-            async def error_generator():
-                yield "⚠️ Patient data must be at least 3 characters long"
-            return StreamingResponse(error_generator(), media_type="text/plain")
-
-        # Get chat history from session if session_id is provided
-        chat_history = data.chat_history or ""
-        session_id = data.session_id
-        
-        # Initialize session service
-        session_service = DiagnosisSessionService(db)
-        
-        if session_id:
-            try:
-                chat_history = session_service.get_chat_history(session_id, current_user)
-            except Exception as e:
-                logger.warning(f"Could not get chat history from session {session_id}: {e}")
-
-        # Explicitly default to False if not provided or None
-        deep_search_enabled = data.deep_search if data.deep_search is not None else False
-        logger.info(f"Search mode: {'DEEP SEARCH' if deep_search_enabled else 'QUICK SEARCH'} (streaming)")
-
-        # Create the async generator for streaming
-        response_generator = generate_response_stream(
-            query=data.patient_data,
-            chat_history=chat_history,
-            patient_data=data.patient_data,
-            deep_search=deep_search_enabled
-        )
-
-        # FastAPI's StreamingResponse will handle iterating over the async generator
-        # and sending the data to the client chunk by chunk.
-        return StreamingResponse(
-            response_generator,
-            media_type="text/plain",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no"  # Disable nginx buffering
-            }
-        )
-
-    except Exception as e:
-        error_time = time.time() - request_start_time
-        logger.error(f"Error after {error_time:.2f}s in streaming diagnose endpoint: {e}")
-        
-        async def error_generator():
-            yield f"⚠️ Error setting up stream: {str(e)}"
-        return StreamingResponse(error_generator(), media_type="text/plain")
+# STREAMING ENDPOINT COMMENTED OUT - Reverted to non-streaming
+# @router.post("/diagnose/stream")
+# async def diagnose_stream(data: DiagnosisInput, current_user: User = Depends(get_current_user_safe_v2), db: Session = Depends(get_db)):
+#     """
+#     Generate AI-powered diagnosis with streaming response.
+#     Returns a StreamingResponse that sends text chunks as they are generated.
+#     """
+#     request_start_time = time.time()
+#     
+#     # Handle both authenticated and unauthenticated users
+#     user_info = f"{current_user.username} (role: {current_user.role})" if current_user else "unauthenticated user"
+#     logger.info(f"Streaming diagnosis request from: {user_info}")
+# 
+#     try:
+#         # Validate input data
+#         if not data.patient_data or len(data.patient_data.strip()) < 3:
+#             async def error_generator():
+#                 yield "⚠️ Patient data must be at least 3 characters long"
+#             return StreamingResponse(error_generator(), media_type="text/plain")
+# 
+#         # Get chat history from session if session_id is provided
+#         chat_history = data.chat_history or ""
+#         session_id = data.session_id
+#         
+#         # Initialize session service
+#         session_service = DiagnosisSessionService(db)
+#         
+#         if session_id:
+#             try:
+#                 chat_history = session_service.get_chat_history(session_id, current_user)
+#             except Exception as e:
+#                 logger.warning(f"Could not get chat history from session {session_id}: {e}")
+# 
+#         # Explicitly default to False if not provided or None
+#         deep_search_enabled = data.deep_search if data.deep_search is not None else False
+#         logger.info(f"Search mode: {'DEEP SEARCH' if deep_search_enabled else 'QUICK SEARCH'} (streaming)")
+# 
+#         # Create the async generator for streaming
+#         response_generator = generate_response_stream(
+#             query=data.patient_data,
+#             chat_history=chat_history,
+#             patient_data=data.patient_data,
+#             deep_search=deep_search_enabled
+#         )
+# 
+#         # FastAPI's StreamingResponse will handle iterating over the async generator
+#         # and sending the data to the client chunk by chunk.
+#         return StreamingResponse(
+#             response_generator,
+#             media_type="text/plain",
+#             headers={
+#                 "Cache-Control": "no-cache",
+#                 "Connection": "keep-alive",
+#                 "X-Accel-Buffering": "no"  # Disable nginx buffering
+#             }
+#         )
+# 
+#     except Exception as e:
+#         error_time = time.time() - request_start_time
+#         logger.error(f"Error after {error_time:.2f}s in streaming diagnose endpoint: {e}")
+#         
+#         async def error_generator():
+#             yield f"⚠️ Error setting up stream: {str(e)}"
+#         return StreamingResponse(error_generator(), media_type="text/plain")
 
 
 @router.post("/feedback", response_model=StandardResponse)
