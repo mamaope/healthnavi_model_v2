@@ -18,9 +18,9 @@ export function MessageList({ messages, showWelcomeMessage = false }: MessageLis
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState<Record<string, boolean>>({})
   const shareTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   
-  // Get streaming state from store
-  const isStreaming = useChatStore((state) => state.isStreaming)
-  const streamingMessageId = useChatStore((state) => state.streamingMessageId)
+  // Streaming state commented out - reverted to non-streaming
+  // const isStreaming = useChatStore((state) => state.isStreaming)
+  // const streamingMessageId = useChatStore((state) => state.streamingMessageId)
 
   useEffect(() => {
     return () => {
@@ -131,7 +131,8 @@ export function MessageList({ messages, showWelcomeMessage = false }: MessageLis
       )}
 
       {messages.map((message) => {
-        const isCurrentlyStreaming = isStreaming && streamingMessageId === message.id
+        // Streaming check commented out - reverted to non-streaming
+        // const isCurrentlyStreaming = isStreaming && streamingMessageId === message.id
         
         if (message.author === 'assistant') {
           // Hide empty message containers (they show as white ovals)
@@ -147,8 +148,8 @@ export function MessageList({ messages, showWelcomeMessage = false }: MessageLis
                     __html: renderModelResponse(message.content),
                   }}
                 />
-                {/* Only show actions when not streaming */}
-                {!isCurrentlyStreaming && message.content.length > 0 && (
+                {/* Show actions when message has content */}
+                {message.content.length > 0 && (
                   <div className="message-actions" role="group" aria-label="AI response feedback">
                     <button
                       type="button"

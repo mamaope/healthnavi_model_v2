@@ -8,7 +8,7 @@ from healthnavi.services.genai_client import get_genai_client
 from healthnavi.services.vectorstore_manager import search_all_collections
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_not_exception_type
 from dotenv import load_dotenv
-from typing import AsyncGenerator, Dict, Tuple
+from typing import Dict, Tuple  # AsyncGenerator commented out - streaming disabled
 from google.api_core import exceptions
 from enum import Enum
 from datetime import datetime, timedelta
@@ -211,7 +211,7 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
             max_books = 4
             min_chunks = 5
             min_books = 3
-            max_output_tokens = 3000
+            max_output_tokens = 1800  # Reduced to enforce concise responses (350-500 words ≈ 1400-2000 tokens, using 1800 to ensure completion)
             prompt_template = QUICK_SEARCH_PROMPT
             prompt_type = "quick_search"
         
@@ -325,134 +325,135 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
         return f"🚨 Unexpected error: {str(e)}", False, prompt_type, []
 
 
-async def generate_response_stream(query: str, chat_history: str, patient_data: str, deep_search: bool = False) -> AsyncGenerator[str, None]:
-    """
-    Generate a streaming response using the LLM.
-    Yields text chunks as they are generated for real-time display.
-    """
-    total_start_time = time.time()
-    full_response_text = ""
-    actual_sources = []
-    
-    try:
-        # Check cache first (skip for queries with chat history)
-        cache_key = None
-        if not chat_history or chat_history == "No previous conversation":
-            cache_key = _generate_cache_key(query, patient_data, deep_search)
-            cached_response = _get_cached_response(cache_key)
-            if cached_response:
-                # Stream cached response in chunks for consistent frontend behavior
-                chunk_size = 50  # Stream in 50-character chunks
-                for i in range(0, len(cached_response), chunk_size):
-                    yield cached_response[i:i + chunk_size]
-                    await asyncio.sleep(0.01)  # Small delay to simulate streaming
-                logger.info(f"⚡ Cached response streamed in {time.time() - total_start_time:.3f}s")
-                return
-
-        # Adjust chunks and sources based on search type
-        if deep_search:
-            max_chunks = 20
-            max_books = 8
-            min_chunks = 10
-            min_books = 5
-            max_output_tokens = 7000
-            prompt_template = DEEP_SEARCH_PROMPT
-            prompt_type = "deep_search"
-            logger.info("🔍 Using DEEP SEARCH mode (streaming)")
-        else:
-            max_chunks = 8
-            max_books = 4
-            min_chunks = 5
-            min_books = 3
-            max_output_tokens = 3000
-            prompt_template = QUICK_SEARCH_PROMPT
-            prompt_type = "quick_search"
-            logger.info("⚡ Using QUICK SEARCH mode (streaming)")
-
-        # Retrieve context
-        context, actual_sources = search_all_collections(
-            query, 
-            patient_data, 
-            max_chunks=max_chunks,
-            max_books=max_books,
-            min_chunks=min_chunks,
-            min_books=min_books
-        )
-        optimized_context = optimize_context_for_llm(context, max_chunks=max_chunks)
-        logger.info(f"Context optimized: {len(context)} chunks -> {len(optimized_context)} chars from {len(actual_sources)} sources")
-
-        # Format sources
-        if actual_sources and len(actual_sources) > 0:
-            sources_text = ", ".join(actual_sources)
-            logger.info(f"✅ Sources to be cited ({len(actual_sources)} sources): {sources_text}")
-        else:
-            logger.error("⚠️ CRITICAL: No sources retrieved from knowledge base!")
-            sources_text = ""
-
-        full_prompt = prompt_template.format(sources=sources_text, context=optimized_context)
-        user_context_block = f"""
-            ### USER QUESTION:
-            {query}
-
-            ### CONTEXT (if provided):
-            {patient_data or 'No additional context provided.'}
-
-            ### PREVIOUS CONVERSATION SUMMARY:
-            {chat_history or 'No previous conversation.'}
-            """
-        full_prompt += f"\n\n{user_context_block.strip()}"
-
-        logger.info(f"--- PROMPT SENT TO API (first 500 chars) ---\n{full_prompt[:500]}\n...")
-
-        client = get_genai_client()
-
-        llm_start = time.time()
-        logger.info("Starting streaming response generation...")
-
-        try:
-            # Use synchronous streaming and yield chunks
-            response_stream = client.models.generate_content_stream(
-                model=MODEL_NAME,
-                contents=[{"role": "user", "parts": [{"text": full_prompt}]}],
-                config={
-                    "temperature": 0.2,
-                    "max_output_tokens": max_output_tokens,
-                    "top_p": 0.95,
-                    "top_k": 20,
-                    "candidate_count": 1
-                }
-            )
-
-            first_token_received = False
-            
-            for chunk in response_stream:
-                if not first_token_received:
-                    logger.info(f"⚡ First token received in {time.time() - llm_start:.3f}s")
-                    first_token_received = True
-
-                # Extract text from chunk
-                if hasattr(chunk, 'text') and chunk.text:
-                    full_response_text += chunk.text
-                    yield chunk.text
-                elif hasattr(chunk, 'candidates') and chunk.candidates:
-                    for candidate in chunk.candidates:
-                        if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
-                            for part in candidate.content.parts:
-                                if hasattr(part, 'text') and part.text:
-                                    full_response_text += part.text
-                                    yield part.text
-
-            logger.info(f"✅ Streaming completed in {time.time() - llm_start:.3f}s")
-            logger.info(f"Full pipeline completed in {time.time() - total_start_time:.3f}s")
-
-            # Cache the complete response if applicable
-            if cache_key and full_response_text:
-                _cache_response(cache_key, full_response_text)
-
-        except Exception as e:
-            logger.error(f"Error during streaming: {e}", exc_info=True)
-            yield f"\n\n⚠️ Streaming error: {str(e)}"
-
-    except Exception as e:
-        logger.error(f"FATAL error in generate_response_stream: {e}", exc_info=True)
-        yield f"🚨 Unexpected error: {str(e)}"
+# STREAMING FUNCTION COMMENTED OUT - Reverted to non-streaming
+# async def generate_response_stream(query: str, chat_history: str, patient_data: str, deep_search: bool = False) -> AsyncGenerator[str, None]:
+#     """
+#     Generate a streaming response using the LLM.
+#     Yields text chunks as they are generated for real-time display.
+#     """
+#     total_start_time = time.time()
+#     full_response_text = ""
+#     actual_sources = []
+#     
+#     try:
+#         # Check cache first (skip for queries with chat history)
+#         cache_key = None
+#         if not chat_history or chat_history == "No previous conversation":
+#             cache_key = _generate_cache_key(query, patient_data, deep_search)
+#             cached_response = _get_cached_response(cache_key)
+#             if cached_response:
+#                 # Stream cached response in chunks for consistent frontend behavior
+#                 chunk_size = 50  # Stream in 50-character chunks
+#                 for i in range(0, len(cached_response), chunk_size):
+#                     yield cached_response[i:i + chunk_size]
+#                     await asyncio.sleep(0.01)  # Small delay to simulate streaming
+#                 logger.info(f"⚡ Cached response streamed in {time.time() - total_start_time:.3f}s")
+#                 return
+# 
+#         # Adjust chunks and sources based on search type
+#         if deep_search:
+#             max_chunks = 20
+#             max_books = 8
+#             min_chunks = 10
+#             min_books = 5
+#             max_output_tokens = 7000
+#             prompt_template = DEEP_SEARCH_PROMPT
+#             prompt_type = "deep_search"
+#             logger.info("🔍 Using DEEP SEARCH mode (streaming)")
+#         else:
+#             max_chunks = 8
+#             max_books = 4
+#             min_chunks = 5
+#             min_books = 3
+#             max_output_tokens = 3000
+#             prompt_template = QUICK_SEARCH_PROMPT
+#             prompt_type = "quick_search"
+#             logger.info("⚡ Using QUICK SEARCH mode (streaming)")
+# 
+#         # Retrieve context
+#         context, actual_sources = search_all_collections(
+#             query, 
+#             patient_data, 
+#             max_chunks=max_chunks,
+#             max_books=max_books,
+#             min_chunks=min_chunks,
+#             min_books=min_books
+#         )
+#         optimized_context = optimize_context_for_llm(context, max_chunks=max_chunks)
+#         logger.info(f"Context optimized: {len(context)} chunks -> {len(optimized_context)} chars from {len(actual_sources)} sources")
+# 
+#         # Format sources
+#         if actual_sources and len(actual_sources) > 0:
+#             sources_text = ", ".join(actual_sources)
+#             logger.info(f"✅ Sources to be cited ({len(actual_sources)} sources): {sources_text}")
+#         else:
+#             logger.error("⚠️ CRITICAL: No sources retrieved from knowledge base!")
+#             sources_text = ""
+# 
+#         full_prompt = prompt_template.format(sources=sources_text, context=optimized_context)
+#         user_context_block = f"""
+#             ### USER QUESTION:
+#             {query}
+# 
+#             ### CONTEXT (if provided):
+#             {patient_data or 'No additional context provided.'}
+# 
+#             ### PREVIOUS CONVERSATION SUMMARY:
+#             {chat_history or 'No previous conversation.'}
+#             """
+#         full_prompt += f"\n\n{user_context_block.strip()}"
+# 
+#         logger.info(f"--- PROMPT SENT TO API (first 500 chars) ---\n{full_prompt[:500]}\n...")
+# 
+#         client = get_genai_client()
+# 
+#         llm_start = time.time()
+#         logger.info("Starting streaming response generation...")
+# 
+#         try:
+#             # Use synchronous streaming and yield chunks
+#             response_stream = client.models.generate_content_stream(
+#                 model=MODEL_NAME,
+#                 contents=[{"role": "user", "parts": [{"text": full_prompt}]}],
+#                 config={
+#                     "temperature": 0.2,
+#                     "max_output_tokens": max_output_tokens,
+#                     "top_p": 0.95,
+#                     "top_k": 20,
+#                     "candidate_count": 1
+#                 }
+#             )
+# 
+#             first_token_received = False
+#             
+#             for chunk in response_stream:
+#                 if not first_token_received:
+#                     logger.info(f"⚡ First token received in {time.time() - llm_start:.3f}s")
+#                     first_token_received = True
+# 
+#                 # Extract text from chunk
+#                 if hasattr(chunk, 'text') and chunk.text:
+#                     full_response_text += chunk.text
+#                     yield chunk.text
+#                 elif hasattr(chunk, 'candidates') and chunk.candidates:
+#                     for candidate in chunk.candidates:
+#                         if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+#                             for part in candidate.content.parts:
+#                                 if hasattr(part, 'text') and part.text:
+#                                     full_response_text += part.text
+#                                     yield part.text
+# 
+#             logger.info(f"✅ Streaming completed in {time.time() - llm_start:.3f}s")
+#             logger.info(f"Full pipeline completed in {time.time() - total_start_time:.3f}s")
+# 
+#             # Cache the complete response if applicable
+#             if cache_key and full_response_text:
+#                 _cache_response(cache_key, full_response_text)
+# 
+#         except Exception as e:
+#             logger.error(f"Error during streaming: {e}", exc_info=True)
+#             yield f"\n\n⚠️ Streaming error: {str(e)}"
+# 
+#     except Exception as e:
+#         logger.error(f"FATAL error in generate_response_stream: {e}", exc_info=True)
+#         yield f"🚨 Unexpected error: {str(e)}"

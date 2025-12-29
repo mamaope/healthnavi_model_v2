@@ -18,7 +18,7 @@ export default function App() {
   const {
     messages,
     isSending,
-    isStreaming,
+    // isStreaming,  // Commented out - streaming disabled
     sessions,
     currentSession,
     sessionsLoading,
@@ -202,8 +202,8 @@ export default function App() {
             {/* Messages Area */}
             <div className="messages-container">
               <MessageList messages={messages} showWelcomeMessage={showWelcomeMessage} />
-              {/* Show loading indicator when sending, streaming, or fetching follow-up questions */}
-              <LoadingIndicator isVisible={isSending || isStreaming || isFetchingFollowup} />
+              {/* Show loading indicator when sending or fetching follow-up questions */}
+              <LoadingIndicator isVisible={isSending || isFetchingFollowup} />
               
               {/* Follow-up Questions - Below model response */}
               {followupQuestions && followupQuestions.length > 0 && messages.length > 0 && (
@@ -240,7 +240,7 @@ export default function App() {
                 value={inputValue}
                 onChange={setInputValue}
                 onSend={handleSendMessage}
-                isSending={isSending || isStreaming || initializing}
+                isSending={isSending || initializing}
                 isDeepSearchEnabled={isDeepSearchEnabled}
                 onToggleDeepSearch={() =>
                   setIsDeepSearchEnabled((previous) => !previous)
