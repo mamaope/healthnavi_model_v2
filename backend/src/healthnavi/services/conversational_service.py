@@ -8,7 +8,7 @@ from healthnavi.services.genai_client import get_genai_client
 from healthnavi.services.vectorstore_manager import search_all_collections
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_not_exception_type
 from dotenv import load_dotenv
-from typing import Dict, Tuple  # AsyncGenerator commented out - streaming disabled
+from typing import Dict, Tuple, AsyncGenerator
 from google.api_core import exceptions
 from enum import Enum
 from datetime import datetime, timedelta
@@ -61,18 +61,28 @@ def is_diagnosis_complete(response: str) -> bool:
 def generate_followup_questions_sync(original_query: str, response: str) -> list[str]:
     """
     Generate 3-4 relevant follow-up questions based on the original query and AI response.
+    Returns only the questions, no prefix text.
     """
     import re
     client = get_genai_client()
     
     try:
-        followup_prompt = f"""Generate 3 follow-up questions for this query:
+        # Truncate inputs to keep prompt reasonable
+        query_truncated = original_query[:300] if len(original_query) > 300 else original_query
+        response_truncated = response[:1000] if len(response) > 1000 else response
+        
+        followup_prompt = f"""Based on this question and answer, generate exactly 3 follow-up questions.
 
-        Q: {original_query[:200]}
+        Question: {query_truncated}
 
-        A: {response[:800]}
+        Answer: {response_truncated}
 
-        Write 3 questions:"""
+        IMPORTANT: Output ONLY the 3 questions, one per line. Do NOT include any prefix text like "Here are" or "Follow-up questions:". Start directly with the first question. Each question should be complete and end with a question mark.
+
+        Format:
+        1. [First question?]
+        2. [Second question?]
+        3. [Third question?]"""
         
         logger.info("Generating follow-up questions...")
 
@@ -80,8 +90,8 @@ def generate_followup_questions_sync(original_query: str, response: str) -> list
             model=MODEL_NAME,
             contents=[{"role": "user", "parts": [{"text": followup_prompt}]}],
             config={
-                "temperature": 0.5,
-                "max_output_tokens": 1000,  
+                "temperature": 0.7,
+                "max_output_tokens": 2000,  # Increased to prevent MAX_TOKENS cutoff
                 "top_p": 0.9,
                 "top_k": 40,
                 "candidate_count": 1
@@ -93,7 +103,11 @@ def generate_followup_questions_sync(original_query: str, response: str) -> list
         if followup_response and hasattr(followup_response, 'candidates') and followup_response.candidates:
             candidate = followup_response.candidates[0]
             logger.info(f"Candidate: {candidate}")
-            logger.info(f"Finish reason: {getattr(candidate, 'finish_reason', 'unknown')}")
+            finish_reason = getattr(candidate, 'finish_reason', 'unknown')
+            logger.info(f"Finish reason: {finish_reason}")
+            
+            if finish_reason == 'MAX_TOKENS':
+                logger.warning("⚠️ Follow-up questions hit MAX_TOKENS limit - response may be incomplete")
             
             if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts') and candidate.content.parts:
                 questions_text = candidate.content.parts[0].text.strip()
@@ -103,24 +117,33 @@ def generate_followup_questions_sync(original_query: str, response: str) -> list
                 lines = [q.strip() for q in questions_text.split('\n') if q.strip()]
                 
                 for line in lines:
-                    # Remove numbering/bullets 
+                    # Remove numbering/bullets (1., 2., 3., -, *, •, etc.)
                     cleaned = re.sub(r'^[\d.\-*•)\s]+', '', line).strip()
                     
-                    # Skip intro/header lines
-                    if any(skip in cleaned.lower() for skip in ['follow-up questions', 'here are', 'following questions']):
+                    # Skip intro/header lines (more comprehensive check)
+                    skip_patterns = [
+                        'follow-up questions', 'following questions', 'here are', 
+                        'questions:', 'question:', 'based on', 'generated questions',
+                        'the questions', 'these questions', 'your questions'
+                    ]
+                    if any(skip in cleaned.lower() for skip in skip_patterns) and len(cleaned) < 50:
                         continue
                     
-                    # Accept any line that looks like a question (minimum 20 chars for a real question)
-                    if cleaned and len(cleaned) > 20:
+                    # Accept any line that looks like a question (minimum 15 chars for a real question)
+                    if cleaned and len(cleaned) > 15:
+                        # Ensure it ends with ?
                         if not cleaned.endswith('?'):
-                            cleaned = cleaned.rstrip('.') + '?'
+                            # Remove trailing period/comma and add ?
+                            cleaned = re.sub(r'[.,;]+$', '', cleaned).strip() + '?'
                         questions.append(cleaned)
                         logger.info(f"Parsed question: {cleaned}")
                 
                 if questions:
-                    result = questions[:4]
+                    result = questions[:3]  # Return max 3 questions
                     logger.info(f"Returning {len(result)} follow-up questions")
                     return result
+                else:
+                    logger.warning("No valid questions parsed from response")
             else:
                 logger.warning(f"No content parts. Candidate content: {getattr(candidate, 'content', 'none')}")
         else:
@@ -211,7 +234,7 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
             max_books = 4
             min_chunks = 5
             min_books = 3
-            max_output_tokens = 1800  # Reduced to enforce concise responses (350-500 words ≈ 1400-2000 tokens, using 1800 to ensure completion)
+            max_output_tokens = 2500
             prompt_template = QUICK_SEARCH_PROMPT
             prompt_type = "quick_search"
         
@@ -226,6 +249,10 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
         optimized_context = optimize_context_for_llm(context, max_chunks=max_chunks)
         logger.info(f"Context optimized: {len(context)} chunks -> {len(optimized_context)} chars from {len(actual_sources)} sources")
 
+        # Truncate context for quick search to reduce prompt size and improve speed
+        if not deep_search and len(optimized_context) > 6000:  # Limit quick search context to 6000 chars
+            optimized_context = optimized_context[:6000]
+
         # Format sources - should always have sources from knowledge base
         if actual_sources and len(actual_sources) > 0:
             sources_text = ", ".join(actual_sources)
@@ -234,6 +261,12 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
             # Log as error since this indicates a potential system issue
             logger.error("⚠️ CRITICAL: No sources retrieved from knowledge base! Check vector store connection.")
             sources_text = ""
+        
+        # Truncate chat history if too long to keep prompt size reasonable
+        max_chat_history_chars = 2000  # Limit chat history to ~2000 chars
+        truncated_chat_history = chat_history
+        if chat_history and len(chat_history) > max_chat_history_chars:
+            truncated_chat_history = chat_history[-max_chat_history_chars:]  # Keep last 2000 chars
             
         full_prompt = prompt_template.format(sources=sources_text, context=optimized_context)
         user_context_block = f"""
@@ -244,7 +277,7 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
             {patient_data or 'No additional context provided.'}
 
             ### PREVIOUS CONVERSATION SUMMARY:
-            {chat_history or 'No previous conversation.'}
+            {truncated_chat_history or 'No previous conversation.'}
             """
         full_prompt += f"\n\n{user_context_block.strip()}"
 
@@ -325,135 +358,210 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
         return f"🚨 Unexpected error: {str(e)}", False, prompt_type, []
 
 
-# STREAMING FUNCTION COMMENTED OUT - Reverted to non-streaming
-# async def generate_response_stream(query: str, chat_history: str, patient_data: str, deep_search: bool = False) -> AsyncGenerator[str, None]:
-#     """
-#     Generate a streaming response using the LLM.
-#     Yields text chunks as they are generated for real-time display.
-#     """
-#     total_start_time = time.time()
-#     full_response_text = ""
-#     actual_sources = []
-#     
-#     try:
-#         # Check cache first (skip for queries with chat history)
-#         cache_key = None
-#         if not chat_history or chat_history == "No previous conversation":
-#             cache_key = _generate_cache_key(query, patient_data, deep_search)
-#             cached_response = _get_cached_response(cache_key)
-#             if cached_response:
-#                 # Stream cached response in chunks for consistent frontend behavior
-#                 chunk_size = 50  # Stream in 50-character chunks
-#                 for i in range(0, len(cached_response), chunk_size):
-#                     yield cached_response[i:i + chunk_size]
-#                     await asyncio.sleep(0.01)  # Small delay to simulate streaming
-#                 logger.info(f"⚡ Cached response streamed in {time.time() - total_start_time:.3f}s")
-#                 return
-# 
-#         # Adjust chunks and sources based on search type
-#         if deep_search:
-#             max_chunks = 20
-#             max_books = 8
-#             min_chunks = 10
-#             min_books = 5
-#             max_output_tokens = 7000
-#             prompt_template = DEEP_SEARCH_PROMPT
-#             prompt_type = "deep_search"
-#             logger.info("🔍 Using DEEP SEARCH mode (streaming)")
-#         else:
-#             max_chunks = 8
-#             max_books = 4
-#             min_chunks = 5
-#             min_books = 3
-#             max_output_tokens = 3000
-#             prompt_template = QUICK_SEARCH_PROMPT
-#             prompt_type = "quick_search"
-#             logger.info("⚡ Using QUICK SEARCH mode (streaming)")
-# 
-#         # Retrieve context
-#         context, actual_sources = search_all_collections(
-#             query, 
-#             patient_data, 
-#             max_chunks=max_chunks,
-#             max_books=max_books,
-#             min_chunks=min_chunks,
-#             min_books=min_books
-#         )
-#         optimized_context = optimize_context_for_llm(context, max_chunks=max_chunks)
-#         logger.info(f"Context optimized: {len(context)} chunks -> {len(optimized_context)} chars from {len(actual_sources)} sources")
-# 
-#         # Format sources
-#         if actual_sources and len(actual_sources) > 0:
-#             sources_text = ", ".join(actual_sources)
-#             logger.info(f"✅ Sources to be cited ({len(actual_sources)} sources): {sources_text}")
-#         else:
-#             logger.error("⚠️ CRITICAL: No sources retrieved from knowledge base!")
-#             sources_text = ""
-# 
-#         full_prompt = prompt_template.format(sources=sources_text, context=optimized_context)
-#         user_context_block = f"""
-#             ### USER QUESTION:
-#             {query}
-# 
-#             ### CONTEXT (if provided):
-#             {patient_data or 'No additional context provided.'}
-# 
-#             ### PREVIOUS CONVERSATION SUMMARY:
-#             {chat_history or 'No previous conversation.'}
-#             """
-#         full_prompt += f"\n\n{user_context_block.strip()}"
-# 
-#         logger.info(f"--- PROMPT SENT TO API (first 500 chars) ---\n{full_prompt[:500]}\n...")
-# 
-#         client = get_genai_client()
-# 
-#         llm_start = time.time()
-#         logger.info("Starting streaming response generation...")
-# 
-#         try:
-#             # Use synchronous streaming and yield chunks
-#             response_stream = client.models.generate_content_stream(
-#                 model=MODEL_NAME,
-#                 contents=[{"role": "user", "parts": [{"text": full_prompt}]}],
-#                 config={
-#                     "temperature": 0.2,
-#                     "max_output_tokens": max_output_tokens,
-#                     "top_p": 0.95,
-#                     "top_k": 20,
-#                     "candidate_count": 1
-#                 }
-#             )
-# 
-#             first_token_received = False
-#             
-#             for chunk in response_stream:
-#                 if not first_token_received:
-#                     logger.info(f"⚡ First token received in {time.time() - llm_start:.3f}s")
-#                     first_token_received = True
-# 
-#                 # Extract text from chunk
-#                 if hasattr(chunk, 'text') and chunk.text:
-#                     full_response_text += chunk.text
-#                     yield chunk.text
-#                 elif hasattr(chunk, 'candidates') and chunk.candidates:
-#                     for candidate in chunk.candidates:
-#                         if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
-#                             for part in candidate.content.parts:
-#                                 if hasattr(part, 'text') and part.text:
-#                                     full_response_text += part.text
-#                                     yield part.text
-# 
-#             logger.info(f"✅ Streaming completed in {time.time() - llm_start:.3f}s")
-#             logger.info(f"Full pipeline completed in {time.time() - total_start_time:.3f}s")
-# 
-#             # Cache the complete response if applicable
-#             if cache_key and full_response_text:
-#                 _cache_response(cache_key, full_response_text)
-# 
-#         except Exception as e:
-#             logger.error(f"Error during streaming: {e}", exc_info=True)
-#             yield f"\n\n⚠️ Streaming error: {str(e)}"
-# 
-#     except Exception as e:
-#         logger.error(f"FATAL error in generate_response_stream: {e}", exc_info=True)
-#         yield f"🚨 Unexpected error: {str(e)}"
+async def generate_response_stream(query: str, chat_history: str, patient_data: str, deep_search: bool = False) -> AsyncGenerator[str, None]:
+    """
+    Generate a streaming response using the LLM.
+    Yields text chunks as they are generated for real-time display.
+    Falls back to error message if streaming fails.
+    """
+    total_start_time = time.time()
+    full_response_text = ""
+    actual_sources = []
+    
+    try:
+        # Check cache first (skip for queries with chat history)
+        cache_key = None
+        if not chat_history or chat_history == "No previous conversation":
+            cache_key = _generate_cache_key(query, patient_data, deep_search)
+            cached_response = _get_cached_response(cache_key)
+            if cached_response:
+                # Stream cached response in chunks for consistent frontend behavior
+                chunk_size = 50  # Stream in 50-character chunks
+                for i in range(0, len(cached_response), chunk_size):
+                    yield cached_response[i:i + chunk_size]
+                    await asyncio.sleep(0.01)  # Small delay to simulate streaming
+                logger.info(f"⚡ Cached response streamed in {time.time() - total_start_time:.3f}s")
+                return
+
+        # Adjust chunks and sources based on search type
+        if deep_search:
+            max_chunks = 20
+            max_books = 8
+            min_chunks = 10
+            min_books = 5
+            max_output_tokens = 7000
+            prompt_template = DEEP_SEARCH_PROMPT
+            prompt_type = "deep_search"
+            logger.info("🔍 Using DEEP SEARCH mode (streaming)")
+        else:
+            max_chunks = 8
+            max_books = 4
+            min_chunks = 5
+            min_books = 3
+            max_output_tokens = 2500
+            prompt_template = QUICK_SEARCH_PROMPT
+            prompt_type = "quick_search"
+            logger.info("⚡ Using QUICK SEARCH mode (streaming)")
+
+        # Retrieve context - TIME THIS to identify bottlenecks
+        search_start = time.time()
+        context, actual_sources = search_all_collections(
+            query, 
+            patient_data, 
+            max_chunks=max_chunks,
+            max_books=max_books,
+            min_chunks=min_chunks,
+            min_books=min_books
+        )
+        search_time = time.time() - search_start
+        logger.info(f"🔍 Vector search completed in {search_time:.3f}s")
+        
+        optimized_context = optimize_context_for_llm(context, max_chunks=max_chunks)
+        logger.info(f"Context optimized: {len(context)} chunks -> {len(optimized_context)} chars from {len(actual_sources)} sources")
+
+        # Truncate context for quick search to reduce prompt size and improve speed
+        if not deep_search and len(optimized_context) > 6000:  # Limit quick search context to 6000 chars
+            optimized_context = optimized_context[:6000]
+
+        # Format sources
+        if actual_sources and len(actual_sources) > 0:
+            sources_text = ", ".join(actual_sources)
+            logger.info(f"✅ Sources to be cited ({len(actual_sources)} sources): {sources_text}")
+        else:
+            logger.error("⚠️ CRITICAL: No sources retrieved from knowledge base!")
+            sources_text = ""
+
+        # Truncate chat history if too long to keep prompt size reasonable
+        max_chat_history_chars = 2000  # Limit chat history to ~2000 chars
+        truncated_chat_history = chat_history
+        if chat_history and len(chat_history) > max_chat_history_chars:
+            truncated_chat_history = chat_history[-max_chat_history_chars:]  # Keep last 2000 chars
+
+        full_prompt = prompt_template.format(sources=sources_text, context=optimized_context)
+        user_context_block = f"""
+            ### USER QUESTION:
+            {query}
+
+            ### CONTEXT (if provided):
+            {patient_data or 'No additional context provided.'}
+
+            ### PREVIOUS CONVERSATION SUMMARY:
+            {truncated_chat_history or 'No previous conversation.'}
+            """
+        full_prompt += f"\n\n{user_context_block.strip()}"
+
+        logger.info(f"--- STREAMING PROMPT (first 500 chars) ---\n{full_prompt[:500]}\n...")
+
+        client = get_genai_client()
+
+        llm_start = time.time()
+        logger.info("Starting streaming response generation...")
+
+        try:
+            response_stream = client.models.generate_content_stream(
+                model=MODEL_NAME,
+                contents=[{"role": "user", "parts": [{"text": full_prompt}]}],
+                config={
+                    "temperature": 0.2,
+                    "max_output_tokens": max_output_tokens,
+                    "top_p": 0.95,
+                    "top_k": 20,
+                    "candidate_count": 1
+                }
+            )
+
+            first_token_received = False
+            chunk_count = 0
+            finish_reason = None
+            final_token_usage = None
+            
+            try:
+                for chunk in response_stream:
+                    # Check for finish reason (stream ended) and token usage
+                    if hasattr(chunk, 'candidates') and chunk.candidates:
+                        for candidate in chunk.candidates:
+                            if hasattr(candidate, 'finish_reason') and candidate.finish_reason:
+                                finish_reason = candidate.finish_reason
+                                logger.info(f"Stream finished with reason: {finish_reason}")
+                    
+                    # Capture token usage if available
+                    if hasattr(chunk, 'usage_metadata') and chunk.usage_metadata:
+                        final_token_usage = chunk.usage_metadata
+                    elif hasattr(chunk, 'usage') and chunk.usage:
+                        final_token_usage = chunk.usage
+                    
+                    if not first_token_received:
+                        ttft = time.time() - llm_start
+                        logger.info(f"⚡ First token received in {ttft:.3f}s")
+                        first_token_received = True
+
+                    # Extract text from chunk - handle different response formats
+                    chunk_text = None
+                    
+                    if hasattr(chunk, 'text') and chunk.text:
+                        chunk_text = chunk.text
+                    elif hasattr(chunk, 'candidates') and chunk.candidates:
+                        for candidate in chunk.candidates:
+                            if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                                for part in candidate.content.parts:
+                                    if hasattr(part, 'text') and part.text:
+                                        chunk_text = part.text
+                                        break
+                                if chunk_text:
+                                    break
+                    elif hasattr(chunk, 'response'):
+                        response_obj = chunk.response
+                        if hasattr(response_obj, 'candidates') and response_obj.candidates:
+                            for candidate in response_obj.candidates:
+                                if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                                    for part in candidate.content.parts:
+                                        if hasattr(part, 'text') and part.text:
+                                            chunk_text = part.text
+                                            break
+                                    if chunk_text:
+                                        break
+                    
+                    if chunk_text:
+                        full_response_text += chunk_text
+                        chunk_count += 1
+                        yield chunk_text
+                
+                logger.info(f"✅ Streaming completed in {time.time() - llm_start:.3f}s ({chunk_count} chunks, {len(full_response_text)} chars)")
+                
+                # Log token usage if available
+                if final_token_usage:
+                    output_tokens = getattr(final_token_usage, 'candidates_token_count', None)
+                    if output_tokens:
+                        logger.info(f"Token usage - Output: {output_tokens}/{max_output_tokens} tokens ({output_tokens/max_output_tokens*100:.1f}%)")
+                
+                if finish_reason == 'MAX_TOKENS':
+                    logger.warning(f"⚠️ Response hit MAX_TOKENS limit ({max_output_tokens}) - response may be incomplete")
+                
+                # Warn if stream ended prematurely
+                if chunk_count < 10 and finish_reason == 'STOP':
+                    logger.warning(f"⚠️ Stream ended with only {chunk_count} text chunks - response may be incomplete")
+                    logger.warning(f"   Expected more chunks for a complete response. Check if model is being cut off.")
+                elif chunk_count < 5 and not finish_reason:
+                    logger.warning(f"⚠️ Stream ended with only {chunk_count} chunks and no finish reason - possible premature termination")
+                elif finish_reason and finish_reason not in ['STOP', 'MAX_TOKENS']:
+                    logger.warning(f"⚠️ Stream finished with unexpected reason: {finish_reason}")
+                
+            except Exception as stream_error:
+                logger.error(f"Error iterating stream: {stream_error}", exc_info=True)
+                raise
+            
+            logger.info(f"Full pipeline completed in {time.time() - total_start_time:.3f}s")
+            logger.info(f"Final response length: {len(full_response_text)} characters")
+
+            # Cache the complete response if applicable
+            if cache_key and full_response_text:
+                _cache_response(cache_key, full_response_text)
+
+        except Exception as e:
+            logger.error(f"Error during streaming: {e}", exc_info=True)
+            # Yield error marker that frontend can detect
+            yield f"\n\n[STREAM_ERROR]: {str(e)}"
+
+    except Exception as e:
+        logger.error(f"FATAL error in generate_response_stream: {e}", exc_info=True)
+        yield f"[STREAM_ERROR]: {str(e)}"

@@ -1,6 +1,8 @@
 import os
 import time
+import hashlib
 from typing import List, Dict, Tuple, Any
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from pymilvus import MilvusClient
 import openai
@@ -14,6 +16,41 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 load_dotenv()
+
+# Embedding cache to avoid regenerating embeddings for the same queries
+# Cache key: query hash -> (embedding, timestamp)
+EMBEDDING_CACHE: Dict[str, Tuple[List[float], datetime]] = {}
+EMBEDDING_CACHE_TTL_MINUTES = 60  # Cache embeddings for 1 hour
+MAX_EMBEDDING_CACHE_SIZE = 500  # Maximum cached embeddings
+
+def _get_embedding_cache_key(query: str) -> str:
+    """Generate cache key for embedding."""
+    return hashlib.md5(query.lower().strip().encode()).hexdigest()
+
+def _get_cached_embedding(query: str) -> List[float] | None:
+    """Get cached embedding if available and not expired."""
+    cache_key = _get_embedding_cache_key(query)
+    if cache_key in EMBEDDING_CACHE:
+        embedding, timestamp = EMBEDDING_CACHE[cache_key]
+        if datetime.now() - timestamp < timedelta(minutes=EMBEDDING_CACHE_TTL_MINUTES):
+            logger.info(f"⚡ Embedding cache HIT (age: {(datetime.now() - timestamp).seconds}s)")
+            return embedding
+        else:
+            # Expired, remove from cache
+            del EMBEDDING_CACHE[cache_key]
+    return None
+
+def _cache_embedding(query: str, embedding: List[float]):
+    """Cache an embedding with timestamp."""
+    cache_key = _get_embedding_cache_key(query)
+    EMBEDDING_CACHE[cache_key] = (embedding, datetime.now())
+    
+    # Cleanup old entries if cache gets too large
+    if len(EMBEDDING_CACHE) > MAX_EMBEDDING_CACHE_SIZE:
+        sorted_keys = sorted(EMBEDDING_CACHE.keys(), key=lambda k: EMBEDDING_CACHE[k][1])
+        for key in sorted_keys[:50]:  # Remove 50 oldest
+            del EMBEDDING_CACHE[key]
+        logger.info(f"🧹 Embedding cache cleanup - Removed 50 oldest entries")
 
 class ZillizService:
     """Service for interacting with Zilliz Cloud."""
@@ -48,8 +85,16 @@ class ZillizService:
             return False
 
     def generate_query_embedding(self, query: str) -> list[float]:
-        """Generates a 3072-dim embedding for the query using Azure OpenAI."""
+        """Generates a 3072-dim embedding for the query using Azure OpenAI.
+        Uses caching to avoid regenerating embeddings for the same queries.
+        """
         try:
+            # Check cache first
+            cached_embedding = _get_cached_embedding(query)
+            if cached_embedding:
+                return cached_embedding
+            
+            # Generate new embedding
             embedding_start = time.time()
             query_length = len(query)
             logger.info(f"🔢 Starting embedding generation for query ({query_length} chars)...")
@@ -62,6 +107,10 @@ class ZillizService:
             
             embedding_time = time.time() - embedding_start
             logger.info(f"✨ Embedding generation completed in {embedding_time:.3f}s - Vector dim: {len(embedding)}")
+            
+            # Cache the embedding
+            _cache_embedding(query, embedding)
+            
             return embedding
         except Exception as e:
             logger.error(f"Failed to generate query embedding: {e}")

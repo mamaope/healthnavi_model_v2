@@ -42,4 +42,4 @@ RUN if [ -f "/backend/regal-autonomy-454806-d1-edf68610c57a.json" ]; then chmod 
 EXPOSE 8050
 
 # Run Alembic migrations, then start the uvicorn application server
-CMD alembic upgrade head && uvicorn healthnavi.main:app --host 0.0.0.0 --port 8050 --timeout-keep-alive 300 --timeout-graceful-shutdown 30
+CMD alembic upgrade head && uvicorn healthnavi.main:app --host 0.0.0.0 --port 8050 --timeout-keep-alive 120

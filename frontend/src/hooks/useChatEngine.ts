@@ -43,20 +43,18 @@ export function useChatEngine() {
   const sessions = useChatStore((state: any) => state.sessions)
   const currentSession = useChatStore((state: any) => state.currentSession)
   const isSending = useChatStore((state: any) => state.isSending)
-  // Streaming state commented out - reverted to non-streaming
-  // const isStreaming = useChatStore((state: any) => state.isStreaming)
-  // const streamingMessageId = useChatStore((state: any) => state.streamingMessageId)
+  const isStreaming = useChatStore((state: any) => state.isStreaming)
   const setSessions = useChatStore((state: any) => state.setSessions)
   const setCurrentSession = useChatStore((state: any) => state.setCurrentSession)
   const ensureGuestSessionId = useChatStore(
     (state: any) => state.ensureGuestSessionId,
   )
   const addMessage = useChatStore((state: any) => state.addMessage)
-  // const appendMessageContent = useChatStore((state: any) => state.appendMessageContent)  // Commented out - streaming disabled
+  const appendMessageContent = useChatStore((state: any) => state.appendMessageContent)
   const clearMessages = useChatStore((state: any) => state.clearMessages)
   const setIsSending = useChatStore((state: any) => state.setIsSending)
-  // const setIsStreaming = useChatStore((state: any) => state.setIsStreaming)  // Commented out - streaming disabled
-  // const setStreamingMessageId = useChatStore((state: any) => state.setStreamingMessageId)  // Commented out - streaming disabled
+  const setIsStreaming = useChatStore((state: any) => state.setIsStreaming)
+  const setStreamingMessageId = useChatStore((state: any) => state.setStreamingMessageId)
   const setIsFetchingFollowup = useChatStore((state: any) => state.setIsFetchingFollowup)
   const setGuestSessionId = useChatStore((state: any) => state.setGuestSessionId)
 
@@ -147,7 +145,7 @@ export function useChatEngine() {
         throw new Error('Message cannot be empty.')
       }
 
-      if (isSending) {
+      if (isSending || isStreaming) {
         throw new Error('Already processing a message')
       }
 
@@ -164,43 +162,191 @@ export function useChatEngine() {
       addMessage(userMessage)
       setIsSending(true)
 
-      const response = await chatApi.diagnose({
-        message: message.trim(),
-        chatHistory,
-        sessionId,
-        deepSearch,
-      })
+      // Try streaming first, fall back to non-streaming if it fails
+      let useStreaming = true
+      let streamingFailed = false
+      let streamedContent = ''
+      let aiMessageId = ''
 
-      if (!response.success || !response.data) {
-        throw new Error('Failed to receive response from the assistant.')
+      if (useStreaming) {
+        try {
+          setIsStreaming(true)
+          aiMessageId = crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)
+          
+          // Add empty AI message placeholder for streaming
+          const aiMessagePlaceholder: ChatMessage = {
+            id: aiMessageId,
+            author: 'assistant',
+            content: '',
+            createdAt: nowIso(),
+          }
+          addMessage(aiMessagePlaceholder)
+          setStreamingMessageId(aiMessageId)
+
+          // Stream the response
+          const streamGenerator = chatApi.diagnoseStream({
+            message: message.trim(),
+            chatHistory,
+            sessionId,
+            deepSearch,
+          })
+          
+          let streamResult: IteratorResult<string, { sessionId: string | null } | undefined>
+          let followupQuestions: string[] = []
+          let pendingFollowupJson = ''
+          let foundFollowupMarker = false
+          const setFollowupQuestionsHook = useChatStore.getState().setFollowupQuestions
+          
+          setIsFetchingFollowup(true)
+          
+          while (!(streamResult = await streamGenerator.next()).done) {
+            const chunk = streamResult.value
+            
+            if (chunk.includes('[FOLLOWUP_QUESTIONS]:')) {
+              foundFollowupMarker = true
+              const jsonStart = chunk.indexOf('[FOLLOWUP_QUESTIONS]:') + '[FOLLOWUP_QUESTIONS]:'.length
+              pendingFollowupJson = chunk.substring(jsonStart)
+              
+              const contentWithoutMarker = chunk.substring(0, chunk.indexOf('[FOLLOWUP_QUESTIONS]:')).trim()
+              if (contentWithoutMarker) {
+                streamedContent += contentWithoutMarker
+                appendMessageContent(aiMessageId, contentWithoutMarker)
+              }
+              continue
+            } else if (foundFollowupMarker) {
+              pendingFollowupJson += chunk
+              
+              if (pendingFollowupJson.trim().startsWith('[') && pendingFollowupJson.trim().endsWith(']')) {
+                try {
+                  const parsed = JSON.parse(pendingFollowupJson.trim())
+                  if (Array.isArray(parsed)) {
+                    followupQuestions = parsed
+                    setFollowupQuestionsHook(parsed)
+                    setIsFetchingFollowup(false)  // Set to false immediately when questions arrive
+                    foundFollowupMarker = false
+                    pendingFollowupJson = ''
+                  }
+                } catch (parseError) {
+                  // Continue collecting - don't set to false yet
+                }
+              }
+              continue
+            } else {
+              streamedContent += chunk
+              appendMessageContent(aiMessageId, chunk)
+            }
+          }
+          
+          // Process any remaining follow-up questions data
+          if (foundFollowupMarker && pendingFollowupJson) {
+            try {
+              const parsed = JSON.parse(pendingFollowupJson.trim())
+              if (Array.isArray(parsed)) {
+                followupQuestions = parsed
+                setFollowupQuestionsHook(parsed)
+              }
+            } catch (parseError) {
+              // If parsing fails, we'll just not have follow-up questions
+              console.warn('Failed to parse follow-up questions JSON:', parseError)
+            }
+          }
+          
+          // Always set isFetchingFollowup to false after stream completes
+          // (follow-up questions either arrived or won't arrive)
+          setIsFetchingFollowup(false)
+          
+          // Get session ID from return value for chat history continuity
+          const returnValue = streamResult.value
+          if (returnValue?.sessionId && !currentSession) {
+            setCurrentSession({
+              id: returnValue.sessionId,
+              session_name: `Session ${returnValue.sessionId}`,
+              created_at: nowIso(),
+            })
+            queryClient.invalidateQueries({ queryKey: ['chat', 'sessions'] })
+          }
+
+          setIsStreaming(false)
+          setStreamingMessageId(null)
+          setIsSending(false)
+
+          // Return success with session ID and follow-up questions
+          return {
+            message: { id: aiMessageId, author: 'assistant', content: streamedContent, createdAt: nowIso() },
+            followupQuestions: followupQuestions,
+            sessionId: returnValue?.sessionId || sessionId
+          }
+
+        } catch (streamError: any) {
+          streamingFailed = true
+          setIsStreaming(false)
+          setStreamingMessageId(null)
+          setIsFetchingFollowup(false)  // Clear follow-up loading on streaming error
+          
+          // Remove the failed streaming message if it exists
+          if (aiMessageId) {
+            useChatStore.getState().replaceMessage(aiMessageId, { content: '' })
+          }
+        }
       }
 
-      const aiMessage: ChatMessage = {
-        id: crypto.randomUUID?.() ?? Math.random().toString(36).slice(2),
-        author: 'assistant',
-        content: response.data.model_response,
-        diagnosisComplete: response.data.diagnosis_complete,
-        createdAt: nowIso(),
-        messageId: response.data.message_id, // Store backend message ID for feedback
+      // Fallback to non-streaming (or if streaming failed)
+      if (!useStreaming || streamingFailed) {
+        try {
+          const response = await chatApi.diagnose({
+            message: message.trim(),
+            chatHistory,
+            sessionId,
+            deepSearch,
+          })
+
+          if (!response.success || !response.data) {
+            throw new Error('Failed to receive response from the assistant.')
+          }
+
+          // If we had a failed streaming message, update it; otherwise add new
+          if (streamingFailed && aiMessageId) {
+            useChatStore.getState().replaceMessage(aiMessageId, {
+              content: response.data.model_response,
+              diagnosisComplete: response.data.diagnosis_complete,
+              messageId: response.data.message_id,
+            })
+          } else {
+            const aiMessage: ChatMessage = {
+              id: crypto.randomUUID?.() ?? Math.random().toString(36).slice(2),
+              author: 'assistant',
+              content: response.data.model_response,
+              diagnosisComplete: response.data.diagnosis_complete,
+              createdAt: nowIso(),
+              messageId: response.data.message_id,
+            }
+            addMessage(aiMessage)
+          }
+
+          setIsSending(false)
+
+          if (response.data.session_id && !currentSession) {
+            setCurrentSession({
+              id: response.data.session_id,
+              session_name: `Session ${response.data.session_id}`,
+              created_at: nowIso(),
+            })
+            queryClient.invalidateQueries({ queryKey: ['chat', 'sessions'] })
+          }
+
+          return {
+            message: { id: aiMessageId || 'fallback', author: 'assistant', content: response.data.model_response, createdAt: nowIso() },
+            followupQuestions: response.data.followup_questions || []
+          }
+        } catch (fallbackError: any) {
+          setIsSending(false)
+          setIsFetchingFollowup(false)  // Clear follow-up loading on error
+          throw fallbackError
+        }
       }
 
-      addMessage(aiMessage)
-      setIsSending(false)
-
-      if (response.data.session_id && !currentSession) {
-        setCurrentSession({
-          id: response.data.session_id,
-          session_name: `Session ${response.data.session_id}`,
-          created_at: nowIso(),
-        })
-        queryClient.invalidateQueries({ queryKey: ['chat', 'sessions'] })
-      }
-
-      // Return follow-up questions to be displayed above input
-      return {
-        message: aiMessage,
-        followupQuestions: response.data.followup_questions || []
-      }
+      // This shouldn't be reached, but TypeScript needs it
+      throw new Error('Unexpected state in message sending')
     },
     onError: (error: any) => {
       console.error('Failed to send message', error)
@@ -214,6 +360,9 @@ export function useChatEngine() {
         createdAt: nowIso(),
       })
       setIsSending(false)
+      setIsStreaming(false)
+      setStreamingMessageId(null)
+      setIsFetchingFollowup(false)  // Ensure follow-up loading is cleared on error
     },
   })
 
@@ -221,8 +370,7 @@ export function useChatEngine() {
     () => ({
       messages,
       isSending,
-      // isStreaming,  // Commented out - streaming disabled
-      // streamingMessageId,  // Commented out - streaming disabled
+      isStreaming,
       sessions,
       currentSession,
       sessionsLoading,
@@ -234,8 +382,7 @@ export function useChatEngine() {
     [
       currentSession,
       isSending,
-      // isStreaming,  // Commented out - streaming disabled
-      // streamingMessageId,  // Commented out - streaming disabled
+      isStreaming,
       loadSession,
       messages,
       sendMessageMutation.mutateAsync,
