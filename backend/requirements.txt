@@ -50,6 +50,7 @@ openai>=1.70.0,<2.0.0
 # ============================================================================
 # Audio Transcription (Voice-to-text with Whisper)
 # ============================================================================
+--extra-index-url https://download.pytorch.org/whl/cpu
 openai-whisper>=20231117
 torch>=2.0.0,<3.0.0
 
