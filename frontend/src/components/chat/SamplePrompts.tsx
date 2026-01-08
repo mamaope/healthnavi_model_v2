@@ -56,6 +56,10 @@ export function SamplePrompts({ onSelectPrompt, hidden }: SamplePromptsProps) {
 
   return (
     <section className="sample-questions-modern">
+      <div className="sample-questions-header">
+        <i className="fas fa-lightbulb" />
+        <span>Example Questions</span>
+      </div>
       <div className="sample-accordion">
         {sampleSections.map((section) => {
           const isExpanded = expandedSections.has(section.title)

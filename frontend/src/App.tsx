@@ -114,6 +114,13 @@ export default function App() {
   }
 
   const showSamplePrompts = useMemo(
+<<<<<<< HEAD
+    () => !isAuthenticated && messages.length === 0,
+    [isAuthenticated, messages.length],
+  )
+
+  const hasMessages = messages.length > 0
+=======
     () => messages.length === 0,
     [messages.length],
   )
@@ -140,6 +147,7 @@ export default function App() {
   const handleToggleSidebar = useCallback(() => {
     setMobileMenuOpen((prev) => !prev)
   }, [])
+>>>>>>> 9de9d60ed34fff7cf2397f4fdc8fb4f90a6b993b
 
   return (
     <div className={`app-wrapper ${isAuthenticated ? 'authenticated' : 'guest'}`}>
@@ -155,6 +163,11 @@ export default function App() {
           }}
           isLoading={sessionsLoading}
           onHomeClick={() => {
+<<<<<<< HEAD
+            startNewSession()
+            setFollowupQuestions([])
+            setInputValue('')
+=======
             // Return to home screen by clearing everything
             startNewSession()
             setFollowupQuestions([])
@@ -163,6 +176,7 @@ export default function App() {
             if (!isAuthenticated) {
               setHasStartedChat(false) // Reset to show home page without sidebar for guests
             }
+>>>>>>> 9de9d60ed34fff7cf2397f4fdc8fb4f90a6b993b
           }}
         />
       )}
@@ -227,7 +241,36 @@ export default function App() {
               )}
             </div>
 
+            {/* Follow-up Questions */}
+            {followupQuestions && followupQuestions.length > 0 && (
+              <div className="followup-section">
+                <div className="followup-header">
+                  <i className="fas fa-lightbulb" />
+                  <span>Suggested Questions</span>
+                </div>
+                <div className="followup-grid">
+                  {followupQuestions.map((question, index) => (
+                    <button
+                      key={index}
+                      type="button"
+                      className="followup-card"
+                      onClick={() => {
+                        setInputValue(question)
+                        setFollowupQuestions([])
+                        textareaRef.current?.focus()
+                      }}
+                    >
+                      <i className="fas fa-arrow-right" />
+                      <span>{question}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Input Area - Fixed at bottom */}
             <div className="input-section">
+              {/* Logo - Only on homepage (no messages) */}
               {showSamplePrompts && (
                 <div className="homepage-logo">
                   <img src="/logo.png" alt="Empirico" />
@@ -249,30 +292,7 @@ export default function App() {
                     : 'Ask a clinical question, describe symptoms, or request guidance...'
                 }
               />
-            </div>
-
-            {showSamplePrompts && (
-              <div className="prompts-section">
-                <SamplePrompts
-                  hidden={false}
-                  onSelectPrompt={handleSelectPrompt}
-                />
-              </div>
-            )}
-
-            {showSamplePrompts && (
-              <div className="disclaimer-bar-bottom">
-                <i className="fas fa-shield-alt" />
-                <span>
-                  {isAuthenticated
-                    ? 'AI-assisted clinical decision support. Always verify with professional judgment and institutional protocols.'
-                    : 'This platform provides clinical decision support for trained professionals and does not replace independent clinical judgment.'}
-                </span>
-              </div>
-            )}
-
-            {/* Disclaimer - Right under input area when there are messages */}
-            {!showSamplePrompts && (
+              {/* Disclaimer - Right under input area */}
               <div className="disclaimer-bar">
                 <i className="fas fa-shield-alt" />
                 <span>
@@ -281,11 +301,21 @@ export default function App() {
                     : 'This platform provides clinical decision support for trained professionals and does not replace independent clinical judgment.'}
                 </span>
               </div>
+            </div>
+
+            {/* Sample Prompts - Below disclaimer, only show when no messages */}
+            {showSamplePrompts && (
+              <div className="prompts-section">
+                <SamplePrompts
+                  hidden={false}
+                  onSelectPrompt={handleSelectPrompt}
+                />
+              </div>
             )}
           </div>
         </main>
 
-        {/* Footer  */}
+        {/* Footer - Only for guest users */}
         {!isAuthenticated && (
           <footer className="app-footer">
             <div className="footer-content">

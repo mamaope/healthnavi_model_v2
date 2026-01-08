@@ -32,6 +32,7 @@ export function Header({ onSignIn, onRegister, onHomeClick, onMenuToggle, showMe
   return (
     <header className="modern-header">
       <div className="header-content">
+        {/* Mobile menu button - for sidebar toggle */}
         {showMenuButton && (
           <button 
             className="mobile-menu-button"
@@ -42,6 +43,7 @@ export function Header({ onSignIn, onRegister, onHomeClick, onMenuToggle, showMe
           </button>
         )}
         
+        {/* Logo - always visible */}
         <div className="header-brand">
           <div 
             className="header-logo" 
