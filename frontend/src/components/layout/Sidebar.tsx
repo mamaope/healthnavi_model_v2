@@ -51,16 +51,6 @@ export function Sidebar({
     document.addEventListener('click', handleClickOutside)
     return () => document.removeEventListener('click', handleClickOutside)
   }, [isUserMenuOpen])
-  
-  // Close sidebar when clicking outside on mobile
-  useEffect(() => {
-    // Only on mobile screens (768px and below)
-    if (typeof window === 'undefined' || window.innerWidth > 768) return
-    if (!isOpen || !onClose) return
-
-  if (!isAuthenticated) {
-    return null
-  }
 
   const formatSessionDate = (date: Date | string) => {
     const d = typeof date === 'string' ? new Date(date) : date
@@ -156,7 +146,7 @@ export function Sidebar({
                 </div>
                 <div className="session-content">
                   <div className="session-name">
-                    {getSessionPreview(session)}
+                    {getSessionTitle(session)}
                   </div>
                   <div className="session-meta">
                     <span className="session-date">
@@ -180,18 +170,16 @@ export function Sidebar({
             <div className="sidebar-user-avatar">
               <i className={user ? "fas fa-user-md" : "fas fa-user"} />
             </div>
-            {!isCollapsed && (
-              <>
-                <div className="sidebar-user-info">
-                  <span className="sidebar-user-name">{userName}</span>
-                  <span className="sidebar-user-role">{userRole}</span>
-                </div>
-                <i className={`fas fa-chevron-${isUserMenuOpen ? 'up' : 'down'} sidebar-user-icon`} />
-              </>
-            )}
+            <>
+              <div className="sidebar-user-info">
+                <span className="sidebar-user-name">{userName}</span>
+                <span className="sidebar-user-role">{userRole}</span>
+              </div>
+              <i className={`fas fa-chevron-${isUserMenuOpen ? 'up' : 'down'} sidebar-user-icon`} />
+            </>
           </button>
 
-          {isUserMenuOpen && !isCollapsed && (
+          {isUserMenuOpen && (
             <div className="sidebar-user-dropdown floating-menu" role="menu">
               {user ? (
                 <>

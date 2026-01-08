@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AuthModal, type AuthMode } from './components/auth/AuthModal'
 import { ForgotPasswordModal } from './components/auth/ForgotPasswordModal'
 import { ResetPasswordModal } from './components/auth/ResetPasswordModal'
@@ -33,6 +33,7 @@ export default function App() {
   const [inputValue, setInputValue] = useState('')
   const [isDeepSearchEnabled, setIsDeepSearchEnabled] = useState(false)
   const [followupQuestions, setFollowupQuestions] = useState<string[]>([])
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Check for reset token or OAuth callback in URL on mount
@@ -194,9 +195,9 @@ export default function App() {
           <div className={`chat-wrapper ${hasMessages ? 'has-messages' : 'empty'}`}>
             {/* Messages Area */}
             <div className="messages-container">
-              <MessageList messages={messages} showWelcomeMessage={false} />
-              {/* Show loading indicator when sending or fetching follow-up questions */}
-              <LoadingIndicator isVisible={isSending || isFetchingFollowup} />
+              <MessageList messages={messages} />
+              {/* Show loading indicator when sending */}
+              <LoadingIndicator isVisible={isSending} />
               
               {/* Follow-up Questions - Below model response */}
               {followupQuestions && followupQuestions.length > 0 && messages.length > 0 && (
