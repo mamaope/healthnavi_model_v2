@@ -111,11 +111,40 @@ export default function App() {
   }
 
   const showSamplePrompts = useMemo(
+<<<<<<< HEAD
     () => !isAuthenticated && messages.length === 0,
     [isAuthenticated, messages.length],
   )
 
   const hasMessages = messages.length > 0
+=======
+    () => messages.length === 0,
+    [messages.length],
+  )
+
+  const hasMessages = messages.length > 0
+  // Show sidebar for authenticated users OR guests who have started a chat (even if messages cleared via New Chat)
+  const [hasStartedChat, setHasStartedChat] = useState(false)
+  
+  // Track when user starts their first chat
+  useEffect(() => {
+    if (hasMessages && !hasStartedChat) {
+      setHasStartedChat(true)
+    }
+  }, [hasMessages, hasStartedChat])
+  
+  const showSidebarForGuest = !isAuthenticated && (hasMessages || hasStartedChat)
+  const showSidebar = isAuthenticated || showSidebarForGuest
+
+  // Memoize sidebar handlers to prevent unnecessary re-renders
+  const handleCloseSidebar = useCallback(() => {
+    setMobileMenuOpen(false)
+  }, [])
+
+  const handleToggleSidebar = useCallback(() => {
+    setMobileMenuOpen((prev) => !prev)
+  }, [])
+>>>>>>> 9de9d60ed34fff7cf2397f4fdc8fb4f90a6b993b
 
   return (
     <div className={`app-wrapper ${isAuthenticated ? 'authenticated' : 'guest'}`}>
@@ -131,9 +160,20 @@ export default function App() {
           }}
           isLoading={sessionsLoading}
           onHomeClick={() => {
+<<<<<<< HEAD
             startNewSession()
             setFollowupQuestions([])
             setInputValue('')
+=======
+            // Return to home screen by clearing everything
+            startNewSession()
+            setFollowupQuestions([])
+            setInputValue('')
+            setMobileMenuOpen(false)
+            if (!isAuthenticated) {
+              setHasStartedChat(false) // Reset to show home page without sidebar for guests
+            }
+>>>>>>> 9de9d60ed34fff7cf2397f4fdc8fb4f90a6b993b
           }}
         />
       )}
@@ -151,9 +191,13 @@ export default function App() {
             setAuthModalOpen(true)
           }}
           onHomeClick={() => {
+            // Return to home screen by clearing everything
             startNewSession()
             setFollowupQuestions([])
             setInputValue('')
+            if (!isAuthenticated) {
+              setHasStartedChat(false) // Reset to show home page without sidebar for guests
+            }
           }}
         />
 
@@ -162,8 +206,36 @@ export default function App() {
           <div className={`chat-wrapper ${hasMessages ? 'has-messages' : 'empty'}`}>
             {/* Messages Area */}
             <div className="messages-container">
-              <MessageList messages={messages} />
-              <LoadingIndicator isVisible={isSending} />
+              <MessageList messages={messages} showWelcomeMessage={false} />
+              {/* Show loading indicator when sending or fetching follow-up questions */}
+              <LoadingIndicator isVisible={isSending || isFetchingFollowup} />
+              
+              {/* Follow-up Questions - Below model response */}
+              {followupQuestions && followupQuestions.length > 0 && messages.length > 0 && (
+                <div className="followup-section">
+                  <div className="followup-header">
+                    <i className="fas fa-lightbulb" />
+                    <span>Suggested Questions</span>
+                  </div>
+                  <div className="followup-grid">
+                    {followupQuestions.map((question, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        className="followup-card"
+                        onClick={() => {
+                          setInputValue(question)
+                          setFollowupQuestions([])
+                          textareaRef.current?.focus()
+                        }}
+                      >
+                        <i className="fas fa-arrow-right" />
+                        <span>{question}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Follow-up Questions */}
@@ -195,6 +267,12 @@ export default function App() {
 
             {/* Input Area - Fixed at bottom */}
             <div className="input-section">
+              {/* Logo - Only on homepage (no messages) */}
+              {showSamplePrompts && (
+                <div className="homepage-logo">
+                  <img src="/logo.png" alt="Empirico" />
+                </div>
+              )}
               <ChatInput
                 ref={textareaRef}
                 value={inputValue}

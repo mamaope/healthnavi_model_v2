@@ -118,14 +118,8 @@ export function MessageList({ messages }: MessageListProps) {
       {messages.length === 0 && (
         <div className="welcome-message">
           <div className="welcome-content">
-            <div className="welcome-logo">
-              <img 
-                src="/logo.png" 
-                alt="Epirico" 
-                className="logo-image welcome-logo-image"
-              />
-            </div>
-            <h3>Welcome to Empirico !!!</h3>
+
+            <h3>Welcome</h3>
             <p>
               How can I assist you today? Ask clinical questions, review treatment options, or explore guidelines.
             </p>

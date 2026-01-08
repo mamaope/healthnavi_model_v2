@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { getDisplayName, getRoleLabel, useAuth } from '../../providers/AuthProvider'
+import { useAuth } from '../../providers/AuthProvider'
 import { ThemeToggle } from '../common/ThemeToggle'
 
 interface HeaderProps {
@@ -8,13 +8,10 @@ interface HeaderProps {
   onHomeClick?: () => void
 }
 
-export function Header({ onSignIn, onRegister, onHomeClick }: HeaderProps) {
-  const { isAuthenticated, user, logout } = useAuth()
+export function Header({ onSignIn, onRegister, onHomeClick, onMenuToggle, showMenuButton = false }: HeaderProps) {
+  const { isAuthenticated } = useAuth()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
-
-  const userName = getDisplayName(user)
-  const userRole = getRoleLabel(user)
 
   useEffect(() => {
     if (!isMenuOpen) return
@@ -35,6 +32,18 @@ export function Header({ onSignIn, onRegister, onHomeClick }: HeaderProps) {
   return (
     <header className="modern-header">
       <div className="header-content">
+        {/* Mobile menu button - for sidebar toggle */}
+        {showMenuButton && (
+          <button 
+            className="mobile-menu-button"
+            onClick={onMenuToggle}
+            aria-label="Toggle sidebar"
+          >
+            <i className="fas fa-bars" />
+          </button>
+        )}
+        
+        {/* Logo - always visible */}
         <div className="header-brand">
           <div 
             className="header-logo" 
@@ -46,109 +55,90 @@ export function Header({ onSignIn, onRegister, onHomeClick }: HeaderProps) {
               alt="Empirico" 
               className="logo-image"
               onError={(e) => {
-                // Fallback to text if image fails to load
                 const target = e.target as HTMLImageElement
                 target.style.display = 'none'
                 const parent = target.parentElement
                 if (parent && !parent.querySelector('.logo-fallback')) {
                   const fallback = document.createElement('div')
                   fallback.className = 'logo-fallback'
-                  fallback.innerHTML = '<span class="logo-health">Empirico</span>'
+                  fallback.innerHTML = '<span class="logo-text">Empirico</span>'
                   parent.appendChild(fallback)
                 }
               }}
             />
           </div>
-          {isAuthenticated && (
-            <span className="header-tagline"></span>
-          )}
         </div>
 
         <div className="header-actions-wrapper">
           {!isAuthenticated && (
             <div className="header-actions">
-              <ThemeToggle ariaLabel="Toggle light/dark theme" />
-              <button className="btn btn-ghost" onClick={onSignIn}>
-                Sign In
+              <button className="btn btn-outline" onClick={onSignIn}>
+                Log In
               </button>
               <button className="btn btn-primary" onClick={onRegister}>
-                Get Started
+                Sign Up
               </button>
+              <div className="header-menu-container" ref={menuRef}>
+                <button 
+                  className="header-hamburger-btn"
+                  onClick={() => setIsMenuOpen((open) => !open)}
+                  aria-label="More options"
+                  aria-expanded={isMenuOpen}
+                >
+                  <i className="fas fa-bars" />
+                </button>
+                {isMenuOpen && (
+                  <div className="header-menu-dropdown">
+                    <div className="header-menu-theme-row">
+                      <i className="fas fa-moon" />
+                      <span>Dark Mode</span>
+                      <ThemeToggle ariaLabel="Toggle light/dark theme" />
+                    </div>
+                    <div className="header-menu-divider" />
+                    <button
+                      className="header-menu-item"
+                      onClick={() => {
+                        setIsMenuOpen(false)
+                        window.alert('Mobile app coming soon!')
+                      }}
+                    >
+                      <i className="fas fa-mobile-alt" />
+                      <span>Download App</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
           {isAuthenticated && (
             <div className="header-user-section">
-              <ThemeToggle ariaLabel="Toggle light/dark theme" variant="header" />
-              <div className="header-user-menu" ref={menuRef}>
-                <button
-                  className="header-user-button"
+              <div className="header-menu-container" ref={menuRef}>
+                <button 
+                  className="header-hamburger-btn"
                   onClick={() => setIsMenuOpen((open) => !open)}
-                  aria-haspopup="menu"
+                  aria-label="More options"
                   aria-expanded={isMenuOpen}
                 >
-                  <div className="header-user-avatar">
-                    <i className="fas fa-user-md" />
-                  </div>
-                  <div className="header-user-info">
-                    <span className="header-user-name">{userName}</span>
-                    <span className="header-user-role">{userRole}</span>
-                  </div>
-                  <i className={`fas fa-chevron-${isMenuOpen ? 'up' : 'down'} header-dropdown-icon`} />
+                  <i className="fas fa-bars" />
                 </button>
-
                 {isMenuOpen && (
-                  <div className="user-dropdown-menu" role="menu">
-                    <div className="user-dropdown-header">
-                      <div className="user-dropdown-avatar">
-                        <i className="fas fa-user-md" />
-                      </div>
-                      <div className="user-dropdown-info">
-                        <div className="user-dropdown-name">{userName}</div>
-                        <div className="user-dropdown-email">{user?.email}</div>
-                      </div>
+                  <div className="header-menu-dropdown">
+                    <div className="header-menu-theme-row">
+                      <i className="fas fa-moon" />
+                      <span>Dark Mode</span>
+                      <ThemeToggle ariaLabel="Toggle light/dark theme" variant="header" />
                     </div>
-                    <div className="user-dropdown-divider" />
+                    <div className="header-menu-divider" />
                     <button
-                      className="user-dropdown-item"
+                      className="header-menu-item"
                       onClick={() => {
                         setIsMenuOpen(false)
-                        window.alert('Profile page coming soon!')
+                        window.alert('Mobile app coming soon!')
                       }}
                     >
-                      <i className="fas fa-user" />
-                      <span>My Profile</span>
-                    </button>
-                    <button
-                      className="user-dropdown-item"
-                      onClick={() => {
-                        setIsMenuOpen(false)
-                        window.alert('Settings page coming soon!')
-                      }}
-                    >
-                      <i className="fas fa-cog" />
-                      <span>Settings</span>
-                    </button>
-                    <button
-                      className="user-dropdown-item"
-                      onClick={() => {
-                        setIsMenuOpen(false)
-                        window.alert('Help & Support coming soon!')
-                      }}
-                    >
-                      <i className="fas fa-question-circle" />
-                      <span>Help & Support</span>
-                    </button>
-                    <div className="user-dropdown-divider" />
-                    <button
-                      className="user-dropdown-item user-dropdown-item-danger"
-                      onClick={() => {
-                        setIsMenuOpen(false)
-                        logout()
-                      }}
-                    >
-                      <i className="fas fa-sign-out-alt" />
-                      <span>Sign Out</span>
+                      <i className="fas fa-mobile-alt" />
+                      <span>Download App</span>
                     </button>
                   </div>
                 )}
