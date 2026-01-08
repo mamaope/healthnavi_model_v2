@@ -1,4 +1,5 @@
-import { useMemo, useEffect, useRef } from 'react'
+import { useMemo, useEffect, useRef, useState } from 'react'
+import { getDisplayName, getRoleLabel, useAuth } from '../../providers/AuthProvider'
 import type { ChatSession } from '../../types/chat'
 
 interface SidebarProps {
@@ -27,6 +28,12 @@ export function Sidebar({
   onClose,
 }: SidebarProps) {
   const sidebarRef = useRef<HTMLElement>(null)
+  const { user, logout } = useAuth()
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
+  const userMenuRef = useRef<HTMLDivElement>(null)
+
+  const userName = getDisplayName(user)
+  const userRole = getRoleLabel(user)
 
   const hasSessions = sessions.length > 0
 
@@ -43,6 +50,22 @@ export function Sidebar({
     },
     [isOpen, isCollapsed],
   )
+
+  useEffect(() => {
+    if (!isUserMenuOpen) return
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        userMenuRef.current &&
+        !userMenuRef.current.contains(event.target as Node)
+      ) {
+        setIsUserMenuOpen(false)
+      }
+    }
+
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
+  }, [isUserMenuOpen])
   
   // Close sidebar when clicking outside on mobile
   useEffect(() => {
@@ -100,8 +123,20 @@ export function Sidebar({
   }
 
   const getSessionTitle = (session: ChatSession) => {
-    // Backend updates it with first user message automatically
-    if (session.session_name && !session.session_name.startsWith('Diagnosis Session')) {
+    // Backend updates session_name with first user message automatically
+    // Filter out generic/system-generated names
+    const genericPrefixes = ['Diagnosis Session', 'Session', 'Streaming Session', 'New Session']
+    const isGenericName = !session.session_name || 
+      genericPrefixes.some(prefix => session.session_name.startsWith(prefix))
+    
+    if (!isGenericName) {
+      // Session name already set by backend - show it with truncation for sidebar
+      // Backend stores up to 50 chars, we show up to 35 in sidebar
+      const maxLength = 35
+      const name = session.session_name.replace(/\.\.\.$/,  '') // Remove trailing dots if present
+      if (name.length > maxLength) {
+        return name.substring(0, maxLength).trim() + '...'
+      }
       return session.session_name
     }
     
@@ -214,6 +249,83 @@ export function Sidebar({
             ))}
           </div>
         )}
+      </div>
+
+      <div className="sidebar-footer">
+        <div className="sidebar-user-profile" ref={userMenuRef}>
+          <button
+            className="sidebar-user-button"
+            onClick={() => setIsUserMenuOpen((open) => !open)}
+            aria-haspopup="menu"
+            aria-expanded={isUserMenuOpen}
+          >
+            <div className="sidebar-user-avatar">
+              <i className={user ? "fas fa-user-md" : "fas fa-user"} />
+            </div>
+            {!isCollapsed && (
+              <>
+                <div className="sidebar-user-info">
+                  <span className="sidebar-user-name">{userName}</span>
+                  <span className="sidebar-user-role">{userRole}</span>
+                </div>
+                <i className={`fas fa-chevron-${isUserMenuOpen ? 'up' : 'down'} sidebar-user-icon`} />
+              </>
+            )}
+          </button>
+
+          {isUserMenuOpen && !isCollapsed && (
+            <div className="sidebar-user-dropdown floating-menu" role="menu">
+              {user ? (
+                <>
+                  <button
+                    className="sidebar-user-item"
+                    onClick={() => {
+                      setIsUserMenuOpen(false)
+                      window.alert('Profile page coming soon!')
+                    }}
+                  >
+                    <i className="fas fa-user" />
+                    <span>My Profile</span>
+                  </button>
+                  <button
+                    className="sidebar-user-item"
+                    onClick={() => {
+                      setIsUserMenuOpen(false)
+                      window.alert('Settings page coming soon!')
+                    }}
+                  >
+                    <i className="fas fa-cog" />
+                    <span>Settings</span>
+                  </button>
+                  <div className="sidebar-user-divider" />
+                  <button
+                    className="sidebar-user-item sidebar-user-item-danger"
+                    onClick={() => {
+                      setIsUserMenuOpen(false)
+                      logout()
+                    }}
+                  >
+                    <i className="fas fa-sign-out-alt" />
+                    <span>Log Out</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    className="sidebar-user-item"
+                    onClick={() => {
+                      setIsUserMenuOpen(false)
+                      window.alert('Settings page coming soon!')
+                    }}
+                  >
+                    <i className="fas fa-cog" />
+                    <span>Settings</span>
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </aside>
   )

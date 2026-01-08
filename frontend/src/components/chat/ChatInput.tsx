@@ -142,7 +142,7 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
             {recordingError || transcriptionError}
           </div>
         )}
-        <div className="input-container">
+        <div className="chat-input-box">
           <textarea
             ref={textareaRef}
             value={value}
@@ -153,30 +153,27 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
             disabled={isSending || isRecording}
             aria-label="Message input"
           />
-          <div className="input-actions">
-            <div className="input-actions-left">
+          <div className="chat-input-footer">
+            <div className="chat-input-left">
               <button
                 type="button"
-                className={`deep-search-toggle ${isDeepSearchEnabled ? 'active' : ''}`}
+                className={`deep-reasoning-btn ${isDeepSearchEnabled ? 'active' : ''}`}
                 onClick={onToggleDeepSearch}
                 aria-pressed={isDeepSearchEnabled}
-                aria-label="Toggle deep search for broader clinical context"
+                aria-label="Toggle deep reasoning"
+                title="Deep Reasoning"
                 disabled={isSending}
               >
-                <span className="deep-search-icon">
-                  <i className="fas fa-brain" aria-hidden="true" />
-                </span>
-                <span className="deep-search-text">
-                  <span className="deep-search-title">Deep Reasoning</span>
-                </span>
+                <i className="fas fa-brain" aria-hidden="true" />
+                <span className="deep-reasoning-label">Deep Reasoning</span>
               </button>
               <button
                 type="button"
-                className={`mic-button ${isRecording ? 'recording' : ''} ${isTranscribing ? 'transcribing' : ''}`}
+                className={`chat-icon-btn ${isRecording ? 'recording' : ''} ${isTranscribing ? 'transcribing' : ''}`}
                 onClick={() => void handleMicClick()}
                 disabled={micButtonDisabled}
                 aria-label={isRecording ? 'Stop recording' : 'Start voice input'}
-                title={isRecording ? `Recording: ${duration.toFixed(1)}s` : 'Click to speak'}
+                title={isRecording ? `Recording: ${duration.toFixed(1)}s` : 'Voice input'}
               >
                 {isTranscribing ? (
                   <i className="fas fa-spinner fa-spin" aria-hidden="true" />
@@ -185,16 +182,12 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
                 )}
               </button>
             </div>
-            <div className="input-actions-right">
-              {value.length > 0 && (
-                <div
-                  className={`char-counter ${isNearLimit ? 'warning' : ''} ${isOverLimit ? 'error' : ''}`}
-                >
-                  {value.length} / {MAX_MESSAGE_LENGTH}
-                </div>
-              )}
+            <div className="chat-input-right">
+              <span className={`chat-char-counter ${isNearLimit ? 'warning' : ''} ${isOverLimit ? 'error' : ''}`}>
+                {value.length}/{MAX_MESSAGE_LENGTH}
+              </span>
               <button
-                className="send-button"
+                className="chat-send-btn"
                 onClick={() => void handleSend()}
                 disabled={isSending || value.trim().length === 0}
                 aria-label="Send message"

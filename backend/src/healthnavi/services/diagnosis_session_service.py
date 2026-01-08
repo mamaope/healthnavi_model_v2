@@ -263,17 +263,22 @@ class DiagnosisSessionService:
             if not session:
                 return None
             
-            # If this is the first user message and session has default name, update it
+            # If this is the first user message and session has default/generic name, update it
             if message_data.message_type == 'user':
                 message_count = self.db.query(func.count(ChatMessage.id)).filter(
                     ChatMessage.session_id == session.id
                 ).scalar() or 0
                 
-                if message_count == 0 and session.session_name and session.session_name.startswith('Diagnosis Session'):
-                    # Extract first 40 chars from user message as session name
+                generic_prefixes = ['Diagnosis Session', 'Streaming Session', 'Session', 'New Session']
+                is_generic_name = session.session_name and any(
+                    session.session_name.startswith(prefix) for prefix in generic_prefixes
+                )
+                
+                if message_count == 0 and is_generic_name:
+                    # Extract first 50 chars from user message as session name 
                     content = message_data.content or ''
-                    if len(content) > 40:
-                        session.session_name = content[:40].strip() + '...'
+                    if len(content) > 50:
+                        session.session_name = content[:50].strip() + '...'
                     elif content.strip():
                         session.session_name = content.strip()
                     logger.info(f"Updated session {session_id} name to: {session.session_name}")

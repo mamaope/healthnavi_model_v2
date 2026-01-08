@@ -122,16 +122,19 @@ export default function App() {
     () => messages.length === 0,
     [messages.length],
   )
-  
-  // Show welcome message only for guest users when they haven't started chatting
-  // Logged-in users never see the welcome message
-  const showWelcomeMessage = useMemo(
-    () => !isAuthenticated && messages.length === 0,
-    [isAuthenticated, messages.length],
-  )
 
   const hasMessages = messages.length > 0
-  const showSidebarForGuest = !isAuthenticated && hasMessages
+  // Show sidebar for authenticated users OR guests who have started a chat (even if messages cleared via New Chat)
+  const [hasStartedChat, setHasStartedChat] = useState(false)
+  
+  // Track when user starts their first chat
+  useEffect(() => {
+    if (hasMessages && !hasStartedChat) {
+      setHasStartedChat(true)
+    }
+  }, [hasMessages, hasStartedChat])
+  
+  const showSidebarForGuest = !isAuthenticated && (hasMessages || hasStartedChat)
   const showSidebar = isAuthenticated || showSidebarForGuest
 
   // Memoize sidebar handlers to prevent unnecessary re-renders
@@ -160,13 +163,14 @@ export default function App() {
           }}
           isLoading={sessionsLoading}
           onHomeClick={() => {
-            if (isAuthenticated) {
-              logout()
-            }
+            // Return to home screen by clearing everything
             startNewSession()
             setFollowupQuestions([])
             setInputValue('')
             setMobileMenuOpen(false)
+            if (!isAuthenticated) {
+              setHasStartedChat(false) // Reset to show home page without sidebar for guests
+            }
           }}
           onClose={handleCloseSidebar}
         />
@@ -185,12 +189,13 @@ export default function App() {
             setAuthModalOpen(true)
           }}
           onHomeClick={() => {
-            if (isAuthenticated) {
-              logout()
-            }
+            // Return to home screen by clearing everything
             startNewSession()
             setFollowupQuestions([])
             setInputValue('')
+            if (!isAuthenticated) {
+              setHasStartedChat(false) // Reset to show home page without sidebar for guests
+            }
           }}
           onMenuToggle={handleToggleSidebar}
           showMenuButton={showSidebar}
@@ -201,7 +206,7 @@ export default function App() {
           <div className={`chat-wrapper ${hasMessages ? 'has-messages' : 'empty'}`}>
             {/* Messages Area */}
             <div className="messages-container">
-              <MessageList messages={messages} showWelcomeMessage={showWelcomeMessage} />
+              <MessageList messages={messages} showWelcomeMessage={false} />
               {/* Show loading indicator when sending or fetching follow-up questions */}
               <LoadingIndicator isVisible={isSending || isFetchingFollowup} />
               
@@ -235,6 +240,12 @@ export default function App() {
 
             {/* Input Area - Fixed at bottom */}
             <div className="input-section">
+              {/* Logo - Only on homepage (no messages) */}
+              {showSamplePrompts && (
+                <div className="homepage-logo">
+                  <img src="/logo.png" alt="Empirico" />
+                </div>
+              )}
               <ChatInput
                 ref={textareaRef}
                 value={inputValue}
