@@ -96,7 +96,7 @@ export function SamplePrompts({ onSelectPrompt, hidden }: SamplePromptsProps) {
               </div>
             </div>
           )
-        })}
+        })}push
       </div>
     </section>
   )

@@ -19,7 +19,8 @@ data class ChatUiState(
     val sessions: List<ChatSession> = emptyList(),
     val currentSession: ChatSession? = null,
     val errorMessage: String? = null,
-    val deepSearchEnabled: Boolean = false
+    val deepSearchEnabled: Boolean = false,
+    val feedback: Map<Int, String> = emptyMap() // messageId -> feedbackType ("helpful" or "not_helpful")
 )
 
 class ChatViewModel : ViewModel() {
@@ -59,10 +60,22 @@ class ChatViewModel : ViewModel() {
                     _uiState.value = _uiState.value.copy(isLoading = false)
                 }
                 .onFailure { e ->
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        errorMessage = e.message ?: "Failed to load sessions"
-                    )
+                    // When the user is not authenticated yet, the backend may return
+                    // a "Not authenticated" error. This commonly happens on app start
+                    // before login. We don't want to surface this to the user as an
+                    // error message in the chat UI, so we silently ignore it.
+                    val message = e.message ?: ""
+                    if (message.contains("not authenticated", ignoreCase = true)) {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            errorMessage = null
+                        )
+                    } else {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            errorMessage = message.ifBlank { "Failed to load sessions" }
+                        )
+                    }
                 }
         }
     }
@@ -74,19 +87,15 @@ class ChatViewModel : ViewModel() {
             chatRepository.clearMessages()
             chatRepository.createSession(sessionName)
                 .onSuccess { session ->
-                    // Session is already set in repository, just load messages
-                    chatRepository.getSessionMessages(session.id)
-                        .onSuccess {
-                            _uiState.value = _uiState.value.copy(isLoading = false)
-                            // Reload sessions to update the list
-                            loadSessions()
-                        }
-                        .onFailure { e ->
-                            _uiState.value = _uiState.value.copy(
-                                isLoading = false,
-                                errorMessage = e.message ?: "Failed to load messages"
-                            )
-                        }
+                    // Session is already set in repository
+                    // For a new session, messages will be empty, so we don't need to load them
+                    // Just update UI state and reload sessions list
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        currentSession = session
+                    )
+                    // Reload sessions to update the list
+                    loadSessions()
                 }
                 .onFailure { e ->
                     _uiState.value = _uiState.value.copy(
@@ -99,7 +108,11 @@ class ChatViewModel : ViewModel() {
     
     fun loadSession(sessionId: String) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
+            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            
+            // Clear current messages first
+            chatRepository.clearMessages()
+            
             val session = _uiState.value.sessions.find { it.id == sessionId }
             if (session != null) {
                 chatRepository.setCurrentSession(session)
@@ -114,24 +127,35 @@ class ChatViewModel : ViewModel() {
                         )
                     }
             } else {
-                // Session not found, try reloading sessions first
-                loadSessions()
-                val updatedSession = _uiState.value.sessions.find { it.id == sessionId }
-                if (updatedSession != null) {
-                    chatRepository.setCurrentSession(updatedSession)
-                    chatRepository.getSessionMessages(sessionId)
-                        .onSuccess {
-                            _uiState.value = _uiState.value.copy(isLoading = false)
-                        }
-                        .onFailure { e ->
+                // Session not found in current list, try reloading sessions first
+                chatRepository.getSessions()
+                    .onSuccess {
+                        val updatedSession = _uiState.value.sessions.find { it.id == sessionId }
+                        if (updatedSession != null) {
+                            chatRepository.setCurrentSession(updatedSession)
+                            chatRepository.getSessionMessages(sessionId)
+                                .onSuccess {
+                                    _uiState.value = _uiState.value.copy(isLoading = false)
+                                }
+                                .onFailure { e ->
+                                    _uiState.value = _uiState.value.copy(
+                                        isLoading = false,
+                                        errorMessage = e.message ?: "Failed to load messages"
+                                    )
+                                }
+                        } else {
                             _uiState.value = _uiState.value.copy(
                                 isLoading = false,
-                                errorMessage = e.message ?: "Failed to load messages"
+                                errorMessage = "Session not found"
                             )
                         }
-                } else {
-                    _uiState.value = _uiState.value.copy(isLoading = false)
-                }
+                    }
+                    .onFailure { e ->
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            errorMessage = e.message ?: "Failed to load session"
+                        )
+                    }
             }
         }
     }
@@ -165,7 +189,7 @@ class ChatViewModel : ViewModel() {
                     val aiMessage = ChatMessage(
                         id = (System.currentTimeMillis() + 1).toString(),
                         author = MessageAuthor.ASSISTANT,
-                        content = response.data.model_response,
+                        content = response.data.model_response ?: "",
                         diagnosisComplete = response.data.diagnosis_complete ?: false,
                         createdAt = System.currentTimeMillis().toString(),
                         messageId = response.data.message_id
@@ -203,14 +227,52 @@ class ChatViewModel : ViewModel() {
     
     fun submitFeedback(messageId: Int, feedbackType: String) {
         viewModelScope.launch {
-            chatRepository.submitFeedback(messageId, feedbackType)
-                .onFailure { e ->
-                    _uiState.value = _uiState.value.copy(
-                        errorMessage = e.message ?: "Failed to submit feedback"
-                    )
+            val currentFeedback = _uiState.value.feedback[messageId]
+            val isRemoving = currentFeedback == feedbackType
+            
+            // Update UI state immediately for better UX
+            val newFeedbackMap = if (isRemoving) {
+                _uiState.value.feedback - messageId
+            } else {
+                // If switching from one feedback to another, remove the old one first
+                val feedbackWithoutThis = if (currentFeedback != null && currentFeedback != feedbackType) {
+                    _uiState.value.feedback - messageId
+                } else {
+                    _uiState.value.feedback
                 }
+                feedbackWithoutThis + (messageId to feedbackType)
+            }
+            
+            _uiState.value = _uiState.value.copy(feedback = newFeedbackMap)
+            
+            if (isRemoving) {
+                // Remove feedback
+                chatRepository.removeFeedback(messageId)
+                    .onFailure { e ->
+                        // Revert on failure
+                        _uiState.value = _uiState.value.copy(
+                            feedback = _uiState.value.feedback + (messageId to currentFeedback!!),
+                            errorMessage = e.message ?: "Failed to remove feedback"
+                        )
+                    }
+            } else {
+                // Submit feedback
+                chatRepository.submitFeedback(messageId, feedbackType)
+                    .onFailure { e ->
+                        // Revert on failure
+                        _uiState.value = _uiState.value.copy(
+                            feedback = if (currentFeedback != null) {
+                                _uiState.value.feedback + (messageId to currentFeedback)
+                            } else {
+                                _uiState.value.feedback - messageId
+                            },
+                            errorMessage = e.message ?: "Failed to submit feedback"
+                        )
+                    }
+            }
         }
     }
+    
     
     fun clearError() {
         _uiState.value = _uiState.value.copy(errorMessage = null)

@@ -37,36 +37,11 @@ async function parseJson<T>(response: Response): Promise<T> {
     return text ? (JSON.parse(text) as T) : ({} as T)
   } catch (error) {
     console.error('Failed to parse JSON response', error, text)
-    // If it's a 504 Gateway Timeout, return a structured error
-    if (response.status === 504) {
-      return {
-        message: 'Request timed out. The server took too long to respond. Please try again.',
-        detail: 'Gateway Timeout - The request exceeded the maximum allowed time.',
-      } as T
-    }
     throw new Error('Received invalid JSON from server')
   }
 }
 
-export function extractApiErrorMessage(payload: ApiErrorResponse, statusCode?: number): string {
-  // Handle specific HTTP status codes with user-friendly messages
-  if (statusCode === 504) {
-    return 'Request timed out. The diagnosis is taking longer than expected. This may happen during peak times. Please try again in a moment.'
-  }
-  
-  if (statusCode === 503) {
-    return 'Service temporarily unavailable. The AI service is currently busy. Please try again in a few moments.'
-  }
-  
-  if (statusCode === 502) {
-    return 'Bad gateway. The server is experiencing issues. Please try again later.'
-  }
-  
-  if (statusCode === 500) {
-    return 'Internal server error. Something went wrong on our end. Please try again or contact support if the issue persists.'
-  }
-
-  // Try to extract error message from payload
+export function extractApiErrorMessage(payload: ApiErrorResponse): string {
   const messageFromMetadata = payload.metadata?.errors?.join(', ')
   if (messageFromMetadata) {
     return messageFromMetadata
@@ -95,12 +70,7 @@ export function extractApiErrorMessage(payload: ApiErrorResponse, statusCode?: n
     return payload.message
   }
 
-  // Provide more context for unknown errors
-  if (statusCode) {
-    return `An error occurred (HTTP ${statusCode}). Please try again. If the problem persists, contact support.`
-  }
-
-  return 'An unexpected error occurred. Please try again. If the problem persists, contact support.'
+  return 'An unexpected error occurred. Please try again.'
 }
 
 async function apiFetch<TResponse>(
@@ -127,44 +97,12 @@ async function apiFetch<TResponse>(
     headers = buildHeaders(token, options.skipAuthHeader)
   }
 
-  // Create AbortController with reasonable timeout for diagnosis endpoint
-  const isDiagnosisEndpoint = path.includes('/diagnosis/diagnose')
-  const timeoutDuration = isDiagnosisEndpoint ? 90000 : 60000 // 90s for diagnosis, 60s for others
-  const timeoutController = new AbortController()
-  const timeoutId = setTimeout(() => timeoutController.abort(), timeoutDuration)
-  
-  // Combine user signal with timeout signal if both exist
-  let finalSignal: AbortSignal
-  if (options.signal) {
-    const combinedController = new AbortController()
-    const abortHandler = () => combinedController.abort()
-    options.signal.addEventListener('abort', abortHandler)
-    timeoutController.signal.addEventListener('abort', abortHandler)
-    finalSignal = combinedController.signal
-  } else {
-    finalSignal = timeoutController.signal
-  }
-
-  let response: Response
-  try {
-    response = await fetch(`${API_URL}${path}`, {
-      method,
-      headers,
-      body: options.body,
-      signal: finalSignal,
-    })
-    clearTimeout(timeoutId)
-  } catch (error: any) {
-    clearTimeout(timeoutId)
-    if (error.name === 'AbortError' && timeoutController.signal.aborted) {
-      throw new Error(
-        isDiagnosisEndpoint
-          ? 'Request timed out after 90 seconds. The diagnosis is taking longer than expected. Please try again with a simpler query or contact support if the issue persists.'
-          : 'Request timed out. Please try again.'
-      )
-    }
-    throw error
-  }
+  const response = await fetch(`${API_URL}${path}`, {
+    method,
+    headers,
+    body: options.body,
+    signal: options.signal,
+  })
 
   if (!response.ok) {
     const errorPayload = await parseJson<ApiErrorResponse>(response).catch(
@@ -177,7 +115,6 @@ async function apiFetch<TResponse>(
       statusText: response.statusText,
       path,
       payload: errorPayload,
-      url: response.url,
     })
 
     if (response.status === 401 || response.status === 403) {
@@ -187,7 +124,7 @@ async function apiFetch<TResponse>(
       }
     }
 
-    throw new Error(extractApiErrorMessage(errorPayload, response.status))
+    throw new Error(extractApiErrorMessage(errorPayload))
   }
 
   return parseJson<TResponse>(response)
@@ -201,7 +138,6 @@ export const authApi = {
     })
   },
   register(firstName: string, lastName: string, email: string, password: string) {
-    console.log('Registration attempt with:', { firstName, lastName, email, passwordLength: password.length })
     return apiFetch<AuthSuccessResponse>('/auth/register', 'POST', {
       body: JSON.stringify({
         first_name: firstName,
@@ -210,12 +146,6 @@ export const authApi = {
         password,
       }),
       skipAuthHeader: true,
-    }).then(response => {
-      console.log('Registration successful:', response.success)
-      return response
-    }).catch(error => {
-      console.error('Registration failed:', error.message)
-      throw error
     })
   },
   forgotPassword(email: string) {
@@ -290,97 +220,6 @@ export const chatApi = {
     return apiFetch<DiagnosisResponse>('/diagnosis/diagnose', 'POST', {
       body: JSON.stringify(requestBody),
     })
-  },
-
-  /**
-   * Stream diagnosis response in real-time.
-   * Returns an AsyncGenerator that yields text chunks as they are generated.
-   */
-  async *diagnoseStream(payload: {
-    message: string
-    chatHistory: string
-    sessionId: string | null
-    deepSearch: boolean
-  }): AsyncGenerator<string, { sessionId: string | null }, unknown> {
-    const requestBody = {
-      patient_data: payload.message,
-      chat_history: payload.chatHistory,
-      deep_search: payload.deepSearch ?? false,
-      ...(payload.sessionId !== null && { session_id: payload.sessionId }),
-    }
-
-    const token =
-      typeof window !== 'undefined'
-        ? window.localStorage.getItem(STORAGE_KEYS.accessToken)
-        : null
-
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json',
-      'Accept': 'text/plain',
-    }
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
-    }
-
-    // Create timeout controller (2 minutes for streaming)
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 120000)
-
-    let returnedSessionId: string | null = null
-
-    try {
-      const response = await fetch(`${API_URL}/diagnosis/diagnose/stream`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(requestBody),
-        signal: controller.signal,
-      })
-
-      clearTimeout(timeoutId)
-
-      if (!response.ok) {
-        const statusMessage = extractApiErrorMessage({} as any, response.status)
-        throw new Error(statusMessage)
-      }
-
-      // Get session ID from response header for chat history continuity
-      returnedSessionId = response.headers.get('X-Session-Id') || payload.sessionId
-
-      if (!response.body) {
-        throw new Error('Streaming not supported in this browser')
-      }
-
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-
-          const chunk = decoder.decode(value, { stream: true })
-          if (chunk) {
-            // Check for stream error marker
-            if (chunk.includes('[STREAM_ERROR]:')) {
-              const errorMessage = chunk.replace('[STREAM_ERROR]:', '').trim()
-              throw new Error(`Streaming failed: ${errorMessage}`)
-            }
-            yield chunk
-          }
-        }
-      } finally {
-        reader.releaseLock()
-      }
-      
-      // Return session ID for continuity
-      return { sessionId: returnedSessionId }
-    } catch (error: any) {
-      clearTimeout(timeoutId)
-      if (error.name === 'AbortError') {
-        throw new Error('Streaming request timed out. Please try again.')
-      }
-      throw error
-    }
   },
   submitFeedback(messageId: number, feedbackType: 'helpful' | 'not_helpful') {
     return apiFetch<{

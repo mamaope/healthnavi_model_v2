@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AuthModal, type AuthMode } from './components/auth/AuthModal'
 import { ForgotPasswordModal } from './components/auth/ForgotPasswordModal'
 import { ResetPasswordModal } from './components/auth/ResetPasswordModal'
@@ -10,15 +10,13 @@ import { Header } from './components/layout/Header'
 import { Sidebar } from './components/layout/Sidebar'
 import { useChatEngine } from './hooks/useChatEngine'
 import { useAuth } from './providers/AuthProvider'
-import { useChatStore } from './store/useChatStore'
 import { APP_METADATA } from './config'
 
 export default function App() {
-  const { isAuthenticated, initializing, refreshProfile, logout } = useAuth()
+  const { isAuthenticated, initializing, refreshProfile } = useAuth()
   const {
     messages,
     isSending,
-    // isStreaming,  // Commented out - streaming disabled
     sessions,
     currentSession,
     sessionsLoading,
@@ -26,8 +24,6 @@ export default function App() {
     startNewSession,
     loadSession,
   } = useChatEngine()
-  
-  const isFetchingFollowup = useChatStore((state) => state.isFetchingFollowup)
 
   const [authModalOpen, setAuthModalOpen] = useState(false)
   const [authMode, setAuthMode] = useState<AuthMode>('login')
@@ -36,10 +32,7 @@ export default function App() {
   const [resetToken, setResetToken] = useState<string | null>(null)
   const [inputValue, setInputValue] = useState('')
   const [isDeepSearchEnabled, setIsDeepSearchEnabled] = useState(false)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const followupQuestions = useChatStore((state) => state.followupQuestions)
-  const setFollowupQuestions = useChatStore((state) => state.setFollowupQuestions)
+  const [followupQuestions, setFollowupQuestions] = useState<string[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Check for reset token or OAuth callback in URL on mount
@@ -47,12 +40,14 @@ export default function App() {
     const urlParams = new URLSearchParams(window.location.search)
     const path = window.location.pathname
     
-    // Handle password reset token
+    // Handle password reset token (can be in URL params or path)
     const resetToken = urlParams.get('token')
-    if (resetToken && path.includes('reset-password')) {
+    if (resetToken) {
       setResetToken(resetToken)
       setResetPasswordModalOpen(true)
-      window.history.replaceState({}, document.title, window.location.pathname)
+      // Clean URL but keep pathname
+      const cleanPath = path.includes('reset-password') ? '/' : window.location.pathname
+      window.history.replaceState({}, document.title, cleanPath)
       return
     }
     
@@ -61,7 +56,7 @@ export default function App() {
       const oauthToken = urlParams.get('token')
       console.log('OAuth success callback - token received:', oauthToken ? 'yes' : 'no')
       if (oauthToken) {
-        localStorage.setItem('empirico.accessToken', oauthToken)
+        localStorage.setItem('healthnavi.accessToken', oauthToken)
         console.log('OAuth token stored in localStorage')
         
         window.history.replaceState({}, document.title, '/')
@@ -95,12 +90,12 @@ export default function App() {
 
   const handleSendMessage = async (message: string) => {
     setFollowupQuestions([])
-    setInputValue('') // Clear input immediately when sending
     try {
       const result = await sendMessage({
         message,
         deepSearch: isDeepSearchEnabled,
       })
+      setInputValue('')
       if (result && result.followupQuestions) {
         setFollowupQuestions(result.followupQuestions)
       }
@@ -117,7 +112,6 @@ export default function App() {
     }, 0)
   }
 
-  // Show sample prompts when there are no messages
   const showSamplePrompts = useMemo(
     () => messages.length === 0,
     [messages.length],
@@ -147,19 +141,16 @@ export default function App() {
   }, [])
 
   return (
-    <div className={`app-wrapper ${isAuthenticated ? 'authenticated' : 'guest'} ${showSidebarForGuest ? 'guest-with-sidebar' : ''} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-      {/* Sidebar - Only visible when authenticated or guest with messages */}
-      {showSidebar && (
+    <div className={`app-wrapper ${isAuthenticated ? 'authenticated' : 'guest'}`}>
+      {/* Sidebar - Only visible when authenticated */}
+      {isAuthenticated && (
         <Sidebar
-          isOpen={mobileMenuOpen}
-          isCollapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+          isOpen={isAuthenticated}
           sessions={sessions}
           currentSessionId={currentSession?.id}
           onStartNewChat={startNewSession}
           onSelectSession={(session) => {
             void loadSession(session)
-            setMobileMenuOpen(false) // Close mobile menu after selecting
           }}
           isLoading={sessionsLoading}
           onHomeClick={() => {
@@ -172,7 +163,6 @@ export default function App() {
               setHasStartedChat(false) // Reset to show home page without sidebar for guests
             }
           }}
-          onClose={handleCloseSidebar}
         />
       )}
 
@@ -197,8 +187,6 @@ export default function App() {
               setHasStartedChat(false) // Reset to show home page without sidebar for guests
             }
           }}
-          onMenuToggle={handleToggleSidebar}
-          showMenuButton={showSidebar}
         />
 
         {/* Chat Container */}
@@ -254,7 +242,11 @@ export default function App() {
                 onToggleDeepSearch={() =>
                   setIsDeepSearchEnabled((previous) => !previous)
                 }
-                placeholder="Ask a clinical question, describe symptoms, or request guidance..."
+                placeholder={
+                  isAuthenticated
+                    ? 'Ask a clinical question, describe symptoms, or request guidance...'
+                    : 'Ask a clinical question, describe symptoms, or request guidance...'
+                }
               />
             </div>
 
@@ -368,10 +360,18 @@ export default function App() {
           onClose={() => {
             setResetPasswordModalOpen(false)
             setResetToken(null)
+            // Ensure login modal is shown after closing reset password
+            if (!isAuthenticated) {
+              setAuthMode('login')
+              setAuthModalOpen(true)
+            }
           }}
           onSuccess={() => {
             setResetPasswordModalOpen(false)
             setResetToken(null)
+            // Clear URL parameters
+            window.history.replaceState({}, document.title, window.location.pathname)
+            // Show login modal after successful reset
             setAuthMode('login')
             setAuthModalOpen(true)
           }}

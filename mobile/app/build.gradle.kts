@@ -66,6 +66,7 @@ dependencies {
     
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.play.services)
     
     // DataStore
     implementation(libs.androidx.datastore.preferences)

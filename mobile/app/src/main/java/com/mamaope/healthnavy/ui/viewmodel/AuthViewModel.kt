@@ -14,7 +14,9 @@ data class AuthUiState(
     val isLoading: Boolean = false,
     val isAuthenticated: Boolean = false,
     val currentUser: User? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val forgotPasswordSuccess: Boolean = false,
+    val resetPasswordSuccess: Boolean = false
 )
 
 class AuthViewModel(application: Application) : AndroidViewModel(application) {
@@ -108,13 +110,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
             authRepository.googleSignIn(idToken)
                 .onSuccess { response ->
-                    // Get the user from the repository's current state
-                    val user = authRepository.currentUserValue
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        isAuthenticated = user != null,
-                        currentUser = user
-                    )
+                    // The repository updates _currentUser.value synchronously, which triggers
+                    // the flow collector in init block to update _uiState automatically
+                    // Just set loading to false - the flow collector will handle isAuthenticated and currentUser
+                    _uiState.value = _uiState.value.copy(isLoading = false)
                 }
                 .onFailure { e ->
                     _uiState.value = _uiState.value.copy(
@@ -123,6 +122,60 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
         }
+    }
+    
+    fun forgotPassword(email: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isLoading = true, 
+                errorMessage = null,
+                forgotPasswordSuccess = false
+            )
+            authRepository.forgotPassword(email)
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        forgotPasswordSuccess = true
+                    )
+                }
+                .onFailure { e ->
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        errorMessage = e.message ?: "Failed to send reset email"
+                    )
+                }
+        }
+    }
+    
+    fun resetPassword(token: String, newPassword: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isLoading = true,
+                errorMessage = null,
+                resetPasswordSuccess = false
+            )
+            authRepository.resetPassword(token, newPassword)
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        resetPasswordSuccess = true
+                    )
+                }
+                .onFailure { e ->
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        errorMessage = e.message ?: "Failed to reset password"
+                    )
+                }
+        }
+    }
+    
+    fun clearForgotPasswordSuccess() {
+        _uiState.value = _uiState.value.copy(forgotPasswordSuccess = false)
+    }
+    
+    fun clearResetPasswordSuccess() {
+        _uiState.value = _uiState.value.copy(resetPasswordSuccess = false)
     }
 }
 

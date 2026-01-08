@@ -6,8 +6,6 @@ interface HeaderProps {
   onSignIn: () => void
   onRegister: () => void
   onHomeClick?: () => void
-  onMenuToggle?: () => void
-  showMenuButton?: boolean
 }
 
 export function Header({ onSignIn, onRegister, onHomeClick, onMenuToggle, showMenuButton = false }: HeaderProps) {
