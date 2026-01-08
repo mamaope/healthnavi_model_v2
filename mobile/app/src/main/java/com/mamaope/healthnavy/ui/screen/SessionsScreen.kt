@@ -264,13 +264,20 @@ private fun SessionCard(
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()) }
     val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.getDefault()) }
     val createdAt = remember(session.created_at) {
-        try {
-            val date = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).parse(session.created_at)
-            if (date != null) {
-                "${dateFormat.format(date)} • ${timeFormat.format(date)}"
-            } else session.created_at
-        } catch (_: Exception) {
-            session.created_at
+        val createdDate = session.created_at
+        if (createdDate.isNullOrBlank()) {
+            "Unknown date"
+        } else {
+            try {
+                val date = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).parse(createdDate)
+                if (date != null) {
+                    "${dateFormat.format(date)} • ${timeFormat.format(date)}"
+                } else {
+                    createdDate
+                }
+            } catch (_: Exception) {
+                createdDate
+            }
         }
     }
 

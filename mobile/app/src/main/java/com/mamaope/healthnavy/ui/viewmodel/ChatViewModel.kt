@@ -86,19 +86,15 @@ class ChatViewModel : ViewModel() {
             chatRepository.clearMessages()
             chatRepository.createSession(sessionName)
                 .onSuccess { session ->
-                    // Session is already set in repository, just load messages
-                    chatRepository.getSessionMessages(session.id)
-                        .onSuccess {
-                            _uiState.value = _uiState.value.copy(isLoading = false)
-                            // Reload sessions to update the list
-                            loadSessions()
-                        }
-                        .onFailure { e ->
-                            _uiState.value = _uiState.value.copy(
-                                isLoading = false,
-                                errorMessage = e.message ?: "Failed to load messages"
-                            )
-                        }
+                    // Session is already set in repository
+                    // For a new session, messages will be empty, so we don't need to load them
+                    // Just update UI state and reload sessions list
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        currentSession = session
+                    )
+                    // Reload sessions to update the list
+                    loadSessions()
                 }
                 .onFailure { e ->
                     _uiState.value = _uiState.value.copy(
@@ -192,7 +188,7 @@ class ChatViewModel : ViewModel() {
                     val aiMessage = ChatMessage(
                         id = (System.currentTimeMillis() + 1).toString(),
                         author = MessageAuthor.ASSISTANT,
-                        content = response.data.model_response,
+                        content = response.data.model_response ?: "",
                         diagnosisComplete = response.data.diagnosis_complete ?: false,
                         createdAt = System.currentTimeMillis().toString(),
                         messageId = response.data.message_id

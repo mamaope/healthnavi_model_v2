@@ -24,8 +24,8 @@ object MessageFormatter {
     /**
      * Main entry point for formatting AI responses
      */
-    fun formatMessage(content: String): AnnotatedString {
-        if (content.isBlank()) return AnnotatedString("")
+    fun formatMessage(content: String?): AnnotatedString {
+        if (content.isNullOrBlank()) return AnnotatedString("")
         
         val trimmed = content.trim()
         

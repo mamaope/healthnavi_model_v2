@@ -368,16 +368,17 @@ fun MessageBubble(
             }
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
+                val content = message.content ?: ""
                 if (message.author == MessageAuthor.ASSISTANT && !isError) {
                     Text(
-                        text = MessageFormatter.formatMessage(message.content),
+                        text = MessageFormatter.formatMessage(content),
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextPrimary,
                         lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
                     )
                 } else {
                     Text(
-                        text = message.content,
+                        text = content,
                         style = MaterialTheme.typography.bodyMedium,
                         color = when {
                             isError -> Error600
