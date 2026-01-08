@@ -11,7 +11,7 @@ import { Sidebar } from './components/layout/Sidebar'
 import { useChatEngine } from './hooks/useChatEngine'
 import { useAuth } from './providers/AuthProvider'
 import { useChatStore } from './store/useChatStore'
-import { APP_METADATA } from './config'
+import { APP_METADATA, STORAGE_KEYS } from './config'
 
 export default function App() {
   const { isAuthenticated, initializing, refreshProfile } = useAuth()
@@ -61,7 +61,7 @@ export default function App() {
       const oauthToken = urlParams.get('token')
       console.log('OAuth success callback - token received:', oauthToken ? 'yes' : 'no')
       if (oauthToken) {
-        localStorage.setItem('healthnavi.accessToken', oauthToken)
+        localStorage.setItem(STORAGE_KEYS.accessToken, oauthToken)
         console.log('OAuth token stored in localStorage')
         
         window.history.replaceState({}, document.title, '/')
