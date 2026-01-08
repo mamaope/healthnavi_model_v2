@@ -17,6 +17,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.filled.ThumbDown
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import com.mamaope.healthnavy.util.MessageFormatter
 import androidx.compose.runtime.*
@@ -27,7 +30,9 @@ import androidx.compose.ui.res.painterResource
 import com.mamaope.healthnavy.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.content.Intent
 import com.mamaope.healthnavy.data.model.ChatMessage
 import com.mamaope.healthnavy.data.model.MessageAuthor
 import com.mamaope.healthnavy.ui.theme.*
@@ -339,6 +344,8 @@ fun MessageBubble(
     message: ChatMessage,
     viewModel: ChatViewModel
 ) {
+    val context = LocalContext.current
+    val uiState by viewModel.uiState.collectAsState()
     val isUser = message.author == MessageAuthor.USER
     val isError = message.author == MessageAuthor.ERROR
 
@@ -390,13 +397,37 @@ fun MessageBubble(
                 }
                 if (message.author == MessageAuthor.ASSISTANT && message.messageId != null) {
                     Spacer(modifier = Modifier.height(12.dp))
+                    val feedbackState = uiState.feedback[message.messageId]
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FeedbackChip(label = "Helpful", onClick = {
-                            viewModel.submitFeedback(message.messageId, "helpful")
-                        })
-                        FeedbackChip(label = "Needs review", onClick = {
-                            viewModel.submitFeedback(message.messageId, "not_helpful")
-                        })
+                        FeedbackChip(
+                            label = "Helpful",
+                            icon = Icons.Default.ThumbUp,
+                            isActive = feedbackState == "helpful",
+                            onClick = {
+                                viewModel.submitFeedback(message.messageId!!, "helpful")
+                            }
+                        )
+                        FeedbackChip(
+                            label = "Not helpful",
+                            icon = Icons.Default.ThumbDown,
+                            isActive = feedbackState == "not_helpful",
+                            onClick = {
+                                viewModel.submitFeedback(message.messageId!!, "not_helpful")
+                            }
+                        )
+                        FeedbackChip(
+                            label = "Share",
+                            icon = Icons.Default.Share,
+                            isActive = false,
+                            onClick = {
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, message.content ?: "")
+                                    putExtra(Intent.EXTRA_SUBJECT, "HealthNavy AI Response")
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Share via"))
+                            }
+                        )
                     }
                 }
             }
@@ -405,21 +436,36 @@ fun MessageBubble(
 }
 
 @Composable
-private fun FeedbackChip(label: String, onClick: () -> Unit) {
+private fun FeedbackChip(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    isActive: Boolean = false,
+    onClick: () -> Unit
+) {
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(16.dp),
-        color = SurfaceLight,
-        border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
-        modifier = Modifier.height(32.dp)
+        color = if (isActive) Primary500 else SurfaceLight,
+        border = androidx.compose.foundation.BorderStroke(
+            width = if (isActive) 2.dp else 1.dp,
+            color = if (isActive) Primary500 else BorderLight
+        ),
+        modifier = Modifier.size(40.dp),
+        shadowElevation = if (isActive) 4.dp else 0.dp
     ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Medium,
-            color = TextSecondary,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-        )
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    modifier = Modifier.size(20.dp),
+                    tint = if (isActive) Color.White else TextSecondary
+                )
+            }
+        }
     }
 }
 
