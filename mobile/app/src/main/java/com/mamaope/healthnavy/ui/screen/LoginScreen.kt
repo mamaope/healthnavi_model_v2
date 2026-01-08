@@ -3,7 +3,10 @@ package com.mamaope.healthnavy.ui.screen
 import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -14,6 +17,10 @@ import androidx.compose.runtime.*
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import com.mamaope.healthnavy.R
@@ -25,7 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
-import com.mamaope.healthnavy.ui.theme.PrimaryTeal
+import com.mamaope.healthnavy.ui.theme.*
 import com.mamaope.healthnavy.ui.viewmodel.AuthViewModel
 import com.mamaope.healthnavy.util.GoogleSignInHelper
 import kotlinx.coroutines.tasks.await
@@ -44,32 +51,37 @@ fun LoginScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     
+    val logoScale by animateFloatAsState(
+        targetValue = if (uiState.isLoading) 0.95f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "logoScale"
+    )
+    
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (uiState.isLoading) 0.7f else 1f,
+        label = "contentAlpha"
+    )
+    
     LaunchedEffect(uiState.isAuthenticated) {
         if (uiState.isAuthenticated) {
             onLoginSuccess()
         }
     }
     
-    // Google Sign-In launcher
     val googleSignInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-            // Use coroutine scope to handle the async task properly
             coroutineScope.launch {
                 try {
                     val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-                    // Use await() to properly handle the async task
                     val account = task.await()
                     account?.idToken?.let { idToken ->
-                        // ID token received, proceed with sign-in
                         viewModel.googleSignIn(idToken)
                     } ?: run {
-                        // ID token is null - this shouldn't happen but handle gracefully
                         viewModel.setError("Google Sign-In failed: No ID token received")
                     }
                 } catch (e: ApiException) {
-                    // Handle Google Sign-In API exceptions
                     val errorMessage = when (e.statusCode) {
                         7 -> "Network error. Please check your connection."
                         12501 -> "Sign in cancelled"
@@ -80,14 +92,11 @@ fun LoginScreen(
                     }
                     viewModel.setError(errorMessage)
                 } catch (e: Exception) {
-                    // Handle any other exceptions
                     viewModel.setError("Google Sign-In error: ${e.message ?: "Unknown error"}")
                 }
             }
         } else {
-            // User cancelled or sign-in failed
             if (result.resultCode == Activity.RESULT_CANCELED) {
-                // User cancelled - don't show error, just clear any previous errors
                 viewModel.clearError()
             } else {
                 viewModel.setError("Google Sign-In was cancelled or failed")
@@ -101,56 +110,78 @@ fun LoginScreen(
         googleSignInLauncher.launch(signInIntent)
     }
     
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(BackgroundLight)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 24.dp),
+                .padding(24.dp)
+                .alpha(contentAlpha),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // Logo and Branding
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.weight(0.3f))
             
+            // Logo
             Image(
                 painter = painterResource(id = R.drawable.logo),
                 contentDescription = "HealthNavy Logo",
                 modifier = Modifier
                     .height(120.dp)
-                    .widthIn(max = 300.dp)
+                    .widthIn(max = 280.dp)
+                    .scale(logoScale)
             )
             
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(32.dp))
             
             Text(
-                text = "AI-Powered Healthcare Assistant",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(bottom = 48.dp)
+                text = "Welcome Back",
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
             )
             
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Text(
+                text = "Sign in to continue your healthcare journey",
+                style = MaterialTheme.typography.bodyLarge,
+                color = TextSecondary,
+                textAlign = TextAlign.Center
+            )
+            
+            Spacer(modifier = Modifier.height(48.dp))
+            
             // Error Message
-            if (uiState.errorMessage != null) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    ),
-                    shape = RoundedCornerShape(16.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Text(
-                        text = uiState.errorMessage!!,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(16.dp)
-                    )
+            AnimatedVisibility(
+                visible = uiState.errorMessage != null,
+                enter = fadeIn() + slideInVertically(),
+                exit = fadeOut() + slideOutVertically()
+            ) {
+                uiState.errorMessage?.let { error ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 20.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Error500.copy(alpha = 0.1f)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            Error500.copy(alpha = 0.3f)
+                        )
+                    ) {
+                        Text(
+                            text = error,
+                            color = Error600,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
                 }
             }
             
@@ -158,17 +189,21 @@ fun LoginScreen(
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it },
-                label = { Text("Email Address") },
-                placeholder = { Text("Enter your email") },
+                label = { Text("Email", fontWeight = FontWeight.Medium) },
+                placeholder = { Text("Enter your email", color = TextTertiary) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 16.dp),
                 singleLine = true,
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = PrimaryTeal,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-                    focusedLabelColor = PrimaryTeal
+                    focusedBorderColor = Primary500,
+                    unfocusedBorderColor = BorderLight,
+                    focusedLabelColor = Primary500,
+                    focusedContainerColor = SurfaceLight,
+                    unfocusedContainerColor = SurfaceLight,
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary
                 )
             )
             
@@ -176,27 +211,31 @@ fun LoginScreen(
             OutlinedTextField(
                 value = password,
                 onValueChange = { password = it },
-                label = { Text("Password") },
-                placeholder = { Text("Enter your password") },
+                label = { Text("Password", fontWeight = FontWeight.Medium) },
+                placeholder = { Text("Enter your password", color = TextTertiary) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 24.dp),
                 singleLine = true,
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(12.dp),
                 visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = {
                     IconButton(onClick = { passwordVisible = !passwordVisible }) {
                         Icon(
                             imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                             contentDescription = if (passwordVisible) "Hide password" else "Show password",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = TextSecondary
                         )
                     }
                 },
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = PrimaryTeal,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-                    focusedLabelColor = PrimaryTeal
+                    focusedBorderColor = Primary500,
+                    unfocusedBorderColor = BorderLight,
+                    focusedLabelColor = Primary500,
+                    focusedContainerColor = SurfaceLight,
+                    unfocusedContainerColor = SurfaceLight,
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary
                 )
             )
             
@@ -207,20 +246,24 @@ fun LoginScreen(
                     .fillMaxWidth()
                     .height(56.dp),
                 enabled = !uiState.isLoading && email.isNotBlank() && password.isNotBlank(),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = PrimaryTeal,
-                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                    containerColor = Primary500,
+                    disabledContainerColor = Gray200,
+                    contentColor = Color.White,
+                    disabledContentColor = TextDisabled
                 ),
                 elevation = ButtonDefaults.buttonElevation(
                     defaultElevation = 2.dp,
-                    pressedElevation = 0.dp
+                    pressedElevation = 0.dp,
+                    disabledElevation = 0.dp
                 )
             ) {
                 if (uiState.isLoading) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(24.dp),
-                        color = MaterialTheme.colorScheme.onPrimary
+                        color = Color.White,
+                        strokeWidth = 2.5.dp
                     )
                 } else {
                     Text(
@@ -231,30 +274,33 @@ fun LoginScreen(
                 }
             }
             
+            Spacer(modifier = Modifier.height(24.dp))
+            
             // Divider
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 24.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 HorizontalDivider(
                     modifier = Modifier.weight(1f),
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                    color = BorderLight,
                     thickness = 1.dp
                 )
                 Text(
                     text = "OR",
                     modifier = Modifier.padding(horizontal = 16.dp),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = TextTertiary,
+                    fontWeight = FontWeight.Medium
                 )
                 HorizontalDivider(
                     modifier = Modifier.weight(1f),
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                    color = BorderLight,
                     thickness = 1.dp
                 )
             }
+            
+            Spacer(modifier = Modifier.height(24.dp))
             
             // Google Sign-In Button
             OutlinedButton(
@@ -263,19 +309,24 @@ fun LoginScreen(
                     .fillMaxWidth()
                     .height(56.dp),
                 enabled = !uiState.isLoading,
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.onSurface
+                    contentColor = TextPrimary,
+                    containerColor = SurfaceLight
+                ),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    BorderLight
                 )
             ) {
                 Text(
                     "Continue with Google",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.SemiBold
                 )
             }
             
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(32.dp))
             
             // Sign Up Link
             Row(
@@ -285,19 +336,23 @@ fun LoginScreen(
                 Text(
                     text = "Don't have an account? ",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = TextSecondary
                 )
-                TextButton(onClick = onNavigateToRegister) {
+                TextButton(
+                    onClick = onNavigateToRegister,
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = Primary500
+                    )
+                ) {
                     Text(
                         "Sign Up",
                         style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = PrimaryTeal
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }
             
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.weight(0.2f))
         }
     }
 }

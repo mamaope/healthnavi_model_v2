@@ -2,68 +2,107 @@ package com.mamaope.healthnavy.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// HealthNavy Medical Brand Colors - Matching Frontend
-// Primary: Medical Teal (#16a085) - Trust & Action
-val PrimaryTeal = Color(0xFF16A085)      // Primary-500
-val PrimaryTealLight = Color(0xFF33AF9F)  // Primary-400
-val PrimaryTealDark = Color(0xFF12806A)   // Primary-600
-val PrimaryTealDarker = Color(0xFF0E604F) // Primary-700
+// Cohesive Modern Color Palette - Healthcare Professional
+// Primary: Trustworthy Teal-Green
+val Primary500 = Color(0xFF0D9488)      // Main primary - Teal
+val Primary400 = Color(0xFF2DD4BF)     // Light primary
+val Primary600 = Color(0xFF0F766E)     // Dark primary
+val Primary700 = Color(0xFF115E59)     // Darker primary
 
-// Legacy name for compatibility
-val PrimaryBlue = PrimaryTeal
-val PrimaryBlueLight = PrimaryTealLight
-val PrimaryBlueDark = PrimaryTealDark
-val PrimaryBlueDarker = PrimaryTealDarker
+// Secondary: Calming Blue
+val Secondary500 = Color(0xFF3B82F6)   // Main secondary - Blue
+val Secondary400 = Color(0xFF60A5FA)  // Light secondary
+val Secondary600 = Color(0xFF2563EB)   // Dark secondary
 
-// Accent: Warm Coral - Attention, important actions
-val AccentCoral = Color(0xFFF97316) // Accent-500
-val AccentCoralLight = Color(0xFFFB923C) // Accent-400
-val AccentCoralDark = Color(0xFFEA580C) // Accent-600
+// Accent: Warm Orange (for CTAs)
+val Accent500 = Color(0xFFF97316)      // Main accent
+val Accent400 = Color(0xFFFB923C)     // Light accent
+val Accent600 = Color(0xFFEA580C)     // Dark accent
 
-// Success: Soft Green - Healing, wellness, positive outcomes
-val SuccessGreen = Color(0xFF22C55E) // Secondary-500
-val SuccessGreenLight = Color(0xFF4ADE80) // Secondary-400
-val SuccessGreenDark = Color(0xFF16A34A) // Secondary-600
+// Success: Green
+val Success500 = Color(0xFF10B981)
+val Success400 = Color(0xFF34D399)
+val Success600 = Color(0xFF059669)
 
-// Error: Muted Red - Alerts without alarm
-val ErrorRed = Color(0xFFEF4444) // Error-500
-val ErrorRedLight = Color(0xFFF87171) // Error-400
-val ErrorRedDark = Color(0xFFDC2626) // Error-600
+// Error: Red
+val Error500 = Color(0xFFEF4444)
+val Error400 = Color(0xFFF87171)
+val Error600 = Color(0xFFDC2626)
 
-// Warning: Soft Amber - Caution, review needed
-val WarningAmber = Color(0xFFEAB308) // Warning-500
-val WarningAmberLight = Color(0xFFFACC15) // Warning-400
-val WarningAmberDark = Color(0xFFCA8A04) // Warning-600
+// Warning: Amber
+val Warning500 = Color(0xFFF59E0B)
+val Warning400 = Color(0xFFFBBF24)
+val Warning600 = Color(0xFFD97706)
 
-// Medical Background Color - Calm Light Gray (#f2f2f5)
-val MedicalBackground = Color(0xFFF2F2F5)  // Main app background
-val MedicalSurface = Color(0xFFFFFFFF)     // Cards, panels
-val MedicalSurfaceVariant = Color(0xFFE8E8EB) // Subtle surfaces
+// Neutral Grays - Cohesive Scale
+val Gray50 = Color(0xFFF9FAFB)    // Lightest background
+val Gray100 = Color(0xFFF3F4F6)    // Light background
+val Gray200 = Color(0xFFE5E7EB)    // Border light
+val Gray300 = Color(0xFFD1D5DB)    // Border medium
+val Gray400 = Color(0xFF9CA3AF)    // Text muted
+val Gray500 = Color(0xFF6B7280)    // Text secondary
+val Gray600 = Color(0xFF4B5563)    // Text primary (light theme)
+val Gray700 = Color(0xFF374151)    // Text strong
+val Gray800 = Color(0xFF1F2937)    // Text primary (dark theme)
+val Gray900 = Color(0xFF111827)    // Text darkest
 
-// Medical Text Color - Dark Gray (#353335)
-val MedicalTextPrimary = Color(0xFF353335)   // Primary text
-val MedicalTextSecondary = Color(0xFF5A585A) // Secondary text
-val MedicalTextTertiary = Color(0xFF7D7B7D)  // Tertiary text
-val MedicalTextMuted = Color(0xFF9A989A)     // Muted text
+// Surface Colors
+val SurfaceLight = Color(0xFFFFFFFF)   // White surface
+val SurfaceDark = Color(0xFF1F2937)    // Dark surface
+val SurfaceVariant = Color(0xFFF3F4F6) // Light variant
 
-// Neutral Colors - Medical Gray Palette (matching frontend)
-val Neutral0 = Color(0xFFFFFFFF) // White
-val Neutral50 = Color(0xFFF2F2F5) // Medical background
-val Neutral100 = Color(0xFFE8E8EB) // Subtle surfaces
-val Neutral200 = Color(0xFFD8D6D8) // Light borders
-val Neutral300 = Color(0xFFB8B6B8) // Medium borders
-val Neutral400 = Color(0xFF9A989A) // Muted text
-val Neutral500 = Color(0xFF7D7B7D) // Tertiary text
-val Neutral600 = Color(0xFF5A585A) // Secondary text
-val Neutral700 = Color(0xFF353335) // Primary text
-val Neutral800 = Color(0xFF2A282A)
-val Neutral900 = Color(0xFF1F1D1F)
+// Background Colors
+val BackgroundLight = Color(0xFFF9FAFB) // Light background
+val BackgroundDark = Color(0xFF111827)  // Dark background
 
-// Legacy colors for compatibility
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+// Border Colors
+val BorderLight = Color(0xFFE5E7EB)     // Light border
+val BorderMedium = Color(0xFFD1D5DB)    // Medium border
+val BorderDark = Color(0xFF9CA3AF)      // Dark border
 
-val Purple40 = PrimaryBlue
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = AccentCoral
+// Text Colors
+val TextPrimary = Color(0xFF111827)      // Primary text (light theme)
+val TextSecondary = Color(0xFF6B7280)   // Secondary text
+val TextTertiary = Color(0xFF9CA3AF)    // Tertiary text
+val TextDisabled = Color(0xFFD1D5DB)    // Disabled text
+
+// Legacy compatibility
+val PrimaryTeal = Primary500
+val PrimaryTealBright = Primary400
+val PrimaryTealLight = Primary400
+val PrimaryTealDark = Primary600
+val PrimaryTealDarker = Primary700
+val PrimaryTealGradientStart = Primary400
+val PrimaryTealGradientEnd = Primary500
+val PrimaryCyan = Primary400
+val PrimaryEmerald = Success500
+val SecondaryPurple = Secondary500
+val SecondaryPink = Accent500
+val AccentCoral = Accent500
+val AccentBlue = Secondary500
+val AccentBlueLight = Secondary400
+val AccentBlueDark = Secondary600
+val SuccessGreen = Success500
+val SuccessLight = Success400
+val ErrorRed = Error500
+val ErrorLight = Error400
+val WarningAmber = Warning500
+val WarningLight = Warning400
+val NeutralWhite = SurfaceLight
+val Neutral50 = Gray50
+val Neutral100 = Gray100
+val Neutral200 = Gray200
+val Neutral300 = Gray300
+val Neutral400 = Gray400
+val Neutral500 = Gray500
+val Neutral600 = Gray600
+val Neutral700 = Gray700
+val Neutral800 = Gray800
+val Neutral900 = Gray900
+val GradientStart = Primary400
+val GradientMid = Primary500
+val GradientEnd = Primary600
+val GradientPurpleStart = Secondary400
+val GradientPurpleEnd = Secondary500
+val GlassLight = Color(0x80FFFFFF)
+val GlassDark = Color(0x80000000)
