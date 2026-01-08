@@ -238,9 +238,7 @@ export default function App() {
               )}
             </div>
 
-            {/* Input Area - Fixed at bottom */}
             <div className="input-section">
-              {/* Logo - Only on homepage (no messages) */}
               {showSamplePrompts && (
                 <div className="homepage-logo">
                   <img src="/logo.png" alt="Empirico" />
@@ -258,18 +256,8 @@ export default function App() {
                 }
                 placeholder="Ask a clinical question, describe symptoms, or request guidance..."
               />
-              {/* Disclaimer - Right under input area */}
-              <div className="disclaimer-bar">
-                <i className="fas fa-shield-alt" />
-                <span>
-                  {isAuthenticated
-                    ? 'AI-assisted clinical decision support. Always verify with professional judgment and institutional protocols.'
-                    : 'This platform provides clinical decision support for trained professionals and does not replace independent clinical judgment.'}
-                </span>
-              </div>
             </div>
 
-            {/* Sample Prompts - Below disclaimer, only show when no messages */}
             {showSamplePrompts && (
               <div className="prompts-section">
                 <SamplePrompts
@@ -278,10 +266,33 @@ export default function App() {
                 />
               </div>
             )}
+
+            {showSamplePrompts && (
+              <div className="disclaimer-bar-bottom">
+                <i className="fas fa-shield-alt" />
+                <span>
+                  {isAuthenticated
+                    ? 'AI-assisted clinical decision support. Always verify with professional judgment and institutional protocols.'
+                    : 'This platform provides clinical decision support for trained professionals and does not replace independent clinical judgment.'}
+                </span>
+              </div>
+            )}
+
+            {/* Disclaimer - Right under input area when there are messages */}
+            {!showSamplePrompts && (
+              <div className="disclaimer-bar">
+                <i className="fas fa-shield-alt" />
+                <span>
+                  {isAuthenticated
+                    ? 'AI-assisted clinical decision support. Always verify with professional judgment and institutional protocols.'
+                    : 'This platform provides clinical decision support for trained professionals and does not replace independent clinical judgment.'}
+                </span>
+              </div>
+            )}
           </div>
         </main>
 
-        {/* Footer - Only for guest users */}
+        {/* Footer  */}
         {!isAuthenticated && (
           <footer className="app-footer">
             <div className="footer-content">

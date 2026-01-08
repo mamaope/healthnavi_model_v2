@@ -5976,21 +5976,7 @@ textarea {
 }
 
 .sample-questions-header {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-2);
-    margin-bottom: var(--space-2);
-    color: var(--text-primary);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-semibold);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
-.sample-questions-header i {
-    color: var(--primary);
-    font-size: var(--font-size-base);
+    display: none; /* Hide the entire header including icon */
 }
 
 .sample-accordion {
@@ -7091,6 +7077,19 @@ textarea {
     animation: slideDown 0.2s ease-out;
 }
 
+/* Desktop: dropdown appears below */
+@media (min-width: 769px) {
+    .header-menu-dropdown {
+        position: absolute !important;
+        top: calc(100% + var(--space-2)) !important;
+        bottom: auto !important;
+        left: auto !important;
+        right: 0 !important;
+        border-radius: var(--radius-xl) !important;
+        animation: slideDown 0.2s ease-out !important;
+    }
+}
+
 @keyframes slideDown {
     from {
         opacity: 0;
@@ -7167,14 +7166,32 @@ textarea {
 
 /* Mobile responsive for header */
 @media (max-width: 768px) {
+    .header-actions-wrapper {
+        gap: 0;
+        justify-content: flex-end;
+        flex: 1;
+        min-width: 0;
+    }
+    
     .header-actions {
-        gap: var(--space-2);
+        gap: 4px !important;
+        flex-wrap: nowrap;
+        display: flex !important;
+        align-items: center;
     }
     
     .btn-outline,
     .btn-primary {
-        padding: var(--space-2) var(--space-3);
-        font-size: var(--font-size-xs);
+        padding: var(--space-2) var(--space-3) !important;
+        font-size: var(--font-size-xs) !important;
+        white-space: nowrap !important;
+        display: inline-flex !important;
+        width: 70px !important;
+        flex-shrink: 0;
+        height: 36px !important;
+        border-radius: var(--radius-lg) !important;
+        box-sizing: border-box !important;
+        justify-content: center !important;
     }
     
     .header-logo .logo-image {
@@ -7184,18 +7201,76 @@ textarea {
     .header-hamburger-btn {
         width: 36px;
         height: 36px;
+        flex-shrink: 0;
+        display: flex !important;
+        margin-left: 0 !important;
+    }
+    
+    .header-menu-container {
+        position: relative !important;
+        flex-shrink: 0;
+        margin-left: 0 !important;
+    }
+    
+    /* Extend hamburger menu to right edge */
+    .header-actions .header-menu-container {
+        margin-right: calc(-1 * var(--space-3)) !important;
+    }
+    
+    .header-user-section .header-menu-container {
+        margin-right: calc(-1 * var(--space-3)) !important;
     }
     
     .header-menu-dropdown {
-        position: fixed;
-        top: auto;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        min-width: 100%;
-        border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
-        animation: slideUp 0.3s ease-out;
-        padding: var(--space-4);
+        position: absolute !important;
+        top: calc(100% + var(--space-2)) !important;
+        bottom: auto !important;
+        left: auto !important;
+        right: 0 !important;
+        min-width: 220px !important;
+        max-width: calc(100vw - var(--space-4)) !important;
+        border-radius: var(--radius-xl) !important;
+        animation: slideDown 0.2s ease-out !important;
+        padding: var(--space-2) !important;
+        z-index: 10000 !important;
+        box-shadow: var(--shadow-lg) !important;
+        max-height: 70vh !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+    }
+    
+    .header-menu-theme-row,
+    .header-menu-item {
+        width: 100% !important;
+        justify-content: space-between !important;
+        padding: var(--space-3) var(--space-4) !important;
+    }
+    
+    .header-menu-theme-row {
+        padding: var(--space-3) var(--space-4) !important;
+    }
+    
+    .header-menu-divider {
+        margin: var(--space-3) var(--space-4) !important;
+    }
+    
+    .header-menu-item:last-child {
+        margin-bottom: var(--space-4) !important;
+    }
+    
+    .header-menu-dropdown > *:last-child {
+        padding-bottom: var(--space-4) !important;
+    }
+    
+    @keyframes slideUp {
+        from {
+            transform: translateY(100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateY(0);
+            opacity: 1;
+        }
     }
     
     .glass-input-container {
@@ -7216,11 +7291,24 @@ textarea {
 
 @media (max-width: 480px) {
     .btn-outline {
-        display: none;
+        display: inline-flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
     }
     
     .header-logo .logo-image {
         height: 24px;
+    }
+    
+    .btn-outline,
+    .btn-primary {
+        padding: var(--space-2) var(--space-3) !important;
+        font-size: var(--font-size-xs) !important;
+        height: 36px !important;
+        border-radius: var(--radius-lg) !important;
+        width: 70px !important;
+        box-sizing: border-box !important;
+        justify-content: center !important;
     }
 }
 /* ===== UPDATED HEADER MENU STYLES ===== */
@@ -7313,6 +7401,7 @@ textarea {
     padding: var(--space-4);
     border-top: 1px solid var(--border-light);
     margin-top: auto;
+    flex-shrink: 0;
 }
 
 .sidebar-user-profile {
@@ -7689,17 +7778,6 @@ textarea {
         position: relative;
     }
     
-    .header-menu-dropdown {
-        position: fixed;
-        top: auto;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        margin: 0;
-        border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
-        animation: slideUp 0.3s ease-out;
-    }
-    
     .sidebar-user-dropdown {
         position: fixed;
         bottom: 80px;
@@ -7766,7 +7844,6 @@ textarea {
     justify-content: space-between;
     gap: var(--space-4);
     min-height: 56px;
-    max-height: 56px;
 }
 
 /* Mobile menu button */
@@ -7801,8 +7878,87 @@ textarea {
     }
     
     .header-content {
-        padding: var(--space-2) var(--space-3);
-        gap: var(--space-2);
+        padding: var(--space-2) var(--space-3) var(--space-2) var(--space-3) !important;
+        gap: var(--space-2) !important;
+        min-width: 0 !important;
+        overflow: visible !important;
+        max-height: none !important;
+        min-height: 48px !important;
+    }
+    
+    .header-brand {
+        flex-shrink: 0;
+        min-width: 0;
+    }
+    
+    .header-logo {
+        min-width: 0;
+    }
+    
+    .header-logo .logo-image {
+        max-height: 32px;
+        width: auto;
+    }
+    
+    /* Ensure buttons are visible and not cut off */
+    .header-actions-wrapper {
+        overflow: visible !important;
+    }
+    
+    .header-actions {
+        overflow: visible !important;
+    }
+    
+    /* Ensure login button is always visible */
+    .btn-outline {
+        display: inline-flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+    }
+}
+
+/* Extra small mobile screens */
+@media (max-width: 480px) {
+    .header-content {
+        padding: var(--space-2) !important;
+        gap: var(--space-1) !important;
+    }
+    
+    .btn-outline,
+    .btn-primary {
+        padding: var(--space-2) var(--space-3) !important;
+        font-size: var(--font-size-xs) !important;
+        width: 70px !important;
+        height: 36px !important;
+        border-radius: var(--radius-lg) !important;
+        box-sizing: border-box !important;
+        justify-content: center !important;
+    }
+    
+    .header-hamburger-btn {
+        width: 36px !important;
+        height: 36px !important;
+        margin-left: 0 !important;
+    }
+    
+    .header-menu-container {
+        margin-left: 0 !important;
+        position: relative !important;
+    }
+    
+    /* Extend hamburger menu to right edge on small screens */
+    .header-actions .header-menu-container {
+        margin-right: calc(-1 * var(--space-2)) !important;
+    }
+    
+    .header-user-section .header-menu-container {
+        margin-right: calc(-1 * var(--space-2)) !important;
+    }
+    
+    .header-menu-dropdown {
+        max-width: calc(100vw - var(--space-2)) !important;
+        right: 0 !important;
+        left: auto !important;
     }
 }
 
@@ -7844,13 +8000,17 @@ textarea {
 .header-actions-wrapper {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: var(--space-3);
+    flex: 1;
+    margin-left: auto;
 }
 
 .header-actions {
     display: flex;
     align-items: center;
     gap: var(--space-3);
+    flex-shrink: 0;
 }
 
 .header-user-section {
@@ -7919,7 +8079,7 @@ textarea {
     }
     
     .header-actions {
-        gap: var(--space-2);
+        gap: 4px !important;
     }
     
     .btn-ghost span,
@@ -8064,9 +8224,11 @@ textarea {
 .sidebar-content {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     padding: var(--space-4) var(--space-4);
     scrollbar-width: thin;
     scrollbar-color: var(--border-light) transparent;
+    min-height: 0;
 }
 
 .sidebar-content::-webkit-scrollbar {
@@ -8410,7 +8572,6 @@ textarea {
    - Better visual hierarchy
    ============================================================ */
 
-/* ===== ENHANCED LAYOUT SYSTEM ===== */
 .app-wrapper {
     display: flex !important;
     height: 100vh !important;
@@ -8494,11 +8655,14 @@ textarea {
 }
 
 .chat-wrapper.empty {
-    justify-content: flex-start !important;
+    justify-content: center !important;
     align-items: center !important;
-    padding: var(--space-2) var(--space-4) var(--space-8) var(--space-4) !important;
+    padding: var(--space-6) var(--space-4) var(--space-20) var(--space-4) !important;
     gap: var(--space-3) !important;
-    padding-top: var(--space-6) !important;
+    min-height: calc(100vh - 80px) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    position: relative !important;
 }
 
 /* Hide scrollbar when no messages */
@@ -8511,7 +8675,7 @@ textarea {
 .chat-wrapper.empty .input-section {
     position: relative !important;
     flex: 0 0 auto !important;
-    margin-top: var(--space-2) !important;
+    margin: 0 !important;
 }
 
 /* Make prompts section scrollable within its space */
@@ -8521,15 +8685,49 @@ textarea {
     overflow-y: visible !important;
     overflow-x: hidden !important;
     width: 100% !important;
-    padding-bottom: var(--space-8) !important;
-    margin-bottom: var(--space-4) !important;
+    padding-bottom: 0 !important;
+    margin: 0 !important;
+}
+
+.chat-wrapper.empty .disclaimer-bar-bottom {
+    position: absolute !important;
+    bottom: var(--space-4) !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0.5rem !important;
+    padding: var(--space-2) var(--space-4) !important;
+    background: transparent !important;
+    color: var(--text-secondary) !important;
+    font-size: var(--font-size-xs) !important;
+    text-align: center !important;
+    max-width: 700px !important;
+    width: calc(100% - var(--space-8)) !important;
+    margin: 0 !important;
+}
+
+.disclaimer-bar-bottom i {
+    color: var(--primary) !important;
+    font-size: var(--font-size-sm) !important;
+    flex-shrink: 0 !important;
+    margin-right: 0.25rem !important;
+}
+
+.disclaimer-bar-bottom span {
+    line-height: var(--line-height-relaxed) !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
 }
 
 .chat-wrapper.has-messages {
     padding: var(--space-4) var(--space-6) 0 !important;
 }
 
-/* ===== MODERN MESSAGES CONTAINER ===== */
+/* =====  MESSAGES CONTAINER ===== */
 .messages-container {
     flex: 1 1 auto;
     overflow-y: auto;
@@ -8567,7 +8765,7 @@ textarea {
     background: var(--border-medium);
 }
 
-/* ===== MODERN MESSAGE CARDS ===== */
+/* =====  MESSAGE CARDS ===== */
 .message {
     display: flex;
     flex-direction: column;
@@ -8736,7 +8934,6 @@ textarea {
     position: relative;
 }
 
-/* Modern Input Container - Overrides old styles */
 .input-container {
     display: flex !important;
     flex-direction: column !important;
@@ -9038,7 +9235,7 @@ textarea {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.25rem;
+    gap: 0.5rem;
     padding: var(--space-2) var(--space-4);
     background: transparent;
     border-top: none;
@@ -9056,6 +9253,7 @@ textarea {
     color: var(--primary);
     font-size: var(--font-size-sm);
     flex-shrink: 0;
+    margin-right: 0.25rem;
 }
 
 .disclaimer-bar span {
@@ -9207,7 +9405,7 @@ textarea {
         font-size: 11px;
         padding: var(--space-2) var(--space-3);
         text-align: center;
-        gap: var(--space-1);
+        gap: 0.5rem;
     }
     
     .disclaimer-bar span {
@@ -9216,6 +9414,29 @@ textarea {
     
     .disclaimer-bar i {
         font-size: var(--font-size-sm);
+        margin-right: 0.25rem;
+    }
+
+    .chat-wrapper.empty {
+        padding-bottom: var(--space-16) !important;
+    }
+
+    .chat-wrapper.empty .disclaimer-bar-bottom {
+        bottom: var(--space-2) !important;
+        width: calc(100% - var(--space-4)) !important;
+        padding: var(--space-2) var(--space-2) !important;
+        font-size: 10px !important;
+    }
+
+    .disclaimer-bar-bottom span {
+        font-size: 10px !important;
+        line-height: 1.4 !important;
+        white-space: nowrap !important;
+    }
+
+    .disclaimer-bar-bottom i {
+        font-size: var(--font-size-xs) !important;
+        margin-right: 0.25rem !important;
     }
     
     .modern-header {
@@ -9404,7 +9625,7 @@ textarea {
     .disclaimer-bar {
         font-size: 10px;
         flex-wrap: wrap;
-        gap: var(--space-1);
+        gap: 0.5rem;
         padding: var(--space-2);
         line-height: 1.4;
     }
@@ -9416,6 +9637,29 @@ textarea {
     
     .disclaimer-bar i {
         font-size: var(--font-size-xs);
+        margin-right: 0.25rem;
+    }
+
+    .chat-wrapper.empty {
+        padding-bottom: var(--space-14) !important;
+    }
+
+    .chat-wrapper.empty .disclaimer-bar-bottom {
+        bottom: var(--space-2) !important;
+        width: calc(100% - var(--space-4)) !important;
+        padding: var(--space-1) var(--space-2) !important;
+        font-size: 9px !important;
+    }
+    
+    .disclaimer-bar-bottom span {
+        font-size: 9px !important;
+        line-height: 1.3 !important;
+        white-space: nowrap !important;
+    }
+    
+    .disclaimer-bar-bottom i {
+        font-size: var(--font-size-xs) !important;
+        margin-right: 0.25rem !important;
     }
     
     /* Footer improvements */
@@ -9581,9 +9825,19 @@ textarea {
     .chat-wrapper.empty .prompts-section {
         max-width: 100% !important;
     }
+
+    .disclaimer-bar-bottom {
+        padding: var(--space-2) var(--space-3) !important;
+        font-size: 11px !important;
+        margin: var(--space-3) auto var(--space-4) auto !important;
+    }
+
+    .disclaimer-bar-bottom span {
+        font-size: 11px !important;
+        line-height: 1.4 !important;
+    }
 }
 
-/* ===== FIX: CHAT INPUT SAME WIDTH AS MODEL RESPONSES ===== */
 /* When in chat mode (has messages), input should match message container width exactly */
 .chat-wrapper.has-messages .input-section {
     width: 100% !important;
@@ -9618,7 +9872,7 @@ textarea {
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    gap: var(--space-1) !important;
+    gap: 0.5rem !important;
     text-align: center !important;
     font-size: 11px !important;
     color: var(--text-secondary) !important;
@@ -9627,6 +9881,7 @@ textarea {
 
 .chat-wrapper.has-messages .disclaimer-bar i {
     flex-shrink: 0 !important;
+    margin-right: 0.25rem !important;
 }
 
 .chat-wrapper.has-messages .disclaimer-bar span {
