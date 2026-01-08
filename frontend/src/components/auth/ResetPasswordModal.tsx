@@ -63,7 +63,7 @@ export function ResetPasswordModal({
     return () => window.removeEventListener('keydown', handleKeydown)
   }, [isOpen, onClose])
 
-  const onSubmit = handleSubmit(async (values) => {
+  const onSubmit = handleSubmit(async (values: ResetPasswordFormValues) => {
     if (values.newPassword !== values.confirmPassword) {
       setServerError('Passwords do not match.')
       return
@@ -74,9 +74,9 @@ export function ResetPasswordModal({
     setIsSubmitting(true)
     try {
       const response = await authApi.resetPassword(token, values.newPassword)
-      if (response.success) {
-        setServerSuccess(response.data?.message || 'Password reset successfully!')
-        // Auto-close and show login after 2 seconds
+      if (response.success && response.data?.message) {
+        setServerSuccess(response.data.message)
+        // Auto-close and redirect to login after 2 seconds
         setTimeout(() => {
           onSuccess()
         }, 2000)
@@ -197,7 +197,7 @@ export function ResetPasswordModal({
                       style={{ paddingRight: '40px' }}
                       {...registerField('confirmPassword', {
                         required: 'Please confirm your password',
-                        validate: (value) =>
+                        validate: (value: string) =>
                           value === confirmPassword || 'Passwords do not match',
                       })}
                     />

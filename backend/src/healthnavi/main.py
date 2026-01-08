@@ -3,11 +3,20 @@ Main FastAPI application for HealthNavi AI CDSS.
 """
 
 import logging
+import sys
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import time
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)],
+    force=True  # Override any existing configuration
+)
+logger = logging.getLogger(__name__)
 
 from healthnavi.core.config import get_config
 from healthnavi.core.response_utils import create_success_response, create_error_response, ResponseTimer
@@ -15,7 +24,6 @@ from healthnavi.schemas import StandardResponse
 from healthnavi.api.v1 import auth, diagnosis, chat_sessions, partner
 
 config = get_config()
-logger = logging.getLogger(__name__)
 
 # Conditionally import transcription router
 try:
@@ -98,17 +106,19 @@ async def log_requests(request: Request, call_next):
     """Log all requests."""
     start_time = time.time()
     
-    # Log request
-    logger.info(f"Request: {request.method} {request.url}")
+    # Log request immediately when received
+    client_ip = request.client.host if request.client else "unknown"
+    logger.info(f">>> {request.method} {request.url.path} from {client_ip}")
     
-    # Process request
-    response = await call_next(request)
-    
-    # Log response
-    process_time = time.time() - start_time
-    logger.info(f"Response: {response.status_code} - {process_time:.3f}s")
-    
-    return response
+    try:
+        response = await call_next(request)
+        process_time = time.time() - start_time
+        logger.info(f"<<< {response.status_code} {request.url.path} ({process_time:.2f}s)")
+        return response
+    except Exception as e:
+        process_time = time.time() - start_time
+        logger.error(f"!!! FAILED {request.url.path} after {process_time:.2f}s: {e}")
+        raise
 
 
 # HTTPException handler

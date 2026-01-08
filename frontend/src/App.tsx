@@ -10,6 +10,7 @@ import { Header } from './components/layout/Header'
 import { Sidebar } from './components/layout/Sidebar'
 import { useChatEngine } from './hooks/useChatEngine'
 import { useAuth } from './providers/AuthProvider'
+import { useChatStore } from './store/useChatStore'
 import { APP_METADATA } from './config'
 
 export default function App() {
@@ -17,6 +18,7 @@ export default function App() {
   const {
     messages,
     isSending,
+    // isStreaming,  // Commented out - streaming disabled
     sessions,
     currentSession,
     sessionsLoading,
@@ -24,6 +26,8 @@ export default function App() {
     startNewSession,
     loadSession,
   } = useChatEngine()
+  
+  const isFetchingFollowup = useChatStore((state) => state.isFetchingFollowup)
 
   const [authModalOpen, setAuthModalOpen] = useState(false)
   const [authMode, setAuthMode] = useState<AuthMode>('login')
@@ -32,8 +36,10 @@ export default function App() {
   const [resetToken, setResetToken] = useState<string | null>(null)
   const [inputValue, setInputValue] = useState('')
   const [isDeepSearchEnabled, setIsDeepSearchEnabled] = useState(false)
-  const [followupQuestions, setFollowupQuestions] = useState<string[]>([])
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const followupQuestions = useChatStore((state) => state.followupQuestions)
+  const setFollowupQuestions = useChatStore((state) => state.setFollowupQuestions)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Check for reset token or OAuth callback in URL on mount
@@ -41,14 +47,12 @@ export default function App() {
     const urlParams = new URLSearchParams(window.location.search)
     const path = window.location.pathname
     
-    // Handle password reset token (can be in URL params or path)
+    // Handle password reset token
     const resetToken = urlParams.get('token')
-    if (resetToken) {
+    if (resetToken && path.includes('reset-password')) {
       setResetToken(resetToken)
       setResetPasswordModalOpen(true)
-      // Clean URL but keep pathname
-      const cleanPath = path.includes('reset-password') ? '/' : window.location.pathname
-      window.history.replaceState({}, document.title, cleanPath)
+      window.history.replaceState({}, document.title, window.location.pathname)
       return
     }
     
@@ -91,12 +95,12 @@ export default function App() {
 
   const handleSendMessage = async (message: string) => {
     setFollowupQuestions([])
+    setInputValue('') // Clear input immediately when sending
     try {
       const result = await sendMessage({
         message,
         deepSearch: isDeepSearchEnabled,
       })
-      setInputValue('')
       if (result && result.followupQuestions) {
         setFollowupQuestions(result.followupQuestions)
       }
@@ -113,6 +117,7 @@ export default function App() {
     }, 0)
   }
 
+  // Show sample prompts when there are no messages
   const showSamplePrompts = useMemo(
     () => messages.length === 0,
     [messages.length],
@@ -142,16 +147,19 @@ export default function App() {
   }, [])
 
   return (
-    <div className={`app-wrapper ${isAuthenticated ? 'authenticated' : 'guest'}`}>
-      {/* Sidebar - Only visible when authenticated */}
-      {isAuthenticated && (
+    <div className={`app-wrapper ${isAuthenticated ? 'authenticated' : 'guest'} ${showSidebarForGuest ? 'guest-with-sidebar' : ''} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+      {/* Sidebar - Only visible when authenticated or guest with messages */}
+      {showSidebar && (
         <Sidebar
-          isOpen={isAuthenticated}
+          isOpen={mobileMenuOpen}
+          isCollapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
           sessions={sessions}
           currentSessionId={currentSession?.id}
           onStartNewChat={startNewSession}
           onSelectSession={(session) => {
             void loadSession(session)
+            setMobileMenuOpen(false) // Close mobile menu after selecting
           }}
           isLoading={sessionsLoading}
           onHomeClick={() => {
@@ -164,6 +172,7 @@ export default function App() {
               setHasStartedChat(false) // Reset to show home page without sidebar for guests
             }
           }}
+          onClose={handleCloseSidebar}
         />
       )}
 
@@ -188,6 +197,8 @@ export default function App() {
               setHasStartedChat(false) // Reset to show home page without sidebar for guests
             }
           }}
+          onMenuToggle={handleToggleSidebar}
+          showMenuButton={showSidebar}
         />
 
         {/* Chat Container */}
@@ -196,8 +207,8 @@ export default function App() {
             {/* Messages Area */}
             <div className="messages-container">
               <MessageList messages={messages} />
-              {/* Show loading indicator when sending */}
-              <LoadingIndicator isVisible={isSending} />
+              {/* Show loading indicator when sending or fetching follow-up questions */}
+              <LoadingIndicator isVisible={isSending || isFetchingFollowup} />
               
               {/* Follow-up Questions - Below model response */}
               {followupQuestions && followupQuestions.length > 0 && messages.length > 0 && (
@@ -227,36 +238,7 @@ export default function App() {
               )}
             </div>
 
-            {/* Follow-up Questions */}
-            {followupQuestions && followupQuestions.length > 0 && (
-              <div className="followup-section">
-                <div className="followup-header">
-                  <i className="fas fa-lightbulb" />
-                  <span>Suggested Questions</span>
-                </div>
-                <div className="followup-grid">
-                  {followupQuestions.map((question, index) => (
-                    <button
-                      key={index}
-                      type="button"
-                      className="followup-card"
-                      onClick={() => {
-                        setInputValue(question)
-                        setFollowupQuestions([])
-                        textareaRef.current?.focus()
-                      }}
-                    >
-                      <i className="fas fa-arrow-right" />
-                      <span>{question}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Input Area - Fixed at bottom */}
             <div className="input-section">
-              {/* Logo - Only on homepage (no messages) */}
               {showSamplePrompts && (
                 <div className="homepage-logo">
                   <img src="/logo.png" alt="Empirico" />
@@ -272,24 +254,10 @@ export default function App() {
                 onToggleDeepSearch={() =>
                   setIsDeepSearchEnabled((previous) => !previous)
                 }
-                placeholder={
-                  isAuthenticated
-                    ? 'Ask a clinical question, describe symptoms, or request guidance...'
-                    : 'Ask a clinical question, describe symptoms, or request guidance...'
-                }
+                placeholder="Ask a clinical question, describe symptoms, or request guidance..."
               />
-              {/* Disclaimer - Right under input area */}
-              <div className="disclaimer-bar">
-                <i className="fas fa-shield-alt" />
-                <span>
-                  {isAuthenticated
-                    ? 'AI-assisted clinical decision support. Always verify with professional judgment and institutional protocols.'
-                    : 'This platform provides clinical decision support for trained professionals and does not replace independent clinical judgment.'}
-                </span>
-              </div>
             </div>
 
-            {/* Sample Prompts - Below disclaimer, only show when no messages */}
             {showSamplePrompts && (
               <div className="prompts-section">
                 <SamplePrompts
@@ -298,10 +266,33 @@ export default function App() {
                 />
               </div>
             )}
+
+            {showSamplePrompts && (
+              <div className="disclaimer-bar-bottom">
+                <i className="fas fa-shield-alt" />
+                <span>
+                  {isAuthenticated
+                    ? 'AI-assisted clinical decision support. Always verify with professional judgment and institutional protocols.'
+                    : 'This platform provides clinical decision support for trained professionals and does not replace independent clinical judgment.'}
+                </span>
+              </div>
+            )}
+
+            {/* Disclaimer - Right under input area when there are messages */}
+            {!showSamplePrompts && (
+              <div className="disclaimer-bar">
+                <i className="fas fa-shield-alt" />
+                <span>
+                  {isAuthenticated
+                    ? 'AI-assisted clinical decision support. Always verify with professional judgment and institutional protocols.'
+                    : 'This platform provides clinical decision support for trained professionals and does not replace independent clinical judgment.'}
+                </span>
+              </div>
+            )}
           </div>
         </main>
 
-        {/* Footer - Only for guest users */}
+        {/* Footer  */}
         {!isAuthenticated && (
           <footer className="app-footer">
             <div className="footer-content">
@@ -377,18 +368,10 @@ export default function App() {
           onClose={() => {
             setResetPasswordModalOpen(false)
             setResetToken(null)
-            // Ensure login modal is shown after closing reset password
-            if (!isAuthenticated) {
-              setAuthMode('login')
-              setAuthModalOpen(true)
-            }
           }}
           onSuccess={() => {
             setResetPasswordModalOpen(false)
             setResetToken(null)
-            // Clear URL parameters
-            window.history.replaceState({}, document.title, window.location.pathname)
-            // Show login modal after successful reset
             setAuthMode('login')
             setAuthModalOpen(true)
           }}
