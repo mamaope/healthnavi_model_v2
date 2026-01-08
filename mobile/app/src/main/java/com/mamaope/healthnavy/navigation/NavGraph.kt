@@ -4,19 +4,27 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mamaope.healthnavy.ui.screen.ChatScreen
 import com.mamaope.healthnavy.ui.screen.LoginScreen
 import com.mamaope.healthnavy.ui.screen.RegisterScreen
 import com.mamaope.healthnavy.ui.screen.SessionsScreen
+import com.mamaope.healthnavy.ui.screen.ForgotPasswordScreen
+import com.mamaope.healthnavy.ui.screen.ResetPasswordScreen
 import com.mamaope.healthnavy.ui.viewmodel.AuthViewModel
 import com.mamaope.healthnavy.ui.viewmodel.ChatViewModel
 
 sealed class Screen(val route: String) {
     object Login : Screen("login")
     object Register : Screen("register")
+    object ForgotPassword : Screen("forgot_password")
+    object ResetPassword : Screen("reset_password/{token}") {
+        fun createRoute(token: String) = "reset_password/$token"
+    }
     object Chat : Screen("chat")
     object Sessions : Screen("sessions")
 }
@@ -47,6 +55,9 @@ fun NavGraph(
                 onNavigateToRegister = {
                     navController.navigate(Screen.Register.route)
                 },
+                onNavigateToForgotPassword = {
+                    navController.navigate(Screen.ForgotPassword.route)
+                },
                 viewModel = authViewModel
             )
         }
@@ -60,6 +71,44 @@ fun NavGraph(
                 },
                 onNavigateToLogin = {
                     navController.popBackStack()
+                },
+                viewModel = authViewModel
+            )
+        }
+        
+        composable(Screen.ForgotPassword.route) {
+            ForgotPasswordScreen(
+                onBack = {
+                    navController.popBackStack()
+                },
+                onSuccess = {
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(Screen.ForgotPassword.route) { inclusive = true }
+                    }
+                },
+                viewModel = authViewModel
+            )
+        }
+        
+        composable(
+            route = Screen.ResetPassword.route,
+            arguments = listOf(
+                navArgument("token") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                }
+            )
+        ) { backStackEntry ->
+            val token = backStackEntry.arguments?.getString("token") ?: ""
+            ResetPasswordScreen(
+                token = if (token.isBlank()) null else token,
+                onBack = {
+                    navController.popBackStack()
+                },
+                onSuccess = {
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(Screen.ResetPassword.route) { inclusive = true }
+                    }
                 },
                 viewModel = authViewModel
             )

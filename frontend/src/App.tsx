@@ -40,12 +40,14 @@ export default function App() {
     const urlParams = new URLSearchParams(window.location.search)
     const path = window.location.pathname
     
-    // Handle password reset token
+    // Handle password reset token (can be in URL params or path)
     const resetToken = urlParams.get('token')
-    if (resetToken && path.includes('reset-password')) {
+    if (resetToken) {
       setResetToken(resetToken)
       setResetPasswordModalOpen(true)
-      window.history.replaceState({}, document.title, window.location.pathname)
+      // Clean URL but keep pathname
+      const cleanPath = path.includes('reset-password') ? '/' : window.location.pathname
+      window.history.replaceState({}, document.title, cleanPath)
       return
     }
     
@@ -388,10 +390,18 @@ export default function App() {
           onClose={() => {
             setResetPasswordModalOpen(false)
             setResetToken(null)
+            // Ensure login modal is shown after closing reset password
+            if (!isAuthenticated) {
+              setAuthMode('login')
+              setAuthModalOpen(true)
+            }
           }}
           onSuccess={() => {
             setResetPasswordModalOpen(false)
             setResetToken(null)
+            // Clear URL parameters
+            window.history.replaceState({}, document.title, window.location.pathname)
+            // Show login modal after successful reset
             setAuthMode('login')
             setAuthModalOpen(true)
           }}

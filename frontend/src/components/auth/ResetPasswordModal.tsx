@@ -74,9 +74,9 @@ export function ResetPasswordModal({
     setIsSubmitting(true)
     try {
       const response = await authApi.resetPassword(token, values.newPassword)
-      if (response.success && response.data?.message) {
-        setServerSuccess(response.data.message)
-        // Auto-close and redirect to login after 2 seconds
+      if (response.success) {
+        setServerSuccess(response.data?.message || 'Password reset successfully!')
+        // Auto-close and show login after 2 seconds
         setTimeout(() => {
           onSuccess()
         }, 2000)

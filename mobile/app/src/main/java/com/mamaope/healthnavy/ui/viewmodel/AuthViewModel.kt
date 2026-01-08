@@ -14,7 +14,9 @@ data class AuthUiState(
     val isLoading: Boolean = false,
     val isAuthenticated: Boolean = false,
     val currentUser: User? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val forgotPasswordSuccess: Boolean = false,
+    val resetPasswordSuccess: Boolean = false
 )
 
 class AuthViewModel(application: Application) : AndroidViewModel(application) {
@@ -120,6 +122,60 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
         }
+    }
+    
+    fun forgotPassword(email: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isLoading = true, 
+                errorMessage = null,
+                forgotPasswordSuccess = false
+            )
+            authRepository.forgotPassword(email)
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        forgotPasswordSuccess = true
+                    )
+                }
+                .onFailure { e ->
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        errorMessage = e.message ?: "Failed to send reset email"
+                    )
+                }
+        }
+    }
+    
+    fun resetPassword(token: String, newPassword: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isLoading = true,
+                errorMessage = null,
+                resetPasswordSuccess = false
+            )
+            authRepository.resetPassword(token, newPassword)
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        resetPasswordSuccess = true
+                    )
+                }
+                .onFailure { e ->
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        errorMessage = e.message ?: "Failed to reset password"
+                    )
+                }
+        }
+    }
+    
+    fun clearForgotPasswordSuccess() {
+        _uiState.value = _uiState.value.copy(forgotPasswordSuccess = false)
+    }
+    
+    fun clearResetPasswordSuccess() {
+        _uiState.value = _uiState.value.copy(resetPasswordSuccess = false)
     }
 }
 

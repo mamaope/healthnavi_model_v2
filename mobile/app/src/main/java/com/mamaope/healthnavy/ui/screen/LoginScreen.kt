@@ -42,6 +42,7 @@ import kotlinx.coroutines.tasks.await
 fun LoginScreen(
     onLoginSuccess: () -> Unit,
     onNavigateToRegister: () -> Unit,
+    onNavigateToForgotPassword: () -> Unit = {},
     viewModel: AuthViewModel = viewModel()
 ) {
     var email by remember { mutableStateOf("") }
@@ -272,6 +273,21 @@ fun LoginScreen(
                         fontWeight = FontWeight.SemiBold
                     )
                 }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Forgot Password Link
+            TextButton(
+                onClick = onNavigateToForgotPassword,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Forgot Password?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Primary500,
+                    fontWeight = FontWeight.Medium
+                )
             }
             
             Spacer(modifier = Modifier.height(24.dp))
