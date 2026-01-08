@@ -114,13 +114,6 @@ export default function App() {
   }
 
   const showSamplePrompts = useMemo(
-<<<<<<< HEAD
-    () => !isAuthenticated && messages.length === 0,
-    [isAuthenticated, messages.length],
-  )
-
-  const hasMessages = messages.length > 0
-=======
     () => messages.length === 0,
     [messages.length],
   )
@@ -147,7 +140,6 @@ export default function App() {
   const handleToggleSidebar = useCallback(() => {
     setMobileMenuOpen((prev) => !prev)
   }, [])
->>>>>>> 9de9d60ed34fff7cf2397f4fdc8fb4f90a6b993b
 
   return (
     <div className={`app-wrapper ${isAuthenticated ? 'authenticated' : 'guest'}`}>
@@ -163,11 +155,6 @@ export default function App() {
           }}
           isLoading={sessionsLoading}
           onHomeClick={() => {
-<<<<<<< HEAD
-            startNewSession()
-            setFollowupQuestions([])
-            setInputValue('')
-=======
             // Return to home screen by clearing everything
             startNewSession()
             setFollowupQuestions([])
@@ -176,7 +163,6 @@ export default function App() {
             if (!isAuthenticated) {
               setHasStartedChat(false) // Reset to show home page without sidebar for guests
             }
->>>>>>> 9de9d60ed34fff7cf2397f4fdc8fb4f90a6b993b
           }}
         />
       )}
