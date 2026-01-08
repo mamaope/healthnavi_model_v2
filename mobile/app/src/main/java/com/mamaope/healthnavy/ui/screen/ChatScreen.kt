@@ -1,15 +1,19 @@
 package com.mamaope.healthnavy.ui.screen
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import com.mamaope.healthnavy.util.MessageFormatter
@@ -26,6 +30,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import com.mamaope.healthnavy.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -58,15 +64,12 @@ fun ChatScreen(
             CenterAlignedTopAppBar(
                 title = {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "HealthNavy",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = "Clinical Decision Support",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        Image(
+                            painter = painterResource(id = R.drawable.logo),
+                            contentDescription = "HealthNavy Logo",
+                            modifier = Modifier
+                                .height(40.dp)
+                                .widthIn(max = 200.dp)
                         )
                     }
                 },
@@ -148,12 +151,12 @@ private fun ConversationArea(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    "Start a Clinical Conversation",
+                    "Start a Conversation",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = "Share presenting symptoms, key findings, or diagnostic questions to receive structured support.",
+                    text = "Ask questions or share information to get helpful responses.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -202,19 +205,26 @@ private fun SamplePromptChips(onPromptSelected: (String) -> Unit) {
         "Management steps for suspected sepsis"
     )
 
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         prompts.forEach { prompt ->
             OutlinedButton(
                 onClick = { onPromptSelected(prompt) },
-                shape = RoundedCornerShape(50),
-                border = null,
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                ),
                 colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                     contentColor = MaterialTheme.colorScheme.onSurface
                 ),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(prompt, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    prompt,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
             }
         }
     }
@@ -234,6 +244,7 @@ private fun InputArea(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
+            .windowInsetsPadding(WindowInsets.navigationBars)
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         if (!errorMessage.isNullOrEmpty()) {
@@ -248,52 +259,54 @@ private fun InputArea(
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(24.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                OutlinedTextField(
-                    value = messageText,
-                    onValueChange = onMessageChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Describe symptoms, history, or diagnostic questions...") },
-                    maxLines = 6,
-                    shape = RoundedCornerShape(16.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = PrimaryTeal,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                    )
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Spacer(modifier = Modifier.weight(1f))
                     // Deep Search Toggle Button
                     IconButton(
                         onClick = onToggleDeepSearch,
-                        modifier = Modifier.size(48.dp)
+                        modifier = Modifier.size(40.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Search,
+                            imageVector = Icons.Default.AutoAwesome,
                             contentDescription = if (isDeepSearch) "Deep search enabled" else "Deep search disabled",
                             tint = if (isDeepSearch) PrimaryTeal else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                     }
+                    
+                    OutlinedTextField(
+                        value = messageText,
+                        onValueChange = onMessageChange,
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("Describe symptoms, history, or diagnostic questions...") },
+                        maxLines = 6,
+                        shape = RoundedCornerShape(16.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = PrimaryTeal,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                            focusedLabelColor = PrimaryTeal
+                        ),
+                        trailingIcon = {
                     FilledIconButton(
                         onClick = onSend,
                         enabled = messageText.isNotBlank() && !isSending,
                         colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(
-                            containerColor = if (messageText.isNotBlank()) PrimaryTeal else MaterialTheme.colorScheme.surfaceVariant
+                                    containerColor = if (messageText.isNotBlank()) PrimaryTeal else MaterialTheme.colorScheme.surfaceVariant
                         ),
-                        shape = CircleShape
+                                shape = CircleShape,
+                                modifier = Modifier.size(40.dp)
                     ) {
                         if (isSending) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
+                                        modifier = Modifier.size(18.dp),
                                 strokeWidth = 2.dp,
                                 color = Color.White
                             )
@@ -301,10 +314,13 @@ private fun InputArea(
                             Icon(
                                 imageVector = Icons.Default.Send,
                                 contentDescription = "Send",
-                                tint = Color.White
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp)
                             )
                         }
                     }
+                        }
+                    )
                 }
             }
         }
@@ -341,21 +357,22 @@ fun MessageBubble(
     ) {
         Card(
             modifier = Modifier
-                .widthIn(max = 320.dp)
-                .shadow(2.dp, RoundedCornerShape(18.dp)),
+                .widthIn(max = 280.dp)
+                .shadow(2.dp, RoundedCornerShape(20.dp)),
             shape = RoundedCornerShape(
-                topStart = 18.dp,
-                topEnd = 18.dp,
-                bottomEnd = if (isUser) 0.dp else 18.dp,
-                bottomStart = if (isUser) 18.dp else 0.dp
+                topStart = 20.dp,
+                topEnd = 20.dp,
+                bottomEnd = if (isUser) 4.dp else 20.dp,
+                bottomStart = if (isUser) 20.dp else 4.dp
             ),
             colors = CardDefaults.cardColors(
                 containerColor = when {
                     isError -> MaterialTheme.colorScheme.errorContainer
                     isUser -> PrimaryTeal
-                    else -> MaterialTheme.colorScheme.surfaceVariant
+                    else -> MaterialTheme.colorScheme.surface
                 }
-            )
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 if (message.author == MessageAuthor.ASSISTANT && !isError) {
@@ -363,7 +380,8 @@ fun MessageBubble(
                     Text(
                         text = MessageFormatter.formatMessage(message.content),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
                     )
                 } else {
                     // Regular text for user messages and errors
@@ -374,7 +392,8 @@ fun MessageBubble(
                             isError -> MaterialTheme.colorScheme.onErrorContainer
                             isUser -> Color.White
                             else -> MaterialTheme.colorScheme.onSurface
-                        }
+                        },
+                        lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
                     )
                 }
                 if (message.author == MessageAuthor.ASSISTANT && message.messageId != null) {
@@ -397,13 +416,21 @@ fun MessageBubble(
 private fun FeedbackChip(label: String, onClick: () -> Unit) {
     OutlinedButton(
         onClick = onClick,
-        shape = RoundedCornerShape(50),
-        border = null,
+        shape = RoundedCornerShape(20.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+        ),
         colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         )
     ) {
-        Text(label, style = MaterialTheme.typography.labelMedium)
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Medium
+        )
     }
 }
 

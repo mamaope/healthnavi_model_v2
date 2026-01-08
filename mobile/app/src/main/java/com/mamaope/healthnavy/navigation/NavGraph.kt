@@ -29,6 +29,10 @@ fun NavGraph(
     val uiState by authViewModel.uiState.collectAsState()
     val isAuthenticated = uiState.isAuthenticated
     
+    // Create a shared ChatViewModel at the NavGraph level
+    // This ensures the same instance is used across Chat and Sessions screens
+    val chatViewModel: ChatViewModel = viewModel()
+    
     NavHost(
         navController = navController,
         startDestination = if (isAuthenticated) Screen.Chat.route else Screen.Login.route
@@ -62,7 +66,6 @@ fun NavGraph(
         }
         
         composable(Screen.Chat.route) {
-            val chatViewModel: ChatViewModel = viewModel()
             ChatScreen(
                 onLogout = {
                     authViewModel.logout()
@@ -78,10 +81,12 @@ fun NavGraph(
         }
         
         composable(Screen.Sessions.route) {
-            val chatViewModel: ChatViewModel = viewModel()
             SessionsScreen(
                 onSessionSelected = { session ->
+                    // Load session - this will update the shared ViewModel state
                     chatViewModel.loadSession(session.id)
+                    // Navigate back to ChatScreen
+                    // The messages will load asynchronously and appear in ChatScreen
                     navController.popBackStack()
                 },
                 onNewSession = {

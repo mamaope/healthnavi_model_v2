@@ -3,6 +3,7 @@ package com.mamaope.healthnavy.ui.screen
 import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -10,9 +11,12 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import com.mamaope.healthnavy.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -21,11 +25,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
-import com.mamaope.healthnavy.ui.theme.AccentCoralDark
-import com.mamaope.healthnavy.ui.theme.PrimaryBlue
 import com.mamaope.healthnavy.ui.theme.PrimaryTeal
 import com.mamaope.healthnavy.ui.viewmodel.AuthViewModel
 import com.mamaope.healthnavy.util.GoogleSignInHelper
+import kotlinx.coroutines.tasks.await
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,6 +42,7 @@ fun LoginScreen(
     var passwordVisible by remember { mutableStateOf(false) }
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     
     LaunchedEffect(uiState.isAuthenticated) {
         if (uiState.isAuthenticated) {
@@ -50,31 +54,35 @@ fun LoginScreen(
     val googleSignInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-            try {
-                val account = task.getResult(ApiException::class.java)
-                account?.idToken?.let { idToken ->
-                    // ID token received, proceed with sign-in
-                    viewModel.googleSignIn(idToken)
-                } ?: run {
-                    // ID token is null - this shouldn't happen but handle gracefully
-                    viewModel.setError("Google Sign-In failed: No ID token received")
+        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+            // Use coroutine scope to handle the async task properly
+            coroutineScope.launch {
+                try {
+                    val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+                    // Use await() to properly handle the async task
+                    val account = task.await()
+                    account?.idToken?.let { idToken ->
+                        // ID token received, proceed with sign-in
+                        viewModel.googleSignIn(idToken)
+                    } ?: run {
+                        // ID token is null - this shouldn't happen but handle gracefully
+                        viewModel.setError("Google Sign-In failed: No ID token received")
+                    }
+                } catch (e: ApiException) {
+                    // Handle Google Sign-In API exceptions
+                    val errorMessage = when (e.statusCode) {
+                        7 -> "Network error. Please check your connection."
+                        12501 -> "Sign in cancelled"
+                        4 -> "Sign in required"
+                        10 -> "Developer error - check Google Sign-In configuration"
+                        8 -> "Internal error - please try again"
+                        else -> "Google Sign-In failed: ${e.statusCode}"
+                    }
+                    viewModel.setError(errorMessage)
+                } catch (e: Exception) {
+                    // Handle any other exceptions
+                    viewModel.setError("Google Sign-In error: ${e.message ?: "Unknown error"}")
                 }
-            } catch (e: ApiException) {
-                // Handle Google Sign-In API exceptions
-                val errorMessage = when (e.statusCode) {
-                    7 -> "Network error. Please check your connection."
-                    12501 -> "Sign in cancelled"
-                    4 -> "Sign in required"
-                    10 -> "Developer error - check Google Sign-In configuration"
-                    8 -> "Internal error - please try again"
-                    else -> "Google Sign-In failed: ${e.statusCode}"
-                }
-                viewModel.setError(errorMessage)
-            } catch (e: Exception) {
-                // Handle any other exceptions
-                viewModel.setError("Google Sign-In error: ${e.message ?: "Unknown error"}")
             }
         } else {
             // User cancelled or sign-in failed
@@ -107,23 +115,18 @@ fun LoginScreen(
             // Logo and Branding
             Spacer(modifier = Modifier.height(32.dp))
             
-            Text(
-                text = "Health",
-                style = MaterialTheme.typography.displayMedium,
-                fontWeight = FontWeight.Bold,
-                color = AccentCoralDark
-            )
-            Text(
-                text = "Navy",
-                style = MaterialTheme.typography.displayMedium,
-                fontWeight = FontWeight.Bold,
-                color = PrimaryBlue
+            Image(
+                painter = painterResource(id = R.drawable.logo),
+                contentDescription = "HealthNavy Logo",
+                modifier = Modifier
+                    .height(120.dp)
+                    .widthIn(max = 300.dp)
             )
             
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             
             Text(
-                text = "Evidence Based Medical System",
+                text = "AI-Powered Healthcare Assistant",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -139,7 +142,8 @@ fun LoginScreen(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.errorContainer
                     ),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(16.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
                     Text(
                         text = uiState.errorMessage!!,
@@ -160,10 +164,11 @@ fun LoginScreen(
                     .fillMaxWidth()
                     .padding(bottom = 16.dp),
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(16.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = PrimaryTeal,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                    focusedLabelColor = PrimaryTeal
                 )
             )
             
@@ -177,19 +182,21 @@ fun LoginScreen(
                     .fillMaxWidth()
                     .padding(bottom = 24.dp),
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(16.dp),
                 visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = {
                     IconButton(onClick = { passwordVisible = !passwordVisible }) {
                         Icon(
                             imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                            contentDescription = if (passwordVisible) "Hide password" else "Show password"
+                            contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = PrimaryTeal,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                    focusedLabelColor = PrimaryTeal
                 )
             )
             
@@ -200,9 +207,14 @@ fun LoginScreen(
                     .fillMaxWidth()
                     .height(56.dp),
                 enabled = !uiState.isLoading && email.isNotBlank() && password.isNotBlank(),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = PrimaryTeal
+                    containerColor = PrimaryTeal,
+                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                ),
+                elevation = ButtonDefaults.buttonElevation(
+                    defaultElevation = 2.dp,
+                    pressedElevation = 0.dp
                 )
             ) {
                 if (uiState.isLoading) {
@@ -228,7 +240,8 @@ fun LoginScreen(
             ) {
                 HorizontalDivider(
                     modifier = Modifier.weight(1f),
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                    thickness = 1.dp
                 )
                 Text(
                     text = "OR",
@@ -238,7 +251,8 @@ fun LoginScreen(
                 )
                 HorizontalDivider(
                     modifier = Modifier.weight(1f),
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                    thickness = 1.dp
                 )
             }
             
@@ -249,7 +263,7 @@ fun LoginScreen(
                     .fillMaxWidth()
                     .height(56.dp),
                 enabled = !uiState.isLoading,
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.outlinedButtonColors(
                     contentColor = MaterialTheme.colorScheme.onSurface
                 )

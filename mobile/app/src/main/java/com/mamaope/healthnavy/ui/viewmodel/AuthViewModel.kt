@@ -108,13 +108,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
             authRepository.googleSignIn(idToken)
                 .onSuccess { response ->
-                    // Get the user from the repository's current state
-                    val user = authRepository.currentUserValue
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        isAuthenticated = user != null,
-                        currentUser = user
-                    )
+                    // The repository updates _currentUser.value synchronously, which triggers
+                    // the flow collector in init block to update _uiState automatically
+                    // Just set loading to false - the flow collector will handle isAuthenticated and currentUser
+                    _uiState.value = _uiState.value.copy(isLoading = false)
                 }
                 .onFailure { e ->
                     _uiState.value = _uiState.value.copy(

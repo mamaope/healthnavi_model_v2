@@ -338,15 +338,44 @@ object MessageFormatter {
      * Extracts emoji from text if present
      */
     private fun extractEmoji(text: String): Pair<String, String> {
-        val emojiRegex = Regex("^[\\u{1F300}-\\u{1F9FF}\\u{2600}-\\u{26FF}]")
-        val match = emojiRegex.find(text)
-        return if (match != null) {
-            val emoji = match.value
-            val rest = text.substring(emoji.length).trim()
-            Pair("$emoji ", rest)
-        } else {
-            Pair("", text)
+        if (text.isEmpty()) {
+            return Pair("", text)
         }
+        
+        // Check if first character is an emoji
+        val firstChar = text[0]
+        val codePoint = firstChar.code
+        
+        // Check for single-unit emoji (2600-26FF: Miscellaneous Symbols)
+        if (codePoint in 0x2600..0x26FF) {
+            val rest = text.substring(1).trim()
+            return Pair("$firstChar ", rest)
+        }
+        
+        // Check for surrogate pair emoji (supplementary planes like 1F300-1F9FF)
+        // These are represented as two UTF-16 code units
+        if (text.length > 1) {
+            val secondChar = text[1]
+            val highSurrogate = codePoint
+            val lowSurrogate = secondChar.code
+            
+            // Check if it's a valid surrogate pair
+            // High surrogates: D800-DBFF, Low surrogates: DC00-DFFF
+            if (highSurrogate in 0xD800..0xDBFF && lowSurrogate in 0xDC00..0xDFFF) {
+                // Calculate the actual Unicode code point
+                val codePointValue = 0x10000 + ((highSurrogate - 0xD800) shl 10) + (lowSurrogate - 0xDC00)
+                // Check if it's in common emoji ranges (1F300-1F9FF, 1F600-1F64F, etc.)
+                if (codePointValue in 0x1F300..0x1F9FF || 
+                    codePointValue in 0x1F600..0x1F64F ||
+                    codePointValue in 0x1F900..0x1F9FF) {
+                    val rest = text.substring(2).trim()
+                    return Pair("${text.substring(0, 2)} ", rest)
+                }
+            }
+        }
+        
+        // No emoji found
+        return Pair("", text)
     }
     
     /**

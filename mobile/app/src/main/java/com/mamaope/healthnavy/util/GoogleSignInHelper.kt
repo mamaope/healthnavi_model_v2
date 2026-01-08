@@ -9,7 +9,9 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 object GoogleSignInHelper {
     
     // Web client ID from Google Cloud Console (OAuth 2.0 Client ID for Web application)
-    private const val DEFAULT_WEB_CLIENT_ID = "132524488069-ektp8kh37ei9bhoa58f4qqhp3dr2ahsk.apps.googleusercontent.com"
+    // IMPORTANT: This must be a WEB client ID, not the Android client ID
+    // The Android client ID is used automatically by Google Play Services
+    private const val DEFAULT_WEB_CLIENT_ID = "1033520161890-o24gvc8ecog70fu0ekv9rrr3hobki87r.apps.googleusercontent.com"
     
     fun getGoogleSignInClient(context: Context, webClientId: String = DEFAULT_WEB_CLIENT_ID): GoogleSignInClient {
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)

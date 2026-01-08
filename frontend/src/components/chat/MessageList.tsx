@@ -3,24 +3,27 @@ import type { ChatMessage } from '../../types/chat'
 import { renderModelResponse } from '../../utils/markdown'
 import { chatApi } from '../../services/apiClient'
 import { useAuth } from '../../providers/AuthProvider'
-import { useChatStore } from '../../store/useChatStore'
 
 interface MessageListProps {
   messages: ChatMessage[]
-  showWelcomeMessage?: boolean
 }
 
-export function MessageList({ messages, showWelcomeMessage = false }: MessageListProps) {
+export function MessageList({ messages }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const { isAuthenticated } = useAuth()
   const [feedback, setFeedback] = useState<Record<string, 'helpful' | 'not_helpful' | null>>({})
   const [shareStatus, setShareStatus] = useState<Record<string, 'shared' | 'copied' | null>>({})
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState<Record<string, boolean>>({})
   const shareTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  
-  // Streaming state commented out - reverted to non-streaming
-  // const isStreaming = useChatStore((state) => state.isStreaming)
-  // const streamingMessageId = useChatStore((state) => state.streamingMessageId)
+
+  useEffect(() => {
+    if (!containerRef.current) return
+    const el = containerRef.current
+    el.scrollTo({
+      top: el.scrollHeight,
+      behavior: 'smooth',
+    })
+  }, [messages])
 
   useEffect(() => {
     return () => {
@@ -112,17 +115,17 @@ export function MessageList({ messages, showWelcomeMessage = false }: MessageLis
 
   return (
     <div className="chat-messages" ref={containerRef}>
-      {messages.length === 0 && showWelcomeMessage && (
+      {messages.length === 0 && (
         <div className="welcome-message">
           <div className="welcome-content">
             <div className="welcome-logo">
               <img 
                 src="/logo.png" 
-                alt="Empirico" 
+                alt="Epirico" 
                 className="logo-image welcome-logo-image"
               />
             </div>
-            <h3>Welcome to Empirico</h3>
+            <h3>Welcome to Empirico !!!</h3>
             <p>
               How can I assist you today? Ask clinical questions, review treatment options, or explore guidelines.
             </p>
@@ -131,15 +134,7 @@ export function MessageList({ messages, showWelcomeMessage = false }: MessageLis
       )}
 
       {messages.map((message) => {
-        // Streaming check commented out - reverted to non-streaming
-        // const isCurrentlyStreaming = isStreaming && streamingMessageId === message.id
-        
         if (message.author === 'assistant') {
-          // Hide empty message containers (they show as white ovals)
-          if (!message.content || message.content.trim().length === 0) {
-            return null
-          }
-          
           return (
             <div key={message.id} className="message ai-message">
               <div className="message-content">
@@ -148,44 +143,41 @@ export function MessageList({ messages, showWelcomeMessage = false }: MessageLis
                     __html: renderModelResponse(message.content),
                   }}
                 />
-                {/* Show actions when message has content */}
-                {message.content.length > 0 && (
-                  <div className="message-actions" role="group" aria-label="AI response feedback">
-                    <button
-                      type="button"
-                      className={`message-action positive ${feedback[message.id] === 'helpful' ? 'active' : ''}`}
-                      onClick={() => handleFeedback(message, 'helpful')}
-                      aria-pressed={feedback[message.id] === 'helpful'}
-                      disabled={isSubmittingFeedback[message.id]}
-                    >
-                      <i className="fas fa-thumbs-up" aria-hidden="true" />
-                      Helpful
-                    </button>
-                    <button
-                      type="button"
-                      className={`message-action negative ${feedback[message.id] === 'not_helpful' ? 'active' : ''}`}
-                      onClick={() => handleFeedback(message, 'not_helpful')}
-                      aria-pressed={feedback[message.id] === 'not_helpful'}
-                      disabled={isSubmittingFeedback[message.id]}
-                    >
-                      <i className="fas fa-thumbs-down" aria-hidden="true" />
-                      Not helpful
-                    </button>
-                    <button
-                      type="button"
-                      className="message-action neutral"
-                      onClick={() => handleShare(message.id, message.content)}
-                    >
-                      <i className="fas fa-share-alt" aria-hidden="true" />
-                      Share
-                    </button>
-                    {shareStatus[message.id] && (
-                      <span className="message-action-status">
-                        {shareStatus[message.id] === 'shared' ? 'Shared!' : 'Copied to clipboard'}
-                      </span>
-                    )}
-                  </div>
-                )}
+                <div className="message-actions" role="group" aria-label="AI response feedback">
+                  <button
+                    type="button"
+                    className={`message-action positive ${feedback[message.id] === 'helpful' ? 'active' : ''}`}
+                    onClick={() => handleFeedback(message, 'helpful')}
+                    aria-pressed={feedback[message.id] === 'helpful'}
+                    disabled={isSubmittingFeedback[message.id]}
+                  >
+                    <i className="fas fa-thumbs-up" aria-hidden="true" />
+                    Helpful
+                  </button>
+                  <button
+                    type="button"
+                    className={`message-action negative ${feedback[message.id] === 'not_helpful' ? 'active' : ''}`}
+                    onClick={() => handleFeedback(message, 'not_helpful')}
+                    aria-pressed={feedback[message.id] === 'not_helpful'}
+                    disabled={isSubmittingFeedback[message.id]}
+                  >
+                    <i className="fas fa-thumbs-down" aria-hidden="true" />
+                    Not helpful
+                  </button>
+                  <button
+                    type="button"
+                    className="message-action neutral"
+                    onClick={() => handleShare(message.id, message.content)}
+                  >
+                    <i className="fas fa-share-alt" aria-hidden="true" />
+                    Share
+                  </button>
+                  {shareStatus[message.id] && (
+                    <span className="message-action-status">
+                      {shareStatus[message.id] === 'shared' ? 'Shared!' : 'Copied to clipboard'}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           )

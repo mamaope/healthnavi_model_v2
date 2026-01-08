@@ -59,10 +59,22 @@ class ChatViewModel : ViewModel() {
                     _uiState.value = _uiState.value.copy(isLoading = false)
                 }
                 .onFailure { e ->
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        errorMessage = e.message ?: "Failed to load sessions"
-                    )
+                    // When the user is not authenticated yet, the backend may return
+                    // a "Not authenticated" error. This commonly happens on app start
+                    // before login. We don't want to surface this to the user as an
+                    // error message in the chat UI, so we silently ignore it.
+                    val message = e.message ?: ""
+                    if (message.contains("not authenticated", ignoreCase = true)) {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            errorMessage = null
+                        )
+                    } else {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            errorMessage = message.ifBlank { "Failed to load sessions" }
+                        )
+                    }
                 }
         }
     }
@@ -99,7 +111,11 @@ class ChatViewModel : ViewModel() {
     
     fun loadSession(sessionId: String) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
+            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            
+            // Clear current messages first
+            chatRepository.clearMessages()
+            
             val session = _uiState.value.sessions.find { it.id == sessionId }
             if (session != null) {
                 chatRepository.setCurrentSession(session)
@@ -114,24 +130,35 @@ class ChatViewModel : ViewModel() {
                         )
                     }
             } else {
-                // Session not found, try reloading sessions first
-                loadSessions()
-                val updatedSession = _uiState.value.sessions.find { it.id == sessionId }
-                if (updatedSession != null) {
-                    chatRepository.setCurrentSession(updatedSession)
-                    chatRepository.getSessionMessages(sessionId)
-                        .onSuccess {
-                            _uiState.value = _uiState.value.copy(isLoading = false)
-                        }
-                        .onFailure { e ->
+                // Session not found in current list, try reloading sessions first
+                chatRepository.getSessions()
+                    .onSuccess {
+                        val updatedSession = _uiState.value.sessions.find { it.id == sessionId }
+                        if (updatedSession != null) {
+                            chatRepository.setCurrentSession(updatedSession)
+                            chatRepository.getSessionMessages(sessionId)
+                                .onSuccess {
+                                    _uiState.value = _uiState.value.copy(isLoading = false)
+                                }
+                                .onFailure { e ->
+                                    _uiState.value = _uiState.value.copy(
+                                        isLoading = false,
+                                        errorMessage = e.message ?: "Failed to load messages"
+                                    )
+                                }
+                        } else {
                             _uiState.value = _uiState.value.copy(
                                 isLoading = false,
-                                errorMessage = e.message ?: "Failed to load messages"
+                                errorMessage = "Session not found"
                             )
                         }
-                } else {
-                    _uiState.value = _uiState.value.copy(isLoading = false)
-                }
+                    }
+                    .onFailure { e ->
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            errorMessage = e.message ?: "Failed to load session"
+                        )
+                    }
             }
         }
     }

@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -77,7 +78,12 @@ fun SessionsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("Search sessions by title, summary, or ID") },
                 singleLine = true,
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(16.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                    focusedLabelColor = MaterialTheme.colorScheme.primary
+                )
             )
 
             when {
@@ -133,19 +139,29 @@ private fun EmptySessionsState(onNewSession: () -> Unit) {
                 fontWeight = FontWeight.SemiBold
             )
             Text(
-                text = "Start a new clinical conversation to capture patient insights and recommendations.",
+                text = "Start a new conversation to capture insights and recommendations.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                textAlign = TextAlign.Center,
                 modifier = Modifier.padding(vertical = 12.dp)
             )
             Button(
                 onClick = onNewSession,
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                ),
+                elevation = ButtonDefaults.buttonElevation(
+                    defaultElevation = 2.dp,
+                    pressedElevation = 0.dp
+                )
             ) {
                 Icon(Icons.Default.Add, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Start New Chat")
+                Text(
+                    "Start New Chat",
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
     }
@@ -173,17 +189,21 @@ private fun SessionCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(if (isSelected) 6.dp else 1.dp, RoundedCornerShape(20.dp))
+            .shadow(if (isSelected) 4.dp else 2.dp, RoundedCornerShape(20.dp))
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer
             else MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isSelected) 4.dp else 2.dp,
+            pressedElevation = 1.dp
         )
     ) {
         Column(
             modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
                 text = session.session_name ?: "Session ${session.id}",
@@ -197,7 +217,7 @@ private fun SessionCard(
             Text(
                 text = createdAt,
                 style = MaterialTheme.typography.bodySmall,
-                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                 else MaterialTheme.colorScheme.onSurfaceVariant
             )
             session.patient_summary?.takeIf { it.isNotBlank() }?.let { summary ->
@@ -206,8 +226,9 @@ private fun SessionCard(
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
-                    else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.9f)
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
                 )
             }
         }

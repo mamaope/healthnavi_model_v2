@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AuthModal, type AuthMode } from './components/auth/AuthModal'
 import { ForgotPasswordModal } from './components/auth/ForgotPasswordModal'
 import { ResetPasswordModal } from './components/auth/ResetPasswordModal'
@@ -10,15 +10,13 @@ import { Header } from './components/layout/Header'
 import { Sidebar } from './components/layout/Sidebar'
 import { useChatEngine } from './hooks/useChatEngine'
 import { useAuth } from './providers/AuthProvider'
-import { useChatStore } from './store/useChatStore'
 import { APP_METADATA } from './config'
 
 export default function App() {
-  const { isAuthenticated, initializing, refreshProfile, logout } = useAuth()
+  const { isAuthenticated, initializing, refreshProfile } = useAuth()
   const {
     messages,
     isSending,
-    // isStreaming,  // Commented out - streaming disabled
     sessions,
     currentSession,
     sessionsLoading,
@@ -26,8 +24,6 @@ export default function App() {
     startNewSession,
     loadSession,
   } = useChatEngine()
-  
-  const isFetchingFollowup = useChatStore((state) => state.isFetchingFollowup)
 
   const [authModalOpen, setAuthModalOpen] = useState(false)
   const [authMode, setAuthMode] = useState<AuthMode>('login')
@@ -36,10 +32,7 @@ export default function App() {
   const [resetToken, setResetToken] = useState<string | null>(null)
   const [inputValue, setInputValue] = useState('')
   const [isDeepSearchEnabled, setIsDeepSearchEnabled] = useState(false)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const followupQuestions = useChatStore((state) => state.followupQuestions)
-  const setFollowupQuestions = useChatStore((state) => state.setFollowupQuestions)
+  const [followupQuestions, setFollowupQuestions] = useState<string[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Check for reset token or OAuth callback in URL on mount
@@ -61,7 +54,7 @@ export default function App() {
       const oauthToken = urlParams.get('token')
       console.log('OAuth success callback - token received:', oauthToken ? 'yes' : 'no')
       if (oauthToken) {
-        localStorage.setItem('empirico.accessToken', oauthToken)
+        localStorage.setItem('healthnavi.accessToken', oauthToken)
         console.log('OAuth token stored in localStorage')
         
         window.history.replaceState({}, document.title, '/')
@@ -95,12 +88,12 @@ export default function App() {
 
   const handleSendMessage = async (message: string) => {
     setFollowupQuestions([])
-    setInputValue('') // Clear input immediately when sending
     try {
       const result = await sendMessage({
         message,
         deepSearch: isDeepSearchEnabled,
       })
+      setInputValue('')
       if (result && result.followupQuestions) {
         setFollowupQuestions(result.followupQuestions)
       }
@@ -117,58 +110,31 @@ export default function App() {
     }, 0)
   }
 
-  // Show sample prompts when there are no messages
   const showSamplePrompts = useMemo(
-    () => messages.length === 0,
-    [messages.length],
-  )
-  
-  // Show welcome message only for guest users when they haven't started chatting
-  // Logged-in users never see the welcome message
-  const showWelcomeMessage = useMemo(
     () => !isAuthenticated && messages.length === 0,
     [isAuthenticated, messages.length],
   )
 
   const hasMessages = messages.length > 0
-  const showSidebarForGuest = !isAuthenticated && hasMessages
-  const showSidebar = isAuthenticated || showSidebarForGuest
-
-  // Memoize sidebar handlers to prevent unnecessary re-renders
-  const handleCloseSidebar = useCallback(() => {
-    setMobileMenuOpen(false)
-  }, [])
-
-  const handleToggleSidebar = useCallback(() => {
-    setMobileMenuOpen((prev) => !prev)
-  }, [])
 
   return (
-    <div className={`app-wrapper ${isAuthenticated ? 'authenticated' : 'guest'} ${showSidebarForGuest ? 'guest-with-sidebar' : ''} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-      {/* Sidebar - Only visible when authenticated or guest with messages */}
-      {showSidebar && (
+    <div className={`app-wrapper ${isAuthenticated ? 'authenticated' : 'guest'}`}>
+      {/* Sidebar - Only visible when authenticated */}
+      {isAuthenticated && (
         <Sidebar
-          isOpen={mobileMenuOpen}
-          isCollapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+          isOpen={isAuthenticated}
           sessions={sessions}
           currentSessionId={currentSession?.id}
           onStartNewChat={startNewSession}
           onSelectSession={(session) => {
             void loadSession(session)
-            setMobileMenuOpen(false) // Close mobile menu after selecting
           }}
           isLoading={sessionsLoading}
           onHomeClick={() => {
-            if (isAuthenticated) {
-              logout()
-            }
             startNewSession()
             setFollowupQuestions([])
             setInputValue('')
-            setMobileMenuOpen(false)
           }}
-          onClose={handleCloseSidebar}
         />
       )}
 
@@ -185,15 +151,10 @@ export default function App() {
             setAuthModalOpen(true)
           }}
           onHomeClick={() => {
-            if (isAuthenticated) {
-              logout()
-            }
             startNewSession()
             setFollowupQuestions([])
             setInputValue('')
           }}
-          onMenuToggle={handleToggleSidebar}
-          showMenuButton={showSidebar}
         />
 
         {/* Chat Container */}
@@ -201,37 +162,36 @@ export default function App() {
           <div className={`chat-wrapper ${hasMessages ? 'has-messages' : 'empty'}`}>
             {/* Messages Area */}
             <div className="messages-container">
-              <MessageList messages={messages} showWelcomeMessage={showWelcomeMessage} />
-              {/* Show loading indicator when sending or fetching follow-up questions */}
-              <LoadingIndicator isVisible={isSending || isFetchingFollowup} />
-              
-              {/* Follow-up Questions - Below model response */}
-              {followupQuestions && followupQuestions.length > 0 && messages.length > 0 && (
-                <div className="followup-section">
-                  <div className="followup-header">
-                    <i className="fas fa-lightbulb" />
-                    <span>Suggested Questions</span>
-                  </div>
-                  <div className="followup-grid">
-                    {followupQuestions.map((question, index) => (
-                      <button
-                        key={index}
-                        type="button"
-                        className="followup-card"
-                        onClick={() => {
-                          setInputValue(question)
-                          setFollowupQuestions([])
-                          textareaRef.current?.focus()
-                        }}
-                      >
-                        <i className="fas fa-arrow-right" />
-                        <span>{question}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <MessageList messages={messages} />
+              <LoadingIndicator isVisible={isSending} />
             </div>
+
+            {/* Follow-up Questions */}
+            {followupQuestions && followupQuestions.length > 0 && (
+              <div className="followup-section">
+                <div className="followup-header">
+                  <i className="fas fa-lightbulb" />
+                  <span>Suggested Questions</span>
+                </div>
+                <div className="followup-grid">
+                  {followupQuestions.map((question, index) => (
+                    <button
+                      key={index}
+                      type="button"
+                      className="followup-card"
+                      onClick={() => {
+                        setInputValue(question)
+                        setFollowupQuestions([])
+                        textareaRef.current?.focus()
+                      }}
+                    >
+                      <i className="fas fa-arrow-right" />
+                      <span>{question}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Input Area - Fixed at bottom */}
             <div className="input-section">
@@ -245,7 +205,11 @@ export default function App() {
                 onToggleDeepSearch={() =>
                   setIsDeepSearchEnabled((previous) => !previous)
                 }
-                placeholder="Ask a clinical question, describe symptoms, or request guidance..."
+                placeholder={
+                  isAuthenticated
+                    ? 'Ask a clinical question, describe symptoms, or request guidance...'
+                    : 'Ask a clinical question, describe symptoms, or request guidance...'
+                }
               />
               {/* Disclaimer - Right under input area */}
               <div className="disclaimer-bar">
