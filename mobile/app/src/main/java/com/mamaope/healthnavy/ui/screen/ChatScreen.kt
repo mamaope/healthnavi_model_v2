@@ -351,10 +351,17 @@ fun MessageBubble(
 
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
+        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Center
     ) {
         Card(
-            modifier = Modifier.widthIn(max = 280.dp),
+            modifier = Modifier
+                .then(
+                    if (isUser) {
+                        Modifier.widthIn(max = 280.dp)
+                    } else {
+                        Modifier.fillMaxWidth(0.9f)
+                    }
+                ),
             shape = RoundedCornerShape(
                 topStart = 20.dp,
                 topEnd = 20.dp,
