@@ -250,6 +250,9 @@ async def diagnose_stream(data: DiagnosisInput, current_user: User = Depends(get
     """
     request_start_time = time.time()
     
+    # Extract user ID IMMEDIATELY before any other operations (current_user may become detached)
+    user_id = current_user.id if current_user else None
+    
     # Handle both authenticated and unauthenticated users
     user_info = f"{current_user.username} (role: {current_user.role})" if current_user else "unauthenticated user"
     logger.info(f"Streaming diagnosis request from: {user_info}")
@@ -268,13 +271,34 @@ async def diagnose_stream(data: DiagnosisInput, current_user: User = Depends(get
         # Initialize session service
         session_service = DiagnosisSessionService(db)
         
+        # Convert session_id to int if it's a string (for authenticated users)
+        session_id_int = None
         if session_id and current_user:
             try:
-                chat_history = session_service.get_chat_history(session_id, current_user)
-                logger.info(f"Retrieved chat history from session {session_id}: {len(chat_history)} chars")
+                if isinstance(session_id, str):
+                    # Try to convert string to int
+                    try:
+                        session_id_int = int(session_id)
+                    except ValueError:
+                        # If it's not a numeric string, it might be a guest session ID
+                        logger.warning(f"Session ID '{session_id}' is not numeric, treating as guest session")
+                        session_id_int = None
+                elif isinstance(session_id, int):
+                    session_id_int = session_id
+                else:
+                    logger.warning(f"Unexpected session_id type: {type(session_id)}")
+                    session_id_int = None
             except Exception as e:
-                logger.warning(f"Could not get chat history from session {session_id}: {e}")
-        elif not session_id and current_user:
+                logger.error(f"Error converting session_id: {e}")
+                session_id_int = None
+        
+        if session_id_int and current_user:
+            try:
+                chat_history = session_service.get_chat_history(session_id_int, current_user)
+                logger.info(f"Retrieved chat history from session {session_id_int}: {len(chat_history)} chars")
+            except Exception as e:
+                logger.warning(f"Could not get chat history from session {session_id_int}: {e}")
+        elif not session_id_int and current_user:
             try:
                 from healthnavi.schemas import ChatSessionCreate
                 new_session_data = ChatSessionCreate(
@@ -282,15 +306,15 @@ async def diagnose_stream(data: DiagnosisInput, current_user: User = Depends(get
                     patient_summary=data.patient_data[:200] + "..." if len(data.patient_data) > 200 else data.patient_data
                 )
                 new_session = session_service.create_session(current_user, new_session_data)
-                session_id = new_session.id
-                logger.info(f"Auto-created new streaming session {session_id} for user {current_user.id}")
+                session_id_int = new_session.id
+                logger.info(f"Auto-created new streaming session {session_id_int} for user {current_user.id}")
             except Exception as e:
-                        logger.warning(f"Could not auto-create session: {e}")
+                logger.warning(f"Could not auto-create session: {e}")
 
         deep_search_enabled = data.deep_search if data.deep_search is not None else False
         logger.info(f"Search mode: {'DEEP SEARCH' if deep_search_enabled else 'QUICK SEARCH'} (streaming)")
         
-        if session_id and current_user:
+        if session_id_int and current_user:
             try:
                 user_message = ChatMessageCreate(
                     content=data.patient_data,
@@ -298,14 +322,16 @@ async def diagnose_stream(data: DiagnosisInput, current_user: User = Depends(get
                     patient_data=data.patient_data,
                     diagnosis_complete=False
                 )
-                session_service.add_message(session_id, current_user, user_message)
-                logger.info(f"Stored user message in session {session_id}")
+                session_service.add_message(session_id_int, current_user, user_message)
+                logger.info(f"Stored user message in session {session_id_int}")
             except Exception as e:
-                logger.warning(f"Could not store user message: {e}")
+                logger.warning(f"Could not store user message: {e}", exc_info=True)
 
         async def streaming_with_storage():
             full_response = ""
+            ai_response_content = ""  # Track only the AI response content (without markers)
             stream_error = None
+            ai_message_saved = False
             try:
                 async for chunk in generate_response_stream(
                     query=data.patient_data,
@@ -322,13 +348,56 @@ async def diagnose_stream(data: DiagnosisInput, current_user: User = Depends(get
                         break
                     
                     full_response += chunk
+                    # Track AI response content separately (exclude followup markers)
+                    if not chunk.startswith("[FOLLOWUP_QUESTIONS]:"):
+                        ai_response_content += chunk
                     yield chunk
                 
-                if not stream_error and full_response and len(full_response.strip()) > 10:
+                # Save AI message if we have valid content (always try to save, even if short)
+                if session_id_int and user_id:
+                    content_to_save = ai_response_content.strip()
+                    # Save if we have any content and no stream error
+                    if not stream_error and content_to_save:
+                        try:
+                            # Create a new database session for saving (the original db session may be closed)
+                            # Use SessionLocal directly to create a new session
+                            from healthnavi.core.database import SessionLocal
+                            from healthnavi.models.user import User
+                            save_db = SessionLocal()
+                            try:
+                                # Re-query the user in the new session to avoid detached instance error
+                                user_in_new_session = save_db.query(User).filter(User.id == user_id).first()
+                                if not user_in_new_session:
+                                    logger.error(f"❌ User {user_id} not found in new session")
+                                else:
+                                    save_session_service = DiagnosisSessionService(save_db)
+                                    ai_message = ChatMessageCreate(
+                                        content=content_to_save,
+                                        message_type="assistant",
+                                        patient_data=data.patient_data,
+                                        diagnosis_complete=True
+                                    )
+                                    save_session_service.add_message(session_id_int, user_in_new_session, ai_message)
+                                    ai_message_saved = True
+                                    logger.info(f"✅ Stored AI streaming response in session {session_id_int}: {len(content_to_save)} chars")
+                            except Exception as save_error:
+                                save_db.rollback()
+                                raise save_error
+                            finally:
+                                save_db.close()
+                        except Exception as e:
+                            logger.error(f"❌ Could not store AI response in session {session_id_int}: {e}", exc_info=True)
+                    elif stream_error:
+                        logger.error(f"Stream ended with error, not storing AI response: {stream_error}")
+                    elif not content_to_save:
+                        logger.warning(f"Stream ended with no content, not storing AI response")
+                
+                # Generate follow-up questions if we have valid content
+                if not stream_error and ai_response_content and len(ai_response_content.strip()) > 10:
                     followup_questions = []
                     try:
                         from healthnavi.services.conversational_service import generate_followup_questions_sync
-                        followup_questions = generate_followup_questions_sync(data.patient_data, full_response)
+                        followup_questions = generate_followup_questions_sync(data.patient_data, ai_response_content)
                     except Exception as e:
                         logger.warning(f"Could not generate follow-up questions: {e}")
                     
@@ -336,23 +405,13 @@ async def diagnose_stream(data: DiagnosisInput, current_user: User = Depends(get
                         import json
                         followup_json = json.dumps(followup_questions)
                         yield f"\n\n[FOLLOWUP_QUESTIONS]:{followup_json}"
-                    
-                    if session_id and current_user:
-                        try:
-                            ai_message = ChatMessageCreate(
-                                content=full_response,
-                                message_type="assistant",
-                                patient_data=data.patient_data,
-                                diagnosis_complete=True
-                            )
-                            session_service.add_message(session_id, current_user, ai_message)
-                            logger.info(f"Stored AI streaming response in session {session_id}: {len(full_response)} chars")
-                        except Exception as e:
-                            logger.warning(f"Could not store AI response: {e}")
-                elif stream_error:
-                    logger.error(f"Stream ended with error, not generating follow-up questions: {stream_error}")
-                elif not full_response or len(full_response.strip()) <= 10:
-                    logger.warning(f"Stream ended with insufficient content ({len(full_response)} chars), not generating follow-up questions")
+                
+                # Log final status
+                if session_id_int and user_id:
+                    if ai_message_saved:
+                        logger.info(f"✅ Successfully saved AI message to session {session_id_int}")
+                    else:
+                        logger.warning(f"⚠️ AI message was NOT saved to session {session_id_int} (stream_error={stream_error}, content_len={len(ai_response_content.strip())})")
                         
             except Exception as e:
                 logger.error(f"Error during streaming generation: {e}", exc_info=True)

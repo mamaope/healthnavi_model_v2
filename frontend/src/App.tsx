@@ -7,6 +7,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
+      <Route path="/auth/google/success" element={<HomePage />} />
+      <Route path="/auth/google/error" element={<HomePage />} />
       <Route path="/terms" element={<TermsOfService />} />
       <Route path="/privacy" element={<PrivacyPolicy />} />
     </Routes>
