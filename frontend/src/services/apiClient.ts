@@ -314,6 +314,15 @@ export const authApi = {
       token ? { token } : undefined,
     )
   },
+  updateProfile(data: { medical_professional_type?: string; full_name?: string }) {
+    return apiFetch<{ success: boolean; data: User }>(
+      '/auth/profile',
+      'PUT',
+      {
+        body: JSON.stringify(data),
+      },
+    )
+  },
 }
 
 export const sessionsApi = {

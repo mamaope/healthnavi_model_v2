@@ -174,6 +174,7 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = Field(None, max_length=100)
     email: Optional[EmailStr] = Field(None)
     role: Optional[str] = Field(None)
+    medical_professional_type: Optional[str] = Field(None, description="Medical professional type: Intern Doctor, Senior House Officers, Clinical Officer, Consultant, Student")
     is_active: Optional[bool] = Field(None)
 
 
@@ -184,6 +185,7 @@ class UserResponse(BaseModel):
     full_name: Optional[str]
     email: str
     role: str
+    medical_professional_type: Optional[str]
     is_active: bool
     is_email_verified: bool
     created_at: Optional[str]

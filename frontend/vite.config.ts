@@ -8,6 +8,10 @@ const isProduction = process.env.NODE_ENV === 'production'
 // Disable HMR in production or if explicitly disabled
 const disableHMR = isProduction || process.env.VITE_DISABLE_HMR === 'true'
 
+// Determine if we're in a production-like environment (deployed)
+// Only use custom HMR config if explicitly set via env vars
+const useCustomHMR = !!process.env.VITE_HMR_HOST
+
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -18,10 +22,15 @@ export default defineConfig({
       'empirico.ai',
       '.empirico.ai',
     ],
-    hmr: disableHMR ? false : {
-      host: process.env.VITE_HMR_HOST || 'empirico.ai',
-      clientPort: process.env.VITE_HMR_PORT ? parseInt(process.env.VITE_HMR_PORT) : 443,
+    hmr: disableHMR ? false : useCustomHMR ? {
+      // Use custom HMR config if provided via env vars (for production)
+      host: process.env.VITE_HMR_HOST,
+      clientPort: process.env.VITE_HMR_PORT ? parseInt(process.env.VITE_HMR_PORT) : undefined,
       protocol: process.env.VITE_HMR_PROTOCOL || 'wss',
+    } : {
+      // Default to localhost for local development (no custom config)
+      host: 'localhost',
+      protocol: 'ws',
     },
     proxy: {
       '/api/v2': {

@@ -6,6 +6,7 @@ export interface User {
   first_name?: string
   last_name?: string
   role?: string
+  medical_professional_type?: string | null
   exp?: number
   created_at?: string
   updated_at?: string
