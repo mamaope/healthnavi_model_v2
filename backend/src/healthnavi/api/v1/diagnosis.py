@@ -553,6 +553,8 @@ async def submit_feedback(
             if existing_feedback:
                 # Update existing feedback
                 existing_feedback.feedback_type = feedback_data.feedback_type
+                existing_feedback.feedback_text = feedback_data.feedback_text
+                existing_feedback.rating = feedback_data.rating
                 existing_feedback.updated_at = datetime.utcnow().isoformat()
                 db.commit()
                 db.refresh(existing_feedback)
@@ -564,6 +566,8 @@ async def submit_feedback(
                     message_id=existing_feedback.message_id,
                     user_id=existing_feedback.user_id,
                     feedback_type=existing_feedback.feedback_type,
+                    feedback_text=existing_feedback.feedback_text,
+                    rating=existing_feedback.rating,
                     created_at=existing_feedback.created_at,
                     updated_at=existing_feedback.updated_at
                 )
@@ -580,6 +584,8 @@ async def submit_feedback(
                     message_id=feedback_data.message_id,
                     user_id=current_user.id,
                     feedback_type=feedback_data.feedback_type,
+                    feedback_text=feedback_data.feedback_text,
+                    rating=feedback_data.rating,
                     created_at=datetime.utcnow().isoformat(),
                     updated_at=datetime.utcnow().isoformat()
                 )
@@ -595,6 +601,8 @@ async def submit_feedback(
                     message_id=new_feedback.message_id,
                     user_id=new_feedback.user_id,
                     feedback_type=new_feedback.feedback_type,
+                    feedback_text=new_feedback.feedback_text,
+                    rating=new_feedback.rating,
                     created_at=new_feedback.created_at,
                     updated_at=new_feedback.updated_at
                 )

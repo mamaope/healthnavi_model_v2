@@ -129,6 +129,8 @@ class MessageFeedbackRequest(BaseModel):
     """Schema for submitting message feedback."""
     message_id: int = Field(..., description="ID of the chat message to provide feedback for")
     feedback_type: str = Field(..., description="Type of feedback: 'helpful' or 'not_helpful'")
+    feedback_text: Optional[str] = Field(None, max_length=2000, description="Optional text feedback from the user")
+    rating: Optional[int] = Field(None, ge=1, le=5, description="Rating from 1 to 5 stars")
 
 
 class MessageFeedbackResponse(BaseModel):
@@ -137,6 +139,8 @@ class MessageFeedbackResponse(BaseModel):
     message_id: int
     user_id: int
     feedback_type: str
+    feedback_text: Optional[str]
+    rating: Optional[int]
     created_at: Optional[str]
     updated_at: Optional[str]
 

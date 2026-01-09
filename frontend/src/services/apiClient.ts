@@ -451,7 +451,12 @@ export const chatApi = {
       throw error
     }
   },
-  submitFeedback(messageId: number, feedbackType: 'helpful' | 'not_helpful') {
+  submitFeedback(
+    messageId: number,
+    feedbackType: 'helpful' | 'not_helpful',
+    feedbackText?: string,
+    rating?: number
+  ) {
     return apiFetch<{
       success: boolean
       data: {
@@ -459,6 +464,8 @@ export const chatApi = {
         message_id: number
         user_id: number
         feedback_type: string
+        feedback_text: string | null
+        rating: number | null
         created_at: string | null
         updated_at: string | null
       }
@@ -466,6 +473,8 @@ export const chatApi = {
       body: JSON.stringify({
         message_id: messageId,
         feedback_type: feedbackType,
+        feedback_text: feedbackText || null,
+        rating: rating || null,
       }),
     })
   },

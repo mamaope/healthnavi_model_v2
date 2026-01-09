@@ -3,6 +3,7 @@ import type { ChatMessage } from '../../types/chat'
 import { renderModelResponse } from '../../utils/markdown'
 import { chatApi } from '../../services/apiClient'
 import { useAuth } from '../../providers/AuthProvider'
+import { FeedbackDialog } from './FeedbackDialog'
 
 interface MessageListProps {
   messages: ChatMessage[]
@@ -15,6 +16,9 @@ export function MessageList({ messages, showWelcomeMessage = false }: MessageLis
   const [feedback, setFeedback] = useState<Record<string, 'helpful' | 'not_helpful' | null>>({})
   const [shareStatus, setShareStatus] = useState<Record<string, 'shared' | 'copied' | null>>({})
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState<Record<string, boolean>>({})
+  const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false)
+  const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null)
+  const [selectedFeedbackType, setSelectedFeedbackType] = useState<'helpful' | 'not_helpful' | null>(null)
   const shareTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   
   // Streaming state commented out - reverted to non-streaming
@@ -29,23 +33,45 @@ export function MessageList({ messages, showWelcomeMessage = false }: MessageLis
     }
   }, [])
 
-  const handleFeedback = async (message: ChatMessage, value: 'helpful' | 'not_helpful') => {
+  const handleFeedbackClick = (message: ChatMessage, value: 'helpful' | 'not_helpful') => {
+    // Check if feedback is already set to this value (toggle off)
+    const currentFeedback = feedback[message.id]
+    if (currentFeedback === value) {
+      // Remove feedback
+      handleFeedback(message, value, '', 0, true)
+      return
+    }
+
+    // Open dialog for new feedback
+    setSelectedMessage(message)
+    setSelectedFeedbackType(value)
+    setFeedbackDialogOpen(true)
+  }
+
+  const handleFeedback = async (
+    message: ChatMessage,
+    value: 'helpful' | 'not_helpful',
+    feedbackText: string = '',
+    rating: number = 0,
+    isRemoving: boolean = false
+  ) => {
+    const messageId = message.id
+
     // Only submit feedback if user is authenticated and message has a backend ID
     if (!isAuthenticated || !message.messageId) {
       // For unauthenticated users or messages without backend ID, just update local state
       setFeedback((prev) => ({
         ...prev,
-        [message.id]: prev[message.id] === value ? null : value,
+        [messageId]: isRemoving ? null : value,
       }))
+      // Close dialog even for unauthenticated users
+      setFeedbackDialogOpen(false)
+      setSelectedMessage(null)
+      setSelectedFeedbackType(null)
       return
     }
 
-    const messageId = message.id
     const backendMessageId = message.messageId
-
-    // Toggle feedback: if already set to this value, remove it
-    const currentFeedback = feedback[messageId]
-    const isRemoving = currentFeedback === value
 
     // Optimistically update UI
     setFeedback((prev) => ({
@@ -59,18 +85,30 @@ export function MessageList({ messages, showWelcomeMessage = false }: MessageLis
         // Remove feedback
         await chatApi.removeFeedback(backendMessageId)
       } else {
-        // Submit feedback
-        await chatApi.submitFeedback(backendMessageId, value)
+        // Submit feedback with text and rating
+        await chatApi.submitFeedback(backendMessageId, value, feedbackText, rating)
       }
+      // Close dialog immediately on successful submission
+      setFeedbackDialogOpen(false)
+      setSelectedMessage(null)
+      setSelectedFeedbackType(null)
     } catch (error) {
       console.error('Failed to submit feedback:', error)
       // Revert optimistic update on error
+      const currentFeedback = feedback[messageId]
       setFeedback((prev) => ({
         ...prev,
         [messageId]: currentFeedback,
       }))
+      // Keep dialog open on error so user can retry
     } finally {
       setIsSubmittingFeedback((prev) => ({ ...prev, [messageId]: false }))
+    }
+  }
+
+  const handleFeedbackSubmit = (feedbackText: string, rating: number) => {
+    if (selectedMessage && selectedFeedbackType) {
+      handleFeedback(selectedMessage, selectedFeedbackType, feedbackText, rating, false)
     }
   }
 
@@ -146,7 +184,7 @@ export function MessageList({ messages, showWelcomeMessage = false }: MessageLis
                     <button
                       type="button"
                       className={`message-action positive ${feedback[message.id] === 'helpful' ? 'active' : ''}`}
-                      onClick={() => handleFeedback(message, 'helpful')}
+                      onClick={() => handleFeedbackClick(message, 'helpful')}
                       aria-pressed={feedback[message.id] === 'helpful'}
                       aria-label="Helpful"
                       disabled={isSubmittingFeedback[message.id]}
@@ -157,7 +195,7 @@ export function MessageList({ messages, showWelcomeMessage = false }: MessageLis
                     <button
                       type="button"
                       className={`message-action negative ${feedback[message.id] === 'not_helpful' ? 'active' : ''}`}
-                      onClick={() => handleFeedback(message, 'not_helpful')}
+                      onClick={() => handleFeedbackClick(message, 'not_helpful')}
                       aria-pressed={feedback[message.id] === 'not_helpful'}
                       aria-label="Not helpful"
                       disabled={isSubmittingFeedback[message.id]}
@@ -220,6 +258,18 @@ export function MessageList({ messages, showWelcomeMessage = false }: MessageLis
           </Fragment>
         )
       })}
+
+      <FeedbackDialog
+        isOpen={feedbackDialogOpen}
+        feedbackType={selectedFeedbackType}
+        onClose={() => {
+          setFeedbackDialogOpen(false)
+          setSelectedMessage(null)
+          setSelectedFeedbackType(null)
+        }}
+        onSubmit={handleFeedbackSubmit}
+        isSubmitting={selectedMessage ? isSubmittingFeedback[selectedMessage.id] : false}
+      />
     </div>
   )
 }
