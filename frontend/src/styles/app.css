@@ -3258,7 +3258,7 @@ body,
     width: auto !important;
     min-width: 100px !important;
     line-height: 1.6;
-    font-size: var(--font-size-base);
+    font-size: 14px;
     word-wrap: break-word;
     overflow-wrap: break-word;
     white-space: pre-wrap;
@@ -3289,6 +3289,7 @@ body,
     max-width: 90% !important;
     min-width: 0 !important;
     line-height: 1.6;
+    font-size: 14px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     position: relative;
     box-sizing: border-box !important;
@@ -4026,7 +4027,7 @@ body,
     margin: var(--spacing-lg) 0;
     line-height: 1.8;
     color: var(--text-primary);
-    font-size: var(--font-size-base);
+    font-size: 14px;
     text-align: justify;
     text-justify: inter-word;
     hyphens: auto;
@@ -4182,7 +4183,7 @@ body,
 
 /* H2 - Main sections */
 .ai-message .message-content h2 {
-    font-size: 1.75em;
+    font-size: 1.5em;
     color: var(--primary) !important;
     margin-top: 0.75em;
     margin-bottom: 1em;
@@ -4192,7 +4193,7 @@ body,
 
 /* H3 - Subsections */
 .ai-message .message-content h3 {
-    font-size: 1.5em;
+    font-size: 1.3em;
     color: var(--text-primary) !important;
     margin-top: 1.75em;
     margin-bottom: 0.75em;
@@ -4200,7 +4201,7 @@ body,
 
 /* H4 - Sub-subsections with icons */
 .ai-message .message-content h4 {
-    font-size: 1.25em;
+    font-size: 1.15em;
     color: var(--primary) !important;
     margin-top: 1.5em;
     margin-bottom: 0.75em;
@@ -9173,7 +9174,7 @@ textarea {
     padding: var(--space-4) var(--space-5);
     border-radius: 0;
     line-height: var(--line-height-relaxed);
-    font-size: var(--font-size-base);
+    font-size: 14px;
     word-wrap: break-word;
     word-break: break-word;
     max-width: 70%;
@@ -9216,6 +9217,7 @@ textarea {
     max-width: 60% !important;
     min-width: 100px !important;
     flex-shrink: 0 !important;
+    font-size: 14px !important;
 }
 
 .ai-message {
@@ -9234,6 +9236,7 @@ textarea {
     border-bottom-left-radius: var(--radius-sm);
     margin-right: auto;
     margin-left: 0;
+    font-size: 14px;
     text-align: left;
     width: 100% !important;
     max-width: 100% !important;

@@ -146,7 +146,27 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
           <button
             type="button"
             className={`deep-reasoning-btn ${isDeepSearchEnabled ? 'active' : ''}`}
-            onClick={onToggleDeepSearch}
+            onClick={() => {
+              onToggleDeepSearch()
+              // Return focus to textarea after toggling
+              setTimeout(() => {
+                if (textareaRef.current) {
+                  textareaRef.current.focus()
+                }
+              }, 0)
+            }}
+            onKeyDown={(e) => {
+              // Prevent Enter key from toggling the button
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                e.stopPropagation()
+                // Focus textarea and send message
+                if (textareaRef.current) {
+                  textareaRef.current.focus()
+                  void handleSend()
+                }
+              }
+            }}
             aria-pressed={isDeepSearchEnabled}
             aria-label="Toggle deep reasoning"
             title="Deep Reasoning"
