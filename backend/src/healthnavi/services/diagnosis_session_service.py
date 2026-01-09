@@ -139,20 +139,30 @@ class DiagnosisSessionService:
             raise
     
     def list_sessions(self, user: User, page: int = 1, per_page: int = 20) -> ChatSessionListResponse:
-        """List diagnosis sessions for a user."""
+        """List diagnosis sessions for a user. Only returns sessions with at least one user message."""
         try:
             # Calculate offset
             offset = (page - 1) * per_page
             
-            # Get total count
-            total = self.db.query(func.count(DiagnosisSession.id)).filter(
-                DiagnosisSession.user_id == user.id
-            ).scalar()
+            # Get session IDs that have at least one user message
+            sessions_with_user_messages = self.db.query(ChatMessage.session_id).filter(
+                ChatMessage.message_type == 'user'
+            ).distinct().subquery()
             
-            # Get sessions WITHOUT expensive message count join
-            # Message count can be lazy-loaded if needed by the frontend
+            # Get total count of sessions with user messages
+            total = self.db.query(func.count(DiagnosisSession.id)).filter(
+                DiagnosisSession.user_id == user.id,
+                DiagnosisSession.id.in_(
+                    self.db.query(sessions_with_user_messages.c.session_id)
+                )
+            ).scalar() or 0
+            
+            # Get sessions that have at least one user message
             sessions = self.db.query(DiagnosisSession).filter(
-                DiagnosisSession.user_id == user.id
+                DiagnosisSession.user_id == user.id,
+                DiagnosisSession.id.in_(
+                    self.db.query(sessions_with_user_messages.c.session_id)
+                )
             ).order_by(
                 desc(DiagnosisSession.updated_at)
             ).offset(offset).limit(per_page).all()
