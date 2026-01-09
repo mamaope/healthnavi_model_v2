@@ -75,21 +75,21 @@ fun LoginScreen(
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
             coroutineScope.launch {
                 try {
-                    val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
                     val account = task.await()
-                    account?.idToken?.let { idToken ->
-                        viewModel.googleSignIn(idToken)
-                    } ?: run {
+                account?.idToken?.let { idToken ->
+                    viewModel.googleSignIn(idToken)
+                } ?: run {
                         viewModel.setError("Google Sign-In failed: No ID token received")
-                    }
-                } catch (e: ApiException) {
-                    val errorMessage = when (e.statusCode) {
-                        7 -> "Network error. Please check your connection."
-                        12501 -> "Sign in cancelled"
-                        4 -> "Sign in required"
+                }
+            } catch (e: ApiException) {
+                val errorMessage = when (e.statusCode) {
+                    7 -> "Network error. Please check your connection."
+                    12501 -> "Sign in cancelled"
+                    4 -> "Sign in required"
                         10 -> "Developer error - check Google Sign-In configuration"
                         8 -> "Internal error - please try again"
-                        else -> "Google Sign-In failed: ${e.statusCode}"
+                    else -> "Google Sign-In failed: ${e.statusCode}"
                     }
                     viewModel.setError(errorMessage)
                 } catch (e: Exception) {
@@ -98,7 +98,7 @@ fun LoginScreen(
             }
         } else {
             if (result.resultCode == Activity.RESULT_CANCELED) {
-                viewModel.clearError()
+            viewModel.clearError()
             } else {
                 viewModel.setError("Google Sign-In was cancelled or failed")
             }
@@ -163,25 +163,25 @@ fun LoginScreen(
                 exit = fadeOut() + slideOutVertically()
             ) {
                 uiState.errorMessage?.let { error ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
                             .padding(bottom = 20.dp),
-                        colors = CardDefaults.cardColors(
+                    colors = CardDefaults.cardColors(
                             containerColor = Error500.copy(alpha = 0.1f)
-                        ),
+                    ),
                         shape = RoundedCornerShape(12.dp),
                         border = androidx.compose.foundation.BorderStroke(
                             1.dp,
                             Error500.copy(alpha = 0.3f)
                         )
-                    ) {
-                        Text(
+                ) {
+                    Text(
                             text = error,
                             color = Error600,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(16.dp)
-                        )
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(16.dp)
+                    )
                     }
                 }
             }

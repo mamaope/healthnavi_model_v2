@@ -254,7 +254,7 @@ export default function App() {
                 onToggleDeepSearch={() =>
                   setIsDeepSearchEnabled((previous) => !previous)
                 }
-                placeholder="Ask a clinical question, describe symptoms, or request guidance..."
+                placeholder="Ask me a medical question ..."
               />
             </div>
 

@@ -9,7 +9,6 @@ const sampleSections = [
   {
     icon: 'fas fa-prescription-bottle-alt',
     title: 'Drug Dosing & Interactions',
-    description: '',
     prompts: [
       'Calculate the dose for ceftriaxone for a 60kg adult with severe pneumonia',
       'What happens when green leafy vegetables are taken in large amounts while on warfarin?',
@@ -18,7 +17,6 @@ const sampleSections = [
   {
     icon: 'fas fa-book-medical',
     title: 'Clinical Guidelines',
-    description: '',
     prompts: [
       'What are the ADA (American Diabetes Association) recommendations for initiating insulin therapy in type 2 diabetes?',
       'According to WHO malaria guidelines, how should malaria in pregnancy be treated?',
@@ -27,7 +25,6 @@ const sampleSections = [
   {
     icon: 'fas fa-stethoscope',
     title: 'Treatment Options',
-    description: '',
     prompts: [
       'What are the treatment options for severe malnutrition in children under 5?',
       'What is the first-line antihypertensive medication for stage 1 hypertension?',
@@ -56,43 +53,38 @@ export function SamplePrompts({ onSelectPrompt, hidden }: SamplePromptsProps) {
 
   return (
     <section className="sample-questions-modern">
-      <div className="sample-accordion">
+      <div className="sample-questions-grid">
         {sampleSections.map((section) => {
           const isExpanded = expandedSections.has(section.title)
           return (
-            <div key={section.title} className="sample-accordion-item">
+            <div key={section.title} className="sample-question-card">
               <button
                 type="button"
-                className={`sample-accordion-header ${isExpanded ? 'expanded' : ''}`}
+                className={`sample-question-header ${isExpanded ? 'expanded' : ''}`}
                 onClick={() => toggleSection(section.title)}
                 aria-expanded={isExpanded}
               >
-                <div className="sample-accordion-header-content">
+                <div className="sample-question-icon-wrapper">
                   <i className={section.icon} />
-                  <div className="sample-accordion-title-group">
-                    <span className="sample-accordion-title">{section.title}</span>
-                    <span className="sample-accordion-description">{section.description}</span>
-                  </div>
                 </div>
-                <i className={`fas fa-chevron-down sample-accordion-chevron ${isExpanded ? 'expanded' : ''}`} />
+                <span className="sample-question-title">{section.title}</span>
+                <i className={`fas fa-chevron-down sample-question-chevron ${isExpanded ? 'expanded' : ''}`} />
               </button>
-              <div className={`sample-accordion-content ${isExpanded ? 'expanded' : ''}`}>
-                <div className="sample-accordion-prompts">
-                  {section.prompts.map((prompt, index) => (
-                    <button
-                      key={index}
-                      type="button"
-                      className="sample-prompt-card"
-                      onClick={() => {
-                        onSelectPrompt(prompt)
-                        setExpandedSections(new Set())
-                      }}
-                    >
-                      <i className="fas fa-arrow-right" />
-                      <span>{prompt}</span>
-                    </button>
-                  ))}
-                </div>
+              <div className={`sample-question-content ${isExpanded ? 'expanded' : ''}`}>
+                {section.prompts.map((prompt, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    className="sample-question-item"
+                    onClick={() => {
+                      onSelectPrompt(prompt)
+                      setExpandedSections(new Set())
+                    }}
+                  >
+                    <span className="sample-question-text">{prompt}</span>
+                    <i className="fas fa-arrow-right" />
+                  </button>
+                ))}
               </div>
             </div>
           )

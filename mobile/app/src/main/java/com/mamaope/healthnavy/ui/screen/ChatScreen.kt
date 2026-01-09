@@ -110,18 +110,18 @@ fun ChatScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .background(BackgroundLight)
-        ) {
-            if (uiState.messages.isEmpty() && !uiState.isLoading) {
+    ) {
+        if (uiState.messages.isEmpty() && !uiState.isLoading) {
                 EmptyChatState(onPromptSelected = {
                     chatViewModel.sendMessage(it)
                 })
-            } else {
-                LazyColumn(
+        } else {
+            LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
-                    state = listState,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+                state = listState,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                     itemsIndexed(uiState.messages) { index, message ->
                         AnimatedVisibility(
                             visible = true,
@@ -136,9 +136,9 @@ fun ChatScreen(
                                 viewModel = chatViewModel
                             )
                         }
-                    }
-                    if (uiState.isSending) {
-                        item {
+                }
+                if (uiState.isSending) {
+                    item {
                             ThinkingIndicator()
                         }
                     }
@@ -245,12 +245,12 @@ private fun InputArea(
                         Error500.copy(alpha = 0.3f)
                     )
                 ) {
-                    Text(
+            Text(
                         text = it,
                         color = Error600,
-                        style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(12.dp)
-                    )
+            )
                 }
             }
         }
@@ -264,13 +264,13 @@ private fun InputArea(
             border = androidx.compose.foundation.BorderStroke(
                 1.dp,
                 if (isDeepSearch) Primary500 else BorderLight
-            )
+                    )
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+                ) {
                 Surface(
                     onClick = onToggleDeepSearch,
                     modifier = Modifier.size(44.dp),
@@ -307,29 +307,29 @@ private fun InputArea(
                         unfocusedTextColor = TextPrimary
                     ),
                     trailingIcon = {
-                        FilledIconButton(
-                            onClick = onSend,
-                            enabled = messageText.isNotBlank() && !isSending,
+                    FilledIconButton(
+                        onClick = onSend,
+                        enabled = messageText.isNotBlank() && !isSending,
                             colors = IconButtonDefaults.filledIconButtonColors(
                                 containerColor = if (messageText.isNotBlank()) Primary500 else Gray300,
                                 disabledContainerColor = Gray300
-                            ),
+                        ),
                             shape = CircleShape,
                             modifier = Modifier.size(40.dp)
-                        ) {
-                            if (isSending) {
-                                CircularProgressIndicator(
+                    ) {
+                        if (isSending) {
+                            CircularProgressIndicator(
                                     modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp,
-                                    color = Color.White
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.Send,
-                                    contentDescription = "Send",
+                                strokeWidth = 2.dp,
+                                color = Color.White
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Send,
+                                contentDescription = "Send",
                                     tint = Color.White,
                                     modifier = Modifier.size(18.dp)
-                                )
+        )
                             }
                         }
                     }
@@ -412,7 +412,7 @@ fun MessageBubble(
                             isActive = feedbackState == "helpful",
                             onClick = {
                                 viewModel.submitFeedback(message.messageId!!, "helpful")
-                            }
+                        }
                         )
                         FeedbackChip(
                             label = "Not helpful",
@@ -420,7 +420,7 @@ fun MessageBubble(
                             isActive = feedbackState == "not_helpful",
                             onClick = {
                                 viewModel.submitFeedback(message.messageId!!, "not_helpful")
-                            }
+                        }
                         )
                         FeedbackChip(
                             label = "Share",
@@ -496,7 +496,7 @@ private fun ThinkingIndicator() {
                 modifier = Modifier.padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+    ) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(20.dp),
                     strokeWidth = 2.dp,
@@ -507,7 +507,7 @@ private fun ThinkingIndicator() {
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary
                 )
-            }
-        }
+    }
+}
     }
 }
