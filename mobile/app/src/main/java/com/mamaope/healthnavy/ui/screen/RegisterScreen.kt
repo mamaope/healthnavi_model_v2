@@ -76,7 +76,7 @@ fun RegisterScreen(
             Spacer(modifier = Modifier.height(8.dp))
             
             Text(
-                text = "Join HealthNavy and start your healthcare journey",
+                text = "Join Empirico and start your healthcare journey",
                 style = MaterialTheme.typography.bodyLarge,
                 color = TextSecondary,
                 textAlign = TextAlign.Center

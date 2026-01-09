@@ -148,28 +148,31 @@ export function MessageList({ messages, showWelcomeMessage = false }: MessageLis
                       className={`message-action positive ${feedback[message.id] === 'helpful' ? 'active' : ''}`}
                       onClick={() => handleFeedback(message, 'helpful')}
                       aria-pressed={feedback[message.id] === 'helpful'}
+                      aria-label="Helpful"
                       disabled={isSubmittingFeedback[message.id]}
                     >
                       <i className="fas fa-thumbs-up" aria-hidden="true" />
-                      Helpful
+                      <span className="sr-only">Helpful</span>
                     </button>
                     <button
                       type="button"
                       className={`message-action negative ${feedback[message.id] === 'not_helpful' ? 'active' : ''}`}
                       onClick={() => handleFeedback(message, 'not_helpful')}
                       aria-pressed={feedback[message.id] === 'not_helpful'}
+                      aria-label="Not helpful"
                       disabled={isSubmittingFeedback[message.id]}
                     >
                       <i className="fas fa-thumbs-down" aria-hidden="true" />
-                      Not helpful
+                      <span className="sr-only">Not helpful</span>
                     </button>
                     <button
                       type="button"
                       className="message-action neutral"
                       onClick={() => handleShare(message.id, message.content)}
+                      aria-label="Share"
                     >
                       <i className="fas fa-share-alt" aria-hidden="true" />
-                      Share
+                      <span className="sr-only">Share</span>
                     </button>
                     {shareStatus[message.id] && (
                       <span className="message-action-status">

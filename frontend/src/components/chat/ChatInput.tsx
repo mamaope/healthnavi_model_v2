@@ -143,6 +143,38 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
           </div>
         )}
         <div className="chat-input-box">
+          <button
+            type="button"
+            className={`deep-reasoning-btn ${isDeepSearchEnabled ? 'active' : ''}`}
+            onClick={() => {
+              onToggleDeepSearch()
+              // Return focus to textarea after toggling
+              setTimeout(() => {
+                if (textareaRef.current) {
+                  textareaRef.current.focus()
+                }
+              }, 0)
+            }}
+            onKeyDown={(e) => {
+              // Prevent Enter key from toggling the button
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                e.stopPropagation()
+                // Focus textarea and send message
+                if (textareaRef.current) {
+                  textareaRef.current.focus()
+                  void handleSend()
+                }
+              }
+            }}
+            aria-pressed={isDeepSearchEnabled}
+            aria-label="Toggle deep reasoning"
+            title="Deep Reasoning"
+            disabled={isSending}
+          >
+            <i className="fas fa-brain" aria-hidden="true" />
+            <span className="sr-only">Deep Reasoning</span>
+          </button>
           <textarea
             ref={textareaRef}
             value={value}
@@ -153,52 +185,36 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
             disabled={isSending || isRecording}
             aria-label="Message input"
           />
-          <div className="chat-input-footer">
-            <div className="chat-input-left">
-              <button
-                type="button"
-                className={`deep-reasoning-btn ${isDeepSearchEnabled ? 'active' : ''}`}
-                onClick={onToggleDeepSearch}
-                aria-pressed={isDeepSearchEnabled}
-                aria-label="Toggle deep reasoning"
-                title="Deep Reasoning"
-                disabled={isSending}
-              >
-                <i className="fas fa-brain" aria-hidden="true" />
-                <span className="deep-reasoning-label">Deep Reasoning</span>
-              </button>
-              <button
-                type="button"
-                className={`chat-icon-btn ${isRecording ? 'recording' : ''} ${isTranscribing ? 'transcribing' : ''}`}
-                onClick={() => void handleMicClick()}
-                disabled={micButtonDisabled}
-                aria-label={isRecording ? 'Stop recording' : 'Start voice input'}
-                title={isRecording ? `Recording: ${duration.toFixed(1)}s` : 'Voice input'}
-              >
-                {isTranscribing ? (
-                  <i className="fas fa-spinner fa-spin" aria-hidden="true" />
-                ) : (
-                  <i className={`fas fa-microphone ${isRecording ? 'pulse' : ''}`} aria-hidden="true" />
-                )}
-              </button>
-            </div>
-            <div className="chat-input-right">
-              <span className={`chat-char-counter ${isNearLimit ? 'warning' : ''} ${isOverLimit ? 'error' : ''}`}>
-                {value.length}/{MAX_MESSAGE_LENGTH}
-              </span>
-              <button
-                className="chat-send-btn"
-                onClick={() => void handleSend()}
-                disabled={isSending || value.trim().length === 0}
-                aria-label="Send message"
-              >
-                {isSending ? (
-                  <i className="fas fa-spinner fa-spin" />
-                ) : (
-                  <i className="fas fa-arrow-up" />
-                )}
-              </button>
-            </div>
+          <div className="chat-input-actions">
+            <span className={`chat-char-counter ${isNearLimit ? 'warning' : ''} ${isOverLimit ? 'error' : ''}`}>
+              {value.length}/{MAX_MESSAGE_LENGTH}
+            </span>
+            <button
+              type="button"
+              className={`chat-icon-btn ${isRecording ? 'recording' : ''} ${isTranscribing ? 'transcribing' : ''}`}
+              onClick={() => void handleMicClick()}
+              disabled={micButtonDisabled}
+              aria-label={isRecording ? 'Stop recording' : 'Start voice input'}
+              title={isRecording ? `Recording: ${duration.toFixed(1)}s` : 'Voice input'}
+            >
+              {isTranscribing ? (
+                <i className="fas fa-spinner fa-spin" aria-hidden="true" />
+              ) : (
+                <i className={`fas fa-microphone ${isRecording ? 'pulse' : ''}`} aria-hidden="true" />
+              )}
+            </button>
+            <button
+              className="chat-send-btn"
+              onClick={() => void handleSend()}
+              disabled={isSending || value.trim().length === 0}
+              aria-label="Send message"
+            >
+              {isSending ? (
+                <i className="fas fa-spinner fa-spin" />
+              ) : (
+                <i className="fas fa-arrow-up" />
+              )}
+            </button>
           </div>
         </div>
       </div>
