@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../providers/AuthProvider'
 import { ThemeToggle } from '../common/ThemeToggle'
 
@@ -12,8 +13,17 @@ interface HeaderProps {
 
 export function Header({ onSignIn, onRegister, onHomeClick, onMenuToggle, showMenuButton = false }: HeaderProps) {
   const { isAuthenticated } = useAuth()
+  const navigate = useNavigate()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+
+  const handleLogoClick = () => {
+    if (onHomeClick) {
+      onHomeClick()
+    } else {
+      navigate('/')
+    }
+  }
 
   useEffect(() => {
     if (!isMenuOpen) return
@@ -47,8 +57,17 @@ export function Header({ onSignIn, onRegister, onHomeClick, onMenuToggle, showMe
         <div className="header-brand">
           <div 
             className="header-logo" 
-            onClick={onHomeClick}
-            style={{ cursor: onHomeClick ? 'pointer' : 'default' }}
+            onClick={handleLogoClick}
+            style={{ cursor: 'pointer' }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                handleLogoClick()
+              }
+            }}
+            aria-label="Go to home page"
           >
             <img 
               src="/logo.png" 
