@@ -398,7 +398,7 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
             max_books = 4
             min_chunks = 5
             min_books = 3
-            max_output_tokens = 2500
+            max_output_tokens = 3000
             prompt_template = QUICK_SEARCH_PROMPT
             prompt_type = "quick_search"
             logger.info("⚡ Using QUICK SEARCH mode (streaming)")
