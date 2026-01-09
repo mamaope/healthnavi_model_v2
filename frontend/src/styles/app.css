@@ -992,18 +992,20 @@ body,
     border: 1px solid var(--border-light) !important;
 }
 
+:root:not([data-theme="dark"]) .ai-message .message-content h1,
 :root:not([data-theme="dark"]) .ai-message .message-content h2,
 :root:not([data-theme="dark"]) .ai-message .message-content h3,
 :root:not([data-theme="dark"]) .ai-message .message-content h4,
+:root:not([data-theme="dark"]) .ai-message .message-content h5,
+:root:not([data-theme="dark"]) .ai-message .message-content h6 {
+    color: var(--primary) !important;
+}
+
 :root:not([data-theme="dark"]) .ai-message .message-content p,
 :root:not([data-theme="dark"]) .ai-message .message-content li,
 :root:not([data-theme="dark"]) .ai-message .message-content span,
 :root:not([data-theme="dark"]) .ai-message .message-content strong {
     color: #1c1917 !important;
-}
-
-:root:not([data-theme="dark"]) .ai-message .message-content h4 {
-    color: var(--primary) !important;
 }
 
 :root:not([data-theme="dark"]) .ai-message .message-content em {
@@ -3763,7 +3765,7 @@ body,
 
 /* Enhanced text formatting */
 .ai-message .message-content h4 {
-    color: var(--primary-color);
+    color: var(--primary) !important;
     font-size: var(--font-size-lg);
     font-weight: 600;
     margin: var(--spacing-lg) 0 var(--spacing-md) 0;
@@ -3970,12 +3972,12 @@ body,
 
 /* Enhanced Markdown formatting for better readability */
 .ai-message .message-content h2 {
-    color: var(--primary-color);
+    color: var(--primary) !important;
     font-size: var(--font-size-2xl);
     font-weight: 700;
     margin: var(--spacing-md) 0 var(--spacing-lg) 0;
     padding: var(--spacing-md) 0;
-    border-bottom: 3px solid var(--primary-color);
+    border-bottom: 3px solid var(--primary);
     position: relative;
     letter-spacing: -0.02em;
 }
@@ -3987,23 +3989,23 @@ body,
     left: 0;
     width: 60px;
     height: 3px;
-    background: var(--primary-color);
+    background: var(--primary);
     border-radius: 2px;
 }
 
 .ai-message .message-content h3 {
-    color: var(--text-primary);
+    color: var(--primary) !important;
     font-size: var(--font-size-xl);
     font-weight: 600;
     margin: var(--spacing-md) 0 var(--spacing-md) 0;
     padding: var(--spacing-sm) 0 var(--spacing-sm) 0;
-    border-left: 4px solid var(--primary-color);
+    border-left: 4px solid var(--primary);
     padding-left: var(--spacing-md);
     letter-spacing: -0.01em;
 }
 
 .ai-message .message-content h4 {
-    color: var(--primary-color);
+    color: var(--primary) !important;
     font-size: var(--font-size-lg);
     font-weight: 600;
     margin: var(--spacing-lg) 0 var(--spacing-sm) 0;
@@ -4019,7 +4021,7 @@ body,
     left: 0;
     width: 40px;
     height: 2px;
-    background: var(--primary-color);
+    background: var(--primary);
     border-radius: 1px;
 }
 
@@ -4171,6 +4173,7 @@ body,
     margin-bottom: 0.75em;
     line-height: 1.3;
     font-weight: 600;
+    color: var(--primary) !important;
 }
 
 /* First heading should not have top margin */
@@ -4194,7 +4197,7 @@ body,
 /* H3 - Subsections */
 .ai-message .message-content h3 {
     font-size: 1.3em;
-    color: var(--text-primary) !important;
+    color: var(--primary) !important;
     margin-top: 1.75em;
     margin-bottom: 0.75em;
 }
@@ -4207,21 +4210,32 @@ body,
     margin-bottom: 0.75em;
 }
 
+/* H1 - Main title */
+.ai-message .message-content h1 {
+    font-size: 1.75em;
+    color: var(--primary) !important;
+    margin-top: 0.75em;
+    margin-bottom: 1em;
+    padding-bottom: 0.5em;
+    border-bottom: 2px solid var(--border-light);
+}
+
 /* H5 and H6 - Smaller headings */
 .ai-message .message-content h5 {
     font-size: 1.1em;
-    color: var(--text-primary) !important;
+    color: var(--primary) !important;
     margin-top: 1.25em;
     margin-bottom: 0.5em;
 }
 
 .ai-message .message-content h6 {
     font-size: 1em;
-    color: var(--text-secondary) !important;
+    color: var(--primary) !important;
     margin-top: 1em;
     margin-bottom: 0.5em;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    opacity: 0.85;
 }
 
 /* Paragraphs - proper spacing */
