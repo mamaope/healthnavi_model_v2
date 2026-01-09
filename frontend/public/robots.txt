@@ -1,0 +1,19 @@
+# robots.txt for empirico.ai
+
+User-agent: *
+Allow: /
+
+# Disallow API endpoints from being indexed
+Disallow: /api/
+
+# Allow important static files
+Allow: /logo.png
+Allow: /favicon.ico
+Allow: /*.css
+Allow: /*.js
+
+# Sitemap location
+Sitemap: https://empirico.ai/sitemap.xml
+
+# Crawl-delay (optional, helps prevent server overload)
+Crawl-delay: 1
