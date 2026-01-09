@@ -33,59 +33,50 @@ const sampleSections = [
 ]
 
 export function SamplePrompts({ onSelectPrompt, hidden }: SamplePromptsProps) {
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
+  const [expandedSection, setExpandedSection] = useState<string | null>(null)
 
   if (hidden) {
     return null
   }
 
   const toggleSection = (title: string) => {
-    setExpandedSections((prev) => {
-      const newSet = new Set(prev)
-      if (newSet.has(title)) {
-        newSet.delete(title)
-      } else {
-        newSet.add(title)
-      }
-      return newSet
-    })
+    setExpandedSection((prev) => (prev === title ? null : title))
   }
 
   return (
-    <section className="sample-questions-modern">
-      <div className="sample-questions-grid">
+    <section className="sample-questions-compact">
+      <div className="sample-questions-dropdown">
         {sampleSections.map((section) => {
-          const isExpanded = expandedSections.has(section.title)
+          const isExpanded = expandedSection === section.title
           return (
-            <div key={section.title} className="sample-question-card">
+            <div key={section.title} className="sample-dropdown-item">
               <button
                 type="button"
-                className={`sample-question-header ${isExpanded ? 'expanded' : ''}`}
+                className={`sample-dropdown-trigger ${isExpanded ? 'expanded' : ''}`}
                 onClick={() => toggleSection(section.title)}
                 aria-expanded={isExpanded}
               >
-                <div className="sample-question-icon-wrapper">
-                  <i className={section.icon} />
-                </div>
-                <span className="sample-question-title">{section.title}</span>
-                <i className={`fas fa-chevron-down sample-question-chevron ${isExpanded ? 'expanded' : ''}`} />
+                <i className={section.icon} />
+                <span className="sample-dropdown-title">{section.title}</span>
+                <i className={`fas fa-chevron-down sample-dropdown-chevron ${isExpanded ? 'expanded' : ''}`} />
               </button>
-              <div className={`sample-question-content ${isExpanded ? 'expanded' : ''}`}>
-                {section.prompts.map((prompt, index) => (
-                  <button
-                    key={index}
-                    type="button"
-                    className="sample-question-item"
-                    onClick={() => {
-                      onSelectPrompt(prompt)
-                      setExpandedSections(new Set())
-                    }}
-                  >
-                    <span className="sample-question-text">{prompt}</span>
-                    <i className="fas fa-arrow-right" />
-                  </button>
-                ))}
-              </div>
+              {isExpanded && (
+                <div className="sample-dropdown-menu">
+                  {section.prompts.map((prompt, index) => (
+                    <button
+                      key={index}
+                      type="button"
+                      className="sample-dropdown-option"
+                      onClick={() => {
+                        onSelectPrompt(prompt)
+                        setExpandedSection(null)
+                      }}
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )
         })}
