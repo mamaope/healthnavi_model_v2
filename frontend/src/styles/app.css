@@ -10252,7 +10252,7 @@ textarea {
     display: flex;
     justify-content: center;
     align-items: center;
-    margin-top: var(--space-4);
+    margin-top: var(--space-8);
     margin-bottom: var(--space-10);
 }
 
@@ -10280,7 +10280,7 @@ textarea {
     }
     
     .homepage-logo {
-        margin-top: var(--space-2);
+        margin-top: var(--space-4);
         margin-bottom: var(--space-6);
     }
 }
