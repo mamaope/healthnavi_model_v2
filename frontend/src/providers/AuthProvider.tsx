@@ -122,16 +122,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           initializing: false,
           isAuthenticated: false,
         })
+        // Clear chat state when auth fails
+        if (typeof window !== 'undefined') {
+          try {
+            const { useChatStore } = require('../store/useChatStore')
+            useChatStore.getState().reset()
+            window.localStorage.removeItem('empirico.chat')
+          } catch (error) {
+            window.localStorage.removeItem('empirico.chat')
+          }
+          // Refresh the page when auth fails
+          window.location.href = '/'
+        }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.warn('Failed to refresh profile', error)
-      clearPersistedAuth()
-      setAuthState({
-        user: null,
-        token: null,
-        initializing: false,
-        isAuthenticated: false,
-      })
+      
+      // Check if this is a 401/403 error (token invalid) vs other errors
+      const isAuthError = error?.message?.includes('401') || 
+                         error?.message?.includes('403') ||
+                         error?.message?.includes('Unauthorized') ||
+                         error?.message?.includes('Forbidden') ||
+                         error?.message?.includes('authentication')
+      
+      if (isAuthError) {
+        // Token is invalid, clear everything
+        clearPersistedAuth()
+        setAuthState({
+          user: null,
+          token: null,
+          initializing: false,
+          isAuthenticated: false,
+        })
+        // Clear chat state when auth fails
+        if (typeof window !== 'undefined') {
+          try {
+            const { useChatStore } = require('../store/useChatStore')
+            useChatStore.getState().reset()
+            window.localStorage.removeItem('empirico.chat')
+          } catch (error) {
+            window.localStorage.removeItem('empirico.chat')
+          }
+        }
+      } else {
+        // Other error (network, server, etc.) - keep token but mark as not authenticated
+        // Don't clear the token in case it's a temporary issue
+        console.warn('Non-auth error during profile refresh, keeping token for retry')
+        setAuthState({
+          user: stored.user, // Keep existing user data if available
+          token: stored.token,
+          initializing: false,
+          isAuthenticated: Boolean(stored.user), // Only authenticated if we have user data
+        })
+      }
     }
   }, [clearPersistedAuth, persistAuth])
 
@@ -158,6 +201,78 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refreshProfile().catch((error) => {
       console.error('Failed to initialize auth state', error)
     })
+
+    // Set up periodic token validation (every 30 minutes)
+    const validationInterval = setInterval(() => {
+      const currentStored = getStoredAuth()
+      if (currentStored.token) {
+        refreshProfile().catch((error) => {
+          console.warn('Periodic token validation failed:', error)
+        })
+      }
+    }, 30 * 60 * 1000) // 30 minutes
+
+    // Listen for storage changes (e.g., token cleared by apiClient, or new token added)
+    const handleStorageChange = (e: StorageEvent | null = null) => {
+      const updatedStored = getStoredAuth()
+      
+      // If token was removed, clear auth state
+      if (!updatedStored.token) {
+        setAuthState({
+          user: null,
+          token: null,
+          initializing: false,
+          isAuthenticated: false,
+        })
+        // Clear chat state when auth is cleared
+        if (typeof window !== 'undefined') {
+          try {
+            const { useChatStore } = require('../store/useChatStore')
+            useChatStore.getState().reset()
+            window.localStorage.removeItem('empirico.chat')
+          } catch (error) {
+            window.localStorage.removeItem('empirico.chat')
+          }
+          // Refresh the page when auth is cleared
+          window.location.href = '/'
+        }
+      } else if (updatedStored.token && updatedStored.token !== stored.token) {
+        // New token was added (e.g., from OAuth), refresh profile
+        console.log('New token detected in storage, refreshing profile...')
+        refreshProfile().catch((error) => {
+          console.error('Failed to refresh profile after token change:', error)
+        })
+      }
+    }
+    window.addEventListener('storage', handleStorageChange)
+    
+    // Also listen for custom 'auth-token-updated' event for same-window updates
+    const handleTokenUpdate = () => {
+      console.log('Auth token updated event received, refreshing profile...')
+      // Get the latest token from storage
+      const latestStored = getStoredAuth()
+      if (latestStored.token) {
+        refreshProfile().catch((error) => {
+          console.error('Failed to refresh profile after token update event:', error)
+        })
+      }
+    }
+    window.addEventListener('auth-token-updated', handleTokenUpdate)
+    
+    // Also listen for custom logout events
+    const handleLogout = () => {
+      if (typeof window !== 'undefined' && window.location.pathname !== '/') {
+        window.location.href = '/'
+      }
+    }
+    window.addEventListener('logout', handleLogout)
+
+    return () => {
+      clearInterval(validationInterval)
+      window.removeEventListener('storage', handleStorageChange)
+      window.removeEventListener('logout', handleLogout)
+      window.removeEventListener('auth-token-updated', handleTokenUpdate)
+    }
   }, [refreshProfile])
 
   const login = useCallback(
@@ -249,6 +364,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       initializing: false,
       isAuthenticated: false,
     })
+    
+    // Clear chat state on logout
+    if (typeof window !== 'undefined') {
+      // Clear chat store synchronously
+      try {
+        const { useChatStore } = require('../store/useChatStore')
+        useChatStore.getState().reset()
+        // Also clear persisted chat data from localStorage
+        window.localStorage.removeItem('empirico.chat')
+      } catch (error) {
+        console.warn('Failed to clear chat state on logout:', error)
+        // Fallback: manually clear chat localStorage
+        window.localStorage.removeItem('empirico.chat')
+      }
+      
+      // Dispatch logout event for other listeners
+      window.dispatchEvent(new Event('logout'))
+      // Refresh the page after logout
+      window.location.href = '/'
+    }
   }, [clearPersistedAuth])
 
   const value = useMemo<AuthContextValue>(

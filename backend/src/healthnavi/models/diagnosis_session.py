@@ -59,7 +59,7 @@ class ChatMessage(Base):
 class MessageFeedback(Base):
     """
     Represents user feedback on AI assistant messages.
-    Stores whether a message was helpful or not helpful.
+    Stores whether a message was helpful or not helpful, along with text feedback and rating.
     """
     __tablename__ = "message_feedback"
 
@@ -67,6 +67,8 @@ class MessageFeedback(Base):
     message_id = Column(Integer, ForeignKey("chat_messages.id"), nullable=False, unique=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     feedback_type = Column(String(20), nullable=False)  # 'helpful' or 'not_helpful'
+    feedback_text = Column(Text, nullable=True)  # Optional text feedback from user
+    rating = Column(Integer, nullable=True)  # Rating from 1 to 5
     created_at = Column(String, nullable=True, default=lambda: datetime.utcnow().isoformat())
     updated_at = Column(String, nullable=True, default=lambda: datetime.utcnow().isoformat())
 
@@ -75,4 +77,4 @@ class MessageFeedback(Base):
     user = relationship("User")
 
     def __repr__(self):
-        return f"<MessageFeedback(id={self.id}, message_id={self.message_id}, feedback_type='{self.feedback_type}')>"
+        return f"<MessageFeedback(id={self.id}, message_id={self.message_id}, feedback_type='{self.feedback_type}', rating={self.rating})>"

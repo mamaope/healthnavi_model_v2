@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AuthModal, type AuthMode } from '../components/auth/AuthModal'
 import { ForgotPasswordModal } from '../components/auth/ForgotPasswordModal'
 import { ResetPasswordModal } from '../components/auth/ResetPasswordModal'
+import { ProfessionalTypeModal } from '../components/ProfessionalTypeModal'
 import { ChatInput } from '../components/chat/ChatInput'
 import { LoadingIndicator } from '../components/chat/LoadingIndicator'
 import { MessageList } from '../components/chat/MessageList'
@@ -15,7 +16,7 @@ import { APP_METADATA, STORAGE_KEYS } from '../config'
 import { Link } from 'react-router-dom'
 
 export default function HomePage() {
-  const { isAuthenticated, initializing, refreshProfile } = useAuth()
+  const { isAuthenticated, initializing, refreshProfile, user } = useAuth()
   const {
     messages,
     isSending,
@@ -34,6 +35,7 @@ export default function HomePage() {
   const [forgotPasswordModalOpen, setForgotPasswordModalOpen] = useState(false)
   const [resetPasswordModalOpen, setResetPasswordModalOpen] = useState(false)
   const [resetToken, setResetToken] = useState<string | null>(null)
+  const [professionalTypeModalOpen, setProfessionalTypeModalOpen] = useState(false)
   const [inputValue, setInputValue] = useState('')
   const [isDeepSearchEnabled, setIsDeepSearchEnabled] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -59,27 +61,71 @@ export default function HomePage() {
     // Handle Google OAuth success
     if (path.includes('/auth/google/success')) {
       const oauthToken = urlParams.get('token')
-      console.log('OAuth success callback - token received:', oauthToken ? 'yes' : 'no')
+      console.log('[OAuth] Success callback detected')
+      console.log('[OAuth] Path:', path)
+      console.log('[OAuth] Token in URL:', oauthToken ? 'yes' : 'no')
+      console.log('[OAuth] Full URL params:', Object.fromEntries(urlParams.entries()))
+      
       if (oauthToken) {
+        console.log('[OAuth] Token length:', oauthToken.length)
+        // Store token immediately
         localStorage.setItem(STORAGE_KEYS.accessToken, oauthToken)
         console.log('OAuth token stored in localStorage')
         
+        // Clear URL parameters
         window.history.replaceState({}, document.title, '/')
         
-        setTimeout(() => {
-          refreshProfile()
-            .then(() => {
+        // Refresh profile with retry logic
+        const refreshWithRetry = async (retries = 3, delay = 500) => {
+          for (let i = 0; i < retries; i++) {
+            try {
+              console.log(`Attempting to refresh profile (attempt ${i + 1}/${retries})...`)
+              await refreshProfile()
               console.log('Profile refreshed successfully after OAuth login')
-            })
-            .catch((error) => {
-              console.error('Failed to refresh profile after OAuth login:', error)
-              console.log('Reloading page as fallback...')
-              window.location.reload()
-            })
-        }, 100)
+              // The professional type modal will show automatically if needed
+              // via the useEffect hook that checks for medical_professional_type
+              return // Success, exit retry loop
+            } catch (error: any) {
+              console.error(`Profile refresh attempt ${i + 1} failed:`, error)
+              if (i < retries - 1) {
+                // Wait before retrying
+                await new Promise(resolve => setTimeout(resolve, delay))
+                delay *= 2 // Exponential backoff
+              } else {
+                // All retries failed
+                console.error('All profile refresh attempts failed after OAuth login')
+                // Check if token is still in localStorage
+                const storedToken = localStorage.getItem(STORAGE_KEYS.accessToken)
+                if (storedToken === oauthToken) {
+                  // Token is still there, might be a temporary server issue
+                  // Force a page reload to let AuthProvider re-initialize
+                  console.log('Reloading page to re-initialize auth state...')
+                  window.location.reload()
+                } else {
+                  // Token was cleared, show login
+                  setAuthMode('login')
+                  setAuthModalOpen(true)
+                }
+              }
+            }
+          }
+        }
+        
+        // Start refresh with retry
+        setTimeout(() => {
+          refreshWithRetry()
+        }, 200) // Small delay to ensure localStorage is updated
+        
+        // Dispatch custom event to notify AuthProvider of the token change
+        // This ensures the AuthProvider picks up the new token in the same window
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('auth-token-updated'))
+        }
       } else {
         console.warn('OAuth success callback but no token in URL')
         window.history.replaceState({}, document.title, '/')
+        setAuthMode('login')
+        setAuthModalOpen(true)
       }
       return
     }
@@ -92,6 +138,19 @@ export default function HomePage() {
       return
     }
   }, [refreshProfile])
+
+  // Show professional type modal on first login if not set
+  useEffect(() => {
+    if (
+      !initializing &&
+      isAuthenticated &&
+      user &&
+      !user.medical_professional_type &&
+      !professionalTypeModalOpen
+    ) {
+      setProfessionalTypeModalOpen(true)
+    }
+  }, [initializing, isAuthenticated, user, professionalTypeModalOpen])
 
   const handleSendMessage = async (message: string) => {
     setFollowupQuestions([])
@@ -357,6 +416,13 @@ export default function HomePage() {
             setAuthMode('login')
             setAuthModalOpen(true)
           }}
+        />
+      )}
+
+      {professionalTypeModalOpen && (
+        <ProfessionalTypeModal
+          isOpen={professionalTypeModalOpen}
+          onClose={() => setProfessionalTypeModalOpen(false)}
         />
       )}
     </div>

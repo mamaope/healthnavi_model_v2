@@ -180,10 +180,73 @@ async function apiFetch<TResponse>(
       url: response.url,
     })
 
-    if (response.status === 401 || response.status === 403) {
+    // Handle 401/403 errors - try to refresh token first (except for auth endpoints)
+    if ((response.status === 401 || response.status === 403) && 
+        !path.includes('/auth/login') && 
+        !path.includes('/auth/register') && 
+        !path.includes('/auth/refresh') &&
+        !path.includes('/auth/forgot-password') &&
+        !path.includes('/auth/reset-password') &&
+        token) {
+      // Try to refresh the token
+      try {
+        // Call refresh endpoint directly to avoid circular import
+        const refreshHeaders = buildHeaders(token, false)
+        const refreshResponse = await fetch(`${API_URL}/auth/refresh`, {
+          method: 'POST',
+          headers: refreshHeaders,
+          signal: finalSignal,
+        })
+        
+        if (refreshResponse.ok) {
+          const refreshData = await parseJson<AuthSuccessResponse>(refreshResponse)
+          if (refreshData.success && refreshData.data) {
+            // Update stored token
+            if (typeof window !== 'undefined') {
+              window.localStorage.setItem(STORAGE_KEYS.accessToken, refreshData.data.access_token)
+              window.localStorage.setItem(STORAGE_KEYS.currentUser, JSON.stringify(refreshData.data.user))
+            }
+            
+            // Retry the original request with new token
+            const newHeaders = buildHeaders(refreshData.data.access_token, options.skipAuthHeader)
+            const retryResponse = await fetch(`${API_URL}${path}`, {
+              method,
+              headers: newHeaders,
+              body: options.body,
+              signal: finalSignal,
+            })
+            
+            if (retryResponse.ok) {
+              return parseJson<TResponse>(retryResponse)
+            }
+            // If retry also fails, fall through to error handling
+          }
+        }
+      } catch (refreshError) {
+        console.warn('Token refresh failed:', refreshError)
+        // Fall through to clear auth and throw error
+      }
+      
+      // If refresh failed or retry failed, clear auth
       if (typeof window !== 'undefined') {
         window.localStorage.removeItem(STORAGE_KEYS.accessToken)
         window.localStorage.removeItem(STORAGE_KEYS.currentUser)
+        // Clear chat state when session expires
+        try {
+          // Use dynamic import to avoid circular dependencies
+          import('../store/useChatStore').then(({ useChatStore }) => {
+            useChatStore.getState().reset()
+            window.localStorage.removeItem('empirico.chat')
+          }).catch(() => {
+            window.localStorage.removeItem('empirico.chat')
+          })
+        } catch (error) {
+          window.localStorage.removeItem('empirico.chat')
+        }
+        // Trigger auth state update by dispatching storage event
+        window.dispatchEvent(new Event('storage'))
+        // Refresh the page when session expires
+        window.location.href = '/'
       }
     }
 
@@ -198,6 +261,12 @@ export const authApi = {
     return apiFetch<AuthSuccessResponse>('/auth/login', 'POST', {
       body: JSON.stringify({ email, password }),
       skipAuthHeader: true,
+    })
+  },
+  refreshToken(token: string) {
+    return apiFetch<AuthSuccessResponse>('/auth/refresh', 'POST', {
+      token,
+      skipAuthHeader: false,
     })
   },
   register(firstName: string, lastName: string, email: string, password: string) {
@@ -243,6 +312,15 @@ export const authApi = {
       '/auth/me',
       'GET',
       token ? { token } : undefined,
+    )
+  },
+  updateProfile(data: { medical_professional_type?: string; full_name?: string }) {
+    return apiFetch<{ success: boolean; data: User }>(
+      '/auth/profile',
+      'PUT',
+      {
+        body: JSON.stringify(data),
+      },
     )
   },
 }
@@ -382,7 +460,12 @@ export const chatApi = {
       throw error
     }
   },
-  submitFeedback(messageId: number, feedbackType: 'helpful' | 'not_helpful') {
+  submitFeedback(
+    messageId: number,
+    feedbackType: 'helpful' | 'not_helpful',
+    feedbackText?: string,
+    rating?: number
+  ) {
     return apiFetch<{
       success: boolean
       data: {
@@ -390,6 +473,8 @@ export const chatApi = {
         message_id: number
         user_id: number
         feedback_type: string
+        feedback_text: string | null
+        rating: number | null
         created_at: string | null
         updated_at: string | null
       }
@@ -397,6 +482,8 @@ export const chatApi = {
       body: JSON.stringify({
         message_id: messageId,
         feedback_type: feedbackType,
+        feedback_text: feedbackText || null,
+        rating: rating || null,
       }),
     })
   },

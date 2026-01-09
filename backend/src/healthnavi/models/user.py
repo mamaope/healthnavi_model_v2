@@ -25,6 +25,7 @@ class User(Base):
     password_reset_token = Column(String(255), nullable=True)
     password_reset_expires = Column(String, nullable=True)  # Will store ISO datetime string
     role = Column(String(20), default="user", nullable=False)
+    medical_professional_type = Column(String(50), nullable=True)  # Intern Doctor, Senior House Officers, Clinical Officer, Consultant, Student
     created_at = Column(String, nullable=True)  # Will store ISO datetime string
     updated_at = Column(String, nullable=True)  # Will store ISO datetime string
     
