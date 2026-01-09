@@ -583,6 +583,108 @@ def get_current_user_me(
     return get_user_profile(current_user=current_user)
 
 
+@router.post("/refresh", response_model=StandardResponse)
+def refresh_token(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Refresh an access token. 
+    Accepts an expired token and issues a new one if the user is still valid.
+    """
+    with ResponseTimer() as timer:
+        try:
+            # Get token from request
+            token = get_token_safe(request)
+            if not token:
+                return create_error_response(
+                    message="Token is required",
+                    status_code=401,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            # Try to decode token (even if expired, we can extract user info)
+            try:
+                # Decode without expiration check first to get user info
+                payload = jwt.decode(
+                    token, 
+                    config.security.secret_key, 
+                    algorithms=[config.security.algorithm],
+                    options={"verify_exp": False}  # Don't verify expiration yet
+                )
+                username: str = payload.get("sub")
+                if not username:
+                    return create_error_response(
+                        message="Invalid token",
+                        status_code=401,
+                        execution_time=timer.get_execution_time()
+                    )
+            except jwt.JWTError:
+                return create_error_response(
+                    message="Invalid token",
+                    status_code=401,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            # Get user from database
+            user = db.query(User).filter(User.username == username).first()
+            if not user:
+                return create_error_response(
+                    message="User not found",
+                    status_code=401,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            # Check if user is active
+            if not user.is_active:
+                return create_error_response(
+                    message="Account is deactivated",
+                    status_code=403,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            # Issue new token
+            access_token_expires = timedelta(minutes=config.security.access_token_expire_minutes)
+            new_access_token = create_access_token(
+                data={"sub": user.username, "role": user.role},
+                expires_delta=access_token_expires
+            )
+            
+            # Create user profile data
+            user_profile = UserResponse(
+                id=user.id,
+                username=user.username,
+                email=user.email,
+                full_name=user.full_name,
+                role=user.role,
+                is_active=user.is_active,
+                is_email_verified=user.is_email_verified,
+                created_at=user.created_at_str,
+                updated_at=user.updated_at_str
+            )
+            
+            # Return new token and user profile
+            response_data = {
+                "access_token": new_access_token,
+                "token_type": "bearer",
+                "user": user_profile
+            }
+            
+            return create_success_response(
+                data=response_data,
+                status_code=200,
+                execution_time=timer.get_execution_time()
+            )
+            
+        except Exception as e:
+            logger.error(f"Token refresh error: {str(e)}")
+            return create_error_response(
+                message="Failed to refresh token",
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
 @router.get("/profile", response_model=StandardResponse)
 def get_user_profile(
     current_user: User = Depends(get_current_user_safe_v2)
