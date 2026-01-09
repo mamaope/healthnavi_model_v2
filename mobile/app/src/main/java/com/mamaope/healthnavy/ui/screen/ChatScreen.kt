@@ -63,7 +63,7 @@ fun ChatScreen(
                 title = {
                     Image(
                         painter = painterResource(id = R.drawable.logo),
-                        contentDescription = "HealthNavy Logo",
+                        contentDescription = "Empirico Logo",
                         modifier = Modifier.height(32.dp)
                     )
                 },
@@ -430,7 +430,7 @@ fun MessageBubble(
                                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
                                     putExtra(Intent.EXTRA_TEXT, message.content ?: "")
-                                    putExtra(Intent.EXTRA_SUBJECT, "HealthNavy AI Response")
+                                    putExtra(Intent.EXTRA_SUBJECT, "Empirico AI Response")
                                 }
                                 context.startActivity(Intent.createChooser(shareIntent, "Share via"))
                             }

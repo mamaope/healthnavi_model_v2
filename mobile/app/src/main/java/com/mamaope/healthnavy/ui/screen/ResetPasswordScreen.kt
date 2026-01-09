@@ -97,7 +97,7 @@ fun ResetPasswordScreen(
                 // Logo
                 Image(
                     painter = painterResource(id = R.drawable.logo),
-                    contentDescription = "HealthNavy Logo",
+                    contentDescription = "Empirico Logo",
                     modifier = Modifier
                         .size(100.dp)
                         .scale(1f)

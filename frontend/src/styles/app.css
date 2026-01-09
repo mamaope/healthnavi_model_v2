@@ -1772,7 +1772,7 @@ body,
     letter-spacing: -0.025em;
 }
 
-/* Custom HealthNavy Logo Styling */
+/* Custom Empirico Logo Styling */
 .custom-logo {
     display: flex;
     align-items: center;
@@ -9646,6 +9646,51 @@ textarea {
     border-top-color: var(--border-light);
 }
 
+/* ===== PATIENT PRIVACY NOTICE ===== */
+.privacy-notice {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: var(--space-2) var(--space-4);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+    margin-top: var(--space-2);
+    margin-bottom: 0;
+    min-height: 32px;
+    text-align: center;
+    max-width: 900px;
+    margin-left: auto;
+    margin-right: auto;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.privacy-notice i {
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    flex-shrink: 0;
+}
+
+.privacy-notice span {
+    line-height: var(--line-height-relaxed);
+    flex: 1;
+}
+
+[data-theme="dark"] .privacy-notice {
+    background: var(--bg-tertiary);
+    border-color: var(--border-light);
+    color: var(--text-secondary);
+}
+
+[data-theme="dark"] .privacy-notice i {
+    color: var(--text-secondary);
+}
+
 /* ===== MODERN DISCLAIMER BAR ===== */
 .disclaimer-bar {
     flex-shrink: 0;
@@ -10097,6 +10142,26 @@ textarea {
     
     .welcome-logo {
         margin-bottom: var(--space-3);
+    }
+    
+    .privacy-notice {
+        font-size: 10px;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        padding: var(--space-2) var(--space-3);
+        line-height: 1.4;
+        margin-top: var(--space-2);
+        margin-bottom: 0;
+    }
+    
+    .privacy-notice span {
+        font-size: 10px;
+        line-height: 1.4;
+    }
+    
+    .privacy-notice i {
+        font-size: var(--font-size-xs);
+        margin-right: 0.25rem;
     }
     
     .disclaimer-bar {

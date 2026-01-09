@@ -133,7 +133,7 @@ class PromptManager:
 
         # Unified prompt for all query types
         unified_prompt = """
-YOU ARE **HealthNavy**, a clinical decision support system (CDSS) providing evidence-based medical reasoning using the supplied `{context}` and `{sources}`.
+YOU ARE **Empirico**, a clinical decision support system (CDSS) providing evidence-based medical reasoning using the supplied `{context}` and `{sources}`.
 
 ---
 
@@ -274,7 +274,7 @@ FOLLOW THIS STEPWISE APPROACH INTERNALLY BEFORE PRODUCING ANY OUTPUT:
                     "output_format": "structured_markdown"
                 },
                 max_length=12000,
-                description="Unified HealthNavy prompt for all clinical queries",
+                description="Unified Empirico prompt for all clinical queries",
                 version="1.0.0"
             ),
             QueryType.DRUG_INFORMATION: PromptConfig(
@@ -287,7 +287,7 @@ FOLLOW THIS STEPWISE APPROACH INTERNALLY BEFORE PRODUCING ANY OUTPUT:
                     "output_format": "structured_markdown"
                 },
                 max_length=10000,
-                description="Unified HealthNavy prompt for drug information queries",
+                description="Unified Empirico prompt for drug information queries",
                 version="1.0.0"
             ),
             QueryType.CLINICAL_GUIDANCE: PromptConfig(
@@ -300,7 +300,7 @@ FOLLOW THIS STEPWISE APPROACH INTERNALLY BEFORE PRODUCING ANY OUTPUT:
                     "output_format": "structured_markdown"
                 },
                 max_length=10000,
-                description="Unified HealthNavy prompt for clinical guidance queries",
+                description="Unified Empirico prompt for clinical guidance queries",
                 version="1.0.0"
             ),
             QueryType.GENERAL_QUERY: PromptConfig(
@@ -312,7 +312,7 @@ FOLLOW THIS STEPWISE APPROACH INTERNALLY BEFORE PRODUCING ANY OUTPUT:
                     "output_format": "structured_markdown"
                 },
                 max_length=8000,
-                description="Unified HealthNavy prompt for general medical queries",
+                description="Unified Empirico prompt for general medical queries",
                 version="1.0.0"
             )
         }
