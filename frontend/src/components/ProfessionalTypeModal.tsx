@@ -9,11 +9,13 @@ interface ProfessionalTypeModalProps {
 }
 
 const PROFESSIONAL_TYPES = [
-  'Intern Doctor',
-  'Senior House Officers',
-  'Clinical Officer',
   'Consultant',
-  'Student',
+  'Specialist',
+  'Senior House Officer',
+  'Medical Officer',
+  'Intern Clinician',
+  'Other Clinical Practitioner',
+  'Clinical/Medical Student',
 ]
 
 export function ProfessionalTypeModal({ isOpen, onClose }: ProfessionalTypeModalProps) {
