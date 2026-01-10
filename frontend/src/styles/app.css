@@ -6495,8 +6495,8 @@ textarea {
     width: 100%;
     max-width: 900px;
     margin: 0 auto;
-    padding: var(--space-3) var(--space-4);
-    padding-top: var(--space-6);
+    padding: var(--space-1) var(--space-2);
+    padding-top: var(--space-2);
     overflow: visible !important;
     min-height: auto;
     height: auto;
@@ -6512,7 +6512,18 @@ textarea {
     align-items: flex-start;
     overflow: visible !important;
     position: relative;
-    min-height: 200px;
+    min-height: auto;
+    padding: 0;
+    margin: 0;
+}
+
+/* Reduce spacing between dropdowns on mobile */
+@media (max-width: 768px) {
+    .sample-questions-dropdown {
+        gap: 3px !important; /* No spacing between dropdowns on mobile */
+        row-gap: 0 !important;
+        column-gap: 0 !important;
+    }
 }
 
 .sample-dropdown-item {
@@ -6520,6 +6531,13 @@ textarea {
     flex: 0 0 auto;
     z-index: 9999 !important;
     overflow: visible;
+}
+
+/* When a dropdown item has an expanded menu, increase its z-index */
+.sample-dropdown-item:has(.sample-dropdown-trigger.expanded),
+.sample-dropdown-item:has(.sample-dropdown-menu) {
+    z-index: 999999 !important;
+    position: relative;
 }
 
 .sample-dropdown-trigger {
@@ -6595,7 +6613,7 @@ textarea {
     border-radius: 12px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15), 0 4px 12px rgba(0, 0, 0, 0.1);
     padding: 10px;
-    z-index: 99999 !important;
+    z-index: 9999999 !important; /* Very high z-index to appear above everything */
     animation: slideDownCentered 0.2s ease-out;
     overflow: visible !important;
     height: auto !important;
@@ -6943,6 +6961,51 @@ textarea {
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05);
     position: relative;
+    flex-wrap: nowrap; /* Prevent wrapping on desktop */
+}
+
+/* Desktop/Tablet: Hide mobile-specific elements, show desktop layout */
+.chat-send-btn.mobile-send-btn {
+    display: none !important; /* Hide mobile send button on desktop */
+}
+
+/* Hide mobile deep reasoning button on desktop (both standalone and in actions) */
+.deep-reasoning-btn.mobile-deep-search {
+    display: none !important; /* Hide mobile deep reasoning button on desktop */
+}
+
+.chat-input-actions-left-mobile {
+    display: none !important; /* Hide mobile actions left container on desktop */
+}
+
+/* Show desktop deep reasoning button */
+.deep-reasoning-btn.desktop-deep-search {
+    display: flex !important; /* Show desktop deep reasoning button */
+}
+
+/* Show desktop send button in actions container */
+.chat-send-btn.desktop-send-btn {
+    display: flex !important; /* Show desktop send button */
+}
+
+/* Desktop: Normal layout - all on one line */
+.chat-input-actions {
+    border-top: none; /* Remove border on desktop */
+    margin-top: 0;
+    padding-top: 0;
+    width: auto; /* Auto width on desktop */
+    order: 0; /* Reset order */
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+/* Desktop: Textarea should be in normal flow */
+.chat-textarea-input {
+    order: 0; /* Reset order for desktop */
+    width: auto; /* Auto width on desktop */
+    margin-right: 0; /* Remove margin on desktop */
 }
 
 .chat-input-box::before {
@@ -9876,7 +9939,7 @@ textarea {
     color: var(--text-secondary);
     font-size: var(--font-size-xs);
     font-weight: 500;
-    margin-top: var(--space-2);
+    margin-top: var(--space-1); /* Reduced from space-2 to space-1 */
     margin-bottom: 0;
     min-height: 32px;
     text-align: center;
@@ -10038,8 +10101,8 @@ textarea {
     }
     
     .sample-questions-compact {
-        padding: var(--space-3) var(--space-2);
-        padding-top: var(--space-4);
+        padding: var(--space-1) var(--space-1);
+        padding-top: var(--space-2);
         overflow: visible !important;
         min-height: auto;
         height: auto;
@@ -10047,20 +10110,29 @@ textarea {
     
     .sample-questions-dropdown {
         overflow: visible !important;
+        gap: 0 !important; /* No spacing between example questions on mobile */
+        row-gap: 0 !important;
+        column-gap: 0 !important;
     }
     
     .sample-dropdown-item {
         overflow: visible !important;
-        z-index: 1000;
+        z-index: 1000 !important; /* Default z-index for closed items */
+        margin: 0 !important; /* Remove any default margins */
+        padding: 0 !important; /* Remove any default padding */
+        position: relative;
     }
     
-    .sample-questions-dropdown {
-        gap: 6px;
+    /* When a dropdown item has an expanded menu, increase its z-index */
+    .sample-dropdown-item:has(.sample-dropdown-trigger.expanded),
+    .sample-dropdown-item:has(.sample-dropdown-menu) {
+        z-index: 9999999 !important; /* Very high z-index when expanded */
     }
     
     .sample-dropdown-trigger {
         padding: 6px 12px;
         font-size: 12px;
+        margin: 0 !important; /* Remove any margins on trigger buttons */
     }
     
     .sample-dropdown-title {
@@ -10071,11 +10143,15 @@ textarea {
         min-width: calc(100vw - 32px);
         max-width: calc(100vw - 32px);
         width: calc(100vw - 32px);
-        left: 50% !important;
-        transform: translateX(-50%) !important;
+        left: 0 !important; /* Position directly under the trigger button */
+        transform: none !important; /* Remove centering transform */
         max-height: none !important;
         overflow: visible !important;
         padding: 12px;
+        z-index: 9999999 !important; /* Very high z-index to appear on top of everything */
+        position: absolute !important; /* Use absolute positioning relative to parent */
+        top: 100% !important; /* Position directly below the trigger button */
+        margin-top: 4px !important; /* Small gap between trigger and menu */
     }
     
     .sample-dropdown-option {
@@ -10166,10 +10242,26 @@ textarea {
         font-size: 10px !important;
     }
 
+    .disclaimer-bar-bottom {
+        width: calc(100% - var(--space-4)) !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+        overflow: visible !important;
+        word-wrap: break-word !important;
+        overflow-wrap: break-word !important;
+        flex-wrap: wrap !important;
+    }
+    
     .disclaimer-bar-bottom span {
         font-size: 10px !important;
         line-height: 1.4 !important;
-        white-space: nowrap !important;
+        white-space: normal !important; /* Allow text wrapping */
+        overflow: visible !important; /* Don't hide text */
+        text-overflow: clip !important; /* Don't use ellipsis */
+        word-wrap: break-word !important;
+        overflow-wrap: break-word !important;
+        flex: 1;
+        min-width: 0; /* Allow flex item to shrink */
     }
 
     .disclaimer-bar-bottom i {
@@ -10368,34 +10460,67 @@ textarea {
         line-height: 1.4;
         margin-top: var(--space-2);
         margin-bottom: 0;
+        display: flex !important; /* Ensure it's visible */
+        visibility: visible !important;
+        opacity: 1 !important;
+        z-index: 1; /* Ensure it's above background elements */
+        width: 100% !important; /* Full width on mobile */
+        max-width: 100% !important; /* No max-width constraint */
+        box-sizing: border-box !important; /* Include padding in width */
+        overflow: visible !important; /* Ensure text is not clipped */
+        word-wrap: break-word !important; /* Allow text to wrap */
+        overflow-wrap: break-word !important; /* Allow text to wrap */
+        white-space: normal !important; /* Allow text wrapping */
     }
     
     .privacy-notice span {
         font-size: 10px;
         line-height: 1.4;
+        word-wrap: break-word !important;
+        overflow-wrap: break-word !important;
+        white-space: normal !important;
+        flex: 1;
+        min-width: 0; /* Allow flex item to shrink below content size */
     }
     
     .privacy-notice i {
         font-size: var(--font-size-xs);
         margin-right: 0.25rem;
+        flex-shrink: 0; /* Prevent icon from shrinking */
     }
     
     .disclaimer-bar {
         font-size: 10px;
         flex-wrap: wrap;
         gap: 0.5rem;
-        padding: var(--space-2);
+        padding: var(--space-2) var(--space-3);
         line-height: 1.4;
+        width: 100% !important; /* Full width on mobile */
+        max-width: 100% !important; /* No max-width constraint */
+        box-sizing: border-box !important; /* Include padding in width */
+        overflow: visible !important; /* Ensure text is not clipped */
+        word-wrap: break-word !important; /* Allow text to wrap */
+        overflow-wrap: break-word !important; /* Allow text to wrap */
+        white-space: normal !important; /* Allow text wrapping */
+        display: flex !important; /* Ensure it's visible */
+        visibility: visible !important;
+        opacity: 1 !important;
     }
     
     .disclaimer-bar span {
         font-size: 10px;
         line-height: 1.4;
+        word-wrap: break-word !important;
+        overflow-wrap: break-word !important;
+        white-space: normal !important;
+        flex: 1;
+        min-width: 0; /* Allow flex item to shrink below content size */
     }
     
     .disclaimer-bar i {
         font-size: var(--font-size-xs);
         margin-right: 0.25rem;
+        flex-shrink: 0; /* Prevent icon from shrinking */
     }
 
     .chat-wrapper.empty {
@@ -10409,10 +10534,26 @@ textarea {
         font-size: 9px !important;
     }
     
+    .disclaimer-bar-bottom {
+        width: calc(100% - var(--space-4)) !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+        overflow: visible !important;
+        word-wrap: break-word !important;
+        overflow-wrap: break-word !important;
+        flex-wrap: wrap !important;
+    }
+    
     .disclaimer-bar-bottom span {
         font-size: 9px !important;
         line-height: 1.3 !important;
-        white-space: nowrap !important;
+        white-space: normal !important; /* Allow text wrapping */
+        overflow: visible !important; /* Don't hide text */
+        text-overflow: clip !important; /* Don't use ellipsis */
+        word-wrap: break-word !important;
+        overflow-wrap: break-word !important;
+        flex: 1;
+        min-width: 0; /* Allow flex item to shrink */
     }
     
     .disclaimer-bar-bottom i {
@@ -10770,7 +10911,114 @@ textarea {
     }
     
     .chat-wrapper.has-messages .chat-input-box {
-        border-radius: var(--radius-xl);
+        border-radius: 12px !important; /* Rectangular with small curved edges instead of fully curved */
+    }
+    
+    /* Mobile: Restructure to two-line layout */
+    .chat-input-box {
+        /* Enable flex wrap for mobile to allow two-line layout */
+        flex-wrap: wrap;
+        padding: 10px 16px;
+        gap: 8px;
+        align-items: flex-start;
+        border-radius: 12px !important; /* Rectangular with small curved edges instead of fully curved (50px) */
+    }
+    
+    /* Update the gradient border pseudo-element to match */
+    .chat-input-box::before {
+        border-radius: 12px !important; /* Match the container border-radius */
+    }
+    
+    /* First line: Textarea + Send button (mobile) */
+    .chat-textarea-input {
+        order: 1;
+        flex: 1;
+        min-width: 0;
+        margin-right: 8px;
+        width: calc(100% - 60px); /* Account for send button width + gap */
+    }
+    
+    .chat-send-btn.mobile-send-btn {
+        order: 2;
+        flex-shrink: 0;
+        align-self: flex-start;
+        margin-top: 0;
+        display: flex !important; /* Show on mobile */
+    }
+    
+    /* Hide desktop send button on mobile */
+    .chat-send-btn.desktop-send-btn {
+        display: none !important;
+    }
+    
+    /* Hide desktop elements on mobile */
+    .deep-reasoning-btn.desktop-deep-search {
+        display: none !important; /* Hide desktop deep reasoning button on mobile */
+    }
+    
+    .chat-send-btn.desktop-send-btn {
+        display: none !important; /* Hide desktop send button on mobile */
+    }
+    
+    /* Show mobile elements */
+    .chat-send-btn.mobile-send-btn {
+        display: flex !important; /* Show mobile send button */
+    }
+    
+    /* Second line: Deep search + Mic on left, Character counter on right */
+    .chat-input-actions {
+        order: 4;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+        width: 100%;
+        justify-content: space-between; /* Space between left and right */
+        margin-top: 4px;
+        padding-top: 8px;
+        border-top: 1px solid var(--border-light);
+    }
+    
+    /* Show left container on mobile */
+    .chat-input-actions-left-mobile {
+        display: flex !important; /* Show on mobile */
+        align-items: center;
+        gap: 8px;
+        order: 1;
+        flex-shrink: 0;
+    }
+    
+    /* Deep search button inside actions container on mobile - match mic button shape */
+    .chat-input-actions-left-mobile .deep-reasoning-btn.mobile-deep-search {
+        display: flex !important;
+        order: 0; /* First item in left container */
+        flex-shrink: 0;
+        width: 40px; /* Match mic button width */
+        height: 40px; /* Match mic button height */
+        border-radius: 12px !important; /* Match mic button rounded rectangle shape */
+        margin-bottom: 0;
+    }
+    
+    /* Hide mic button on mobile */
+    .chat-icon-btn.mobile-mic-btn {
+        display: none !important; /* Hide mic button on mobile */
+    }
+    
+    /* Character counter on right side */
+    .chat-char-counter {
+        order: 2;
+        margin-left: auto; /* Push to the right */
+    }
+    
+    /* Desktop mic button - keep in normal position */
+    .chat-icon-btn:not(.mobile-mic-btn) {
+        order: 0; /* Normal order on desktop */
+    }
+    
+    /* Ensure textarea is visible and not covered */
+    .chat-textarea-input {
+        z-index: 1;
+        position: relative;
     }
     
     .chat-wrapper.has-messages .messages-container,
@@ -10794,6 +11042,46 @@ textarea {
 @media (max-width: 480px) {
     .chat-wrapper.has-messages .input-section {
         padding: 0 var(--space-2) !important;
+    }
+    
+    .chat-wrapper.has-messages .chat-input-box {
+        padding: 8px 12px;
+        gap: 6px;
+    }
+    
+    .chat-textarea-input {
+        font-size: 14px;
+        padding: 6px 0;
+        min-height: 24px;
+    }
+    
+    .chat-send-btn.mobile-send-btn {
+        width: 40px;
+        height: 40px;
+        font-size: 16px;
+    }
+    
+    .deep-reasoning-btn.mobile-second-line {
+        width: 36px;
+        height: 36px;
+        font-size: 14px;
+    }
+    
+    .chat-icon-btn {
+        width: 36px;
+        height: 36px;
+        font-size: 14px;
+    }
+    
+    .chat-char-counter {
+        font-size: 11px;
+        padding: 3px 6px;
+    }
+    
+    .chat-input-actions.mobile-second-line {
+        gap: 6px;
+        margin-top: 2px;
+        padding-top: 2px;
     }
     
     .chat-wrapper.has-messages .messages-container,
