@@ -90,9 +90,23 @@ export function ProfessionalTypeModal({ isOpen, onClose }: ProfessionalTypeModal
                 className={`professional-type-option ${
                   selectedType === type ? 'selected' : ''
                 }`}
-                onClick={() => {
+                onClick={async () => {
+                  if (isSubmitting) return
+                  
                   setSelectedType(type)
                   setError('')
+                  
+                  // Auto-submit when a profession is selected
+                  setIsSubmitting(true)
+                  try {
+                    await authApi.updateProfile({ medical_professional_type: type })
+                    await refreshProfile()
+                    onClose()
+                  } catch (err: any) {
+                    console.error('Failed to update profile:', err)
+                    setError(err.message || 'Failed to update profile. Please try again.')
+                    setIsSubmitting(false)
+                  }
                 }}
                 disabled={isSubmitting}
               >
