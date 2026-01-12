@@ -141,6 +141,7 @@ export default function HomePage() {
 
   // Show professional type modal on first login if not set
   useEffect(() => {
+    // Only open modal if user doesn't have medical_professional_type and modal is not already open
     if (
       !initializing &&
       isAuthenticated &&
@@ -150,7 +151,12 @@ export default function HomePage() {
     ) {
       setProfessionalTypeModalOpen(true)
     }
-  }, [initializing, isAuthenticated, user, professionalTypeModalOpen])
+    // If user now has medical_professional_type, ensure modal is closed
+    // This prevents the modal from reopening after a successful update
+    if (user?.medical_professional_type && professionalTypeModalOpen) {
+      setProfessionalTypeModalOpen(false)
+    }
+  }, [initializing, isAuthenticated, user?.medical_professional_type, professionalTypeModalOpen])
 
   const handleSendMessage = async (message: string) => {
     setFollowupQuestions([])

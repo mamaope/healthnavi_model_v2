@@ -788,10 +788,23 @@ def update_user_profile(
             
             # Validate medical_professional_type if provided
             if 'medical_professional_type' in filtered_data:
-                valid_types = ['Intern Doctor', 'Senior House Officers', 'Clinical Officer', 'Consultant', 'Student']
+                valid_types = [
+                    'Consultant',
+                    'Specialist',
+                    'Senior House Officer',
+                    'Medical Officer',
+                    'Intern Clinician',
+                    'Other Clinical Practitioner',
+                    'Clinical/Medical Student',
+                    # Legacy values for backward compatibility
+                    'Intern Doctor',
+                    'Senior House Officers',
+                    'Clinical Officer',
+                    'Student'
+                ]
                 if filtered_data['medical_professional_type'] not in valid_types:
                     return create_error_response(
-                        message=f"Invalid medical professional type. Must be one of: {', '.join(valid_types)}",
+                        message=f"Invalid medical professional type. Must be one of: {', '.join(valid_types[:7])}",
                         status_code=400,
                         execution_time=timer.get_execution_time()
                     )

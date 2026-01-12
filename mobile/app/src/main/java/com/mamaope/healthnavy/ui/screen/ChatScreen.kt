@@ -145,6 +145,26 @@ fun ChatScreen(
                 }
             }
         }
+        
+        // Feedback Dialog
+        FeedbackDialog(
+            isOpen = uiState.feedbackDialogOpen,
+            feedbackType = uiState.selectedFeedbackType,
+            onDismiss = { chatViewModel.closeFeedbackDialog() },
+            onSubmit = { feedbackText, rating ->
+                uiState.selectedFeedbackMessageId?.let { messageId ->
+                    uiState.selectedFeedbackType?.let { feedbackType ->
+                        chatViewModel.submitFeedback(
+                            messageId = messageId,
+                            feedbackType = feedbackType,
+                            feedbackText = feedbackText,
+                            rating = rating
+                        )
+                    }
+                }
+            },
+            isSubmitting = uiState.isSubmittingFeedback
+        )
     }
 }
 
@@ -411,16 +431,16 @@ fun MessageBubble(
                             icon = Icons.Default.ThumbUp,
                             isActive = feedbackState == "helpful",
                             onClick = {
-                                viewModel.submitFeedback(message.messageId!!, "helpful")
-                        }
+                                viewModel.openFeedbackDialog(message.messageId!!, "helpful")
+                            }
                         )
                         FeedbackChip(
                             label = "Not helpful",
                             icon = Icons.Default.ThumbDown,
                             isActive = feedbackState == "not_helpful",
                             onClick = {
-                                viewModel.submitFeedback(message.messageId!!, "not_helpful")
-                        }
+                                viewModel.openFeedbackDialog(message.messageId!!, "not_helpful")
+                            }
                         )
                         FeedbackChip(
                             label = "Share",

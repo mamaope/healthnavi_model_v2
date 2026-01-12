@@ -19,7 +19,7 @@ const PROFESSIONAL_TYPES = [
 ]
 
 export function ProfessionalTypeModal({ isOpen, onClose }: ProfessionalTypeModalProps) {
-  const { user, refreshProfile } = useAuth()
+  const { refreshProfile } = useAuth()
   const [selectedType, setSelectedType] = useState<string>('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string>('')
@@ -36,13 +36,31 @@ export function ProfessionalTypeModal({ isOpen, onClose }: ProfessionalTypeModal
     setError('')
 
     try {
-      await authApi.updateProfile({ medical_professional_type: selectedType })
-      await refreshProfile()
-      onClose()
+      const response = await authApi.updateProfile({ medical_professional_type: selectedType })
+      // Check if response has data (indicates success)
+      // Backend returns success: 1 (or true) for success, 0 (or false) for error
+      const responseAny = response as any
+      const isSuccess = response && response.data
+      if (isSuccess) {
+        // Close modal immediately after successful update
+        onClose()
+        // Refresh profile in background (don't wait for it)
+        refreshProfile().catch(err => {
+          console.error('Failed to refresh profile after update:', err)
+        })
+      } else {
+        // Update failed - extract error message
+        const errorMsg = responseAny?.message || responseAny?.data?.message || 'Failed to update profile. Please try again.'
+        setError(errorMsg)
+        setIsSubmitting(false)
+      }
     } catch (err: any) {
       console.error('Failed to update profile:', err)
-      setError(err.message || 'Failed to update profile. Please try again.')
-    } finally {
+      // Extract error message from response
+      const errorMessage = err?.response?.data?.message || 
+                          err?.message || 
+                          'Failed to update profile. Please try again.'
+      setError(errorMessage)
       setIsSubmitting(false)
     }
   }
@@ -99,12 +117,31 @@ export function ProfessionalTypeModal({ isOpen, onClose }: ProfessionalTypeModal
                   // Auto-submit when a profession is selected
                   setIsSubmitting(true)
                   try {
-                    await authApi.updateProfile({ medical_professional_type: type })
-                    await refreshProfile()
-                    onClose()
+                    const response = await authApi.updateProfile({ medical_professional_type: type })
+                    // Check if response has data (indicates success)
+                    // Backend returns success: 1 (or true) for success, 0 (or false) for error
+                    const responseAny = response as any
+                    const isSuccess = response && response.data
+                    if (isSuccess) {
+                      // Close modal immediately after successful update
+                      onClose()
+                      // Refresh profile in background (don't wait for it)
+                      refreshProfile().catch(err => {
+                        console.error('Failed to refresh profile after update:', err)
+                      })
+                    } else {
+                      // Update failed - extract error message
+                      const errorMsg = responseAny?.message || responseAny?.data?.message || 'Failed to update profile. Please try again.'
+                      setError(errorMsg)
+                      setIsSubmitting(false)
+                    }
                   } catch (err: any) {
                     console.error('Failed to update profile:', err)
-                    setError(err.message || 'Failed to update profile. Please try again.')
+                    // Extract error message from response
+                    const errorMessage = err?.response?.data?.message || 
+                                       err?.message || 
+                                       'Failed to update profile. Please try again.'
+                    setError(errorMessage)
                     setIsSubmitting(false)
                   }
                 }}

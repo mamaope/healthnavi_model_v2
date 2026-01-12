@@ -20,7 +20,11 @@ data class ChatUiState(
     val currentSession: ChatSession? = null,
     val errorMessage: String? = null,
     val deepSearchEnabled: Boolean = false,
-    val feedback: Map<Int, String> = emptyMap() // messageId -> feedbackType ("helpful" or "not_helpful")
+    val feedback: Map<Int, String> = emptyMap(), // messageId -> feedbackType ("helpful" or "not_helpful")
+    val feedbackDialogOpen: Boolean = false,
+    val selectedFeedbackMessageId: Int? = null,
+    val selectedFeedbackType: String? = null, // "helpful" or "not_helpful"
+    val isSubmittingFeedback: Boolean = false
 )
 
 class ChatViewModel : ViewModel() {
@@ -225,10 +229,40 @@ class ChatViewModel : ViewModel() {
         )
     }
     
-    fun submitFeedback(messageId: Int, feedbackType: String) {
+    fun openFeedbackDialog(messageId: Int, feedbackType: String) {
+        val currentFeedback = _uiState.value.feedback[messageId]
+        val isRemoving = currentFeedback == feedbackType
+        
+        if (isRemoving) {
+            // Remove feedback directly if clicking the same button
+            submitFeedback(messageId, feedbackType, null, null, true)
+        } else {
+            // Open dialog for new feedback
+            _uiState.value = _uiState.value.copy(
+                feedbackDialogOpen = true,
+                selectedFeedbackMessageId = messageId,
+                selectedFeedbackType = feedbackType
+            )
+        }
+    }
+    
+    fun closeFeedbackDialog() {
+        _uiState.value = _uiState.value.copy(
+            feedbackDialogOpen = false,
+            selectedFeedbackMessageId = null,
+            selectedFeedbackType = null
+        )
+    }
+    
+    fun submitFeedback(
+        messageId: Int,
+        feedbackType: String,
+        feedbackText: String? = null,
+        rating: Int? = null,
+        isRemoving: Boolean = false
+    ) {
         viewModelScope.launch {
             val currentFeedback = _uiState.value.feedback[messageId]
-            val isRemoving = currentFeedback == feedbackType
             
             // Update UI state immediately for better UX
             val newFeedbackMap = if (isRemoving) {
@@ -243,21 +277,36 @@ class ChatViewModel : ViewModel() {
                 feedbackWithoutThis + (messageId to feedbackType)
             }
             
-            _uiState.value = _uiState.value.copy(feedback = newFeedbackMap)
+            _uiState.value = _uiState.value.copy(
+                feedback = newFeedbackMap,
+                isSubmittingFeedback = true
+            )
             
             if (isRemoving) {
                 // Remove feedback
                 chatRepository.removeFeedback(messageId)
+                    .onSuccess {
+                        _uiState.value = _uiState.value.copy(isSubmittingFeedback = false)
+                    }
                     .onFailure { e ->
                         // Revert on failure
                         _uiState.value = _uiState.value.copy(
                             feedback = _uiState.value.feedback + (messageId to currentFeedback!!),
-                            errorMessage = e.message ?: "Failed to remove feedback"
+                            errorMessage = e.message ?: "Failed to remove feedback",
+                            isSubmittingFeedback = false
                         )
                     }
             } else {
-                // Submit feedback
-                chatRepository.submitFeedback(messageId, feedbackType)
+                // Submit feedback with rating and text
+                chatRepository.submitFeedback(messageId, feedbackType, feedbackText, rating)
+                    .onSuccess {
+                        _uiState.value = _uiState.value.copy(
+                            isSubmittingFeedback = false,
+                            feedbackDialogOpen = false,
+                            selectedFeedbackMessageId = null,
+                            selectedFeedbackType = null
+                        )
+                    }
                     .onFailure { e ->
                         // Revert on failure
                         _uiState.value = _uiState.value.copy(
@@ -266,7 +315,8 @@ class ChatViewModel : ViewModel() {
                             } else {
                                 _uiState.value.feedback - messageId
                             },
-                            errorMessage = e.message ?: "Failed to submit feedback"
+                            errorMessage = e.message ?: "Failed to submit feedback",
+                            isSubmittingFeedback = false
                         )
                     }
             }
