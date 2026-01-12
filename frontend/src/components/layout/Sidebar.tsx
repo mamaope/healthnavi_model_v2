@@ -1,4 +1,5 @@
 import { useMemo, useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { getDisplayName, getRoleLabel, useAuth } from '../../providers/AuthProvider'
 import type { ChatSession } from '../../types/chat'
 
@@ -27,6 +28,7 @@ export function Sidebar({
   onHomeClick,
   onClose,
 }: SidebarProps) {
+  const navigate = useNavigate()
   const sidebarRef = useRef<HTMLElement>(null)
   const { user, logout } = useAuth()
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
@@ -277,6 +279,18 @@ export function Sidebar({
             <div className="sidebar-user-dropdown floating-menu" role="menu">
               {user ? (
                 <>
+                  {(user.role === 'admin' || user.role === 'super_admin') && (
+                    <button
+                      className="sidebar-user-item"
+                      onClick={() => {
+                        setIsUserMenuOpen(false)
+                        navigate('/admin')
+                      }}
+                    >
+                      <i className="fas fa-chart-line" />
+                      <span>Admin Dashboard</span>
+                    </button>
+                  )}
                   <button
                     className="sidebar-user-item"
                     onClick={() => {

@@ -139,30 +139,22 @@ class DiagnosisSessionService:
             raise
     
     def list_sessions(self, user: User, page: int = 1, per_page: int = 20) -> ChatSessionListResponse:
-        """List diagnosis sessions for a user. Only returns sessions with at least one user message."""
+        """List diagnosis sessions for a user. Returns all active sessions (including empty ones created manually)."""
         try:
             # Calculate offset
             offset = (page - 1) * per_page
             
-            # Get session IDs that have at least one user message
-            sessions_with_user_messages = self.db.query(ChatMessage.session_id).filter(
-                ChatMessage.message_type == 'user'
-            ).distinct().subquery()
-            
-            # Get total count of sessions with user messages
+            # Get all active sessions for the user (including empty ones created manually)
+            # This allows manually created sessions to appear in the session history immediately
             total = self.db.query(func.count(DiagnosisSession.id)).filter(
                 DiagnosisSession.user_id == user.id,
-                DiagnosisSession.id.in_(
-                    self.db.query(sessions_with_user_messages.c.session_id)
-                )
+                DiagnosisSession.is_active == True
             ).scalar() or 0
             
-            # Get sessions that have at least one user message
+            # Get all active sessions ordered by most recently updated
             sessions = self.db.query(DiagnosisSession).filter(
                 DiagnosisSession.user_id == user.id,
-                DiagnosisSession.id.in_(
-                    self.db.query(sessions_with_user_messages.c.session_id)
-                )
+                DiagnosisSession.is_active == True
             ).order_by(
                 desc(DiagnosisSession.updated_at)
             ).offset(offset).limit(per_page).all()

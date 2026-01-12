@@ -40,7 +40,10 @@ fun SessionsScreen(
     val uiState by viewModel.uiState.collectAsState()
     var searchText by remember { mutableStateOf("") }
 
+    // Reload sessions when screen becomes visible to get latest session names
     LaunchedEffect(Unit) {
+        // Reload sessions to ensure we have the latest session names and order
+        // (backend updates names from first user message and sorts by updated_at)
         viewModel.loadSessions()
     }
 
@@ -280,6 +283,29 @@ private fun SessionCard(
             }
         }
     }
+    
+    // Get session title - match web view logic
+    // Compute directly from session.session_name so it updates when session data changes
+    val sessionTitle = remember(session.id, session.session_name) {
+        val name = session.session_name ?: ""
+        val genericPrefixes = listOf("Diagnosis Session", "Session", "Streaming Session", "New Session", "New Chat")
+        val isGenericName = name.isBlank() ||
+            genericPrefixes.any { name.startsWith(it, ignoreCase = false) }
+        
+        if (!isGenericName) {
+            // Session name already set by backend from first user message - show it
+            // Backend stores up to 50 chars, we can show it directly or truncate for display
+            val cleanName = name.replace(Regex("\\.\\.\\.$"), "") // Remove trailing dots if present
+            if (cleanName.length > 50) {
+                cleanName.substring(0, 50).trim() + "..."
+            } else {
+                cleanName
+            }
+        } else {
+            // Generic name - show "New conversation" like web view
+            "New conversation"
+        }
+    }
 
     Card(
         modifier = Modifier
@@ -302,10 +328,10 @@ private fun SessionCard(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
-                text = session.session_name ?: "Session ${session.id}",
+                text = sessionTitle,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 color = if (isSelected) Primary500 else TextPrimary
             )

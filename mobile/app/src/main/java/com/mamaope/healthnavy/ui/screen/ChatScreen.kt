@@ -30,6 +30,7 @@ import androidx.compose.ui.res.painterResource
 import com.mamaope.healthnavy.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import android.content.Intent
@@ -406,9 +407,10 @@ fun MessageBubble(
                 if (message.author == MessageAuthor.ASSISTANT && !isError) {
                     Text(
                         text = MessageFormatter.formatMessage(content),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextPrimary,
-                        lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            lineHeight = 28.sp // 1.8 line height matching web view
+                        ),
+                        color = TextPrimary
                     )
                 } else {
                     Text(

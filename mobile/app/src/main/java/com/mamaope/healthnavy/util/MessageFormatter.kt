@@ -12,6 +12,10 @@ import androidx.compose.ui.unit.sp
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.mamaope.healthnavy.ui.theme.Primary500
+import com.mamaope.healthnavy.ui.theme.TextPrimary
+import com.mamaope.healthnavy.ui.theme.TextSecondary
+import com.mamaope.healthnavy.ui.theme.Gray100
 
 /**
  * Formats AI responses similar to the frontend implementation.
@@ -82,7 +86,7 @@ object MessageFormatter {
                             pop()
                             if (probability != null) {
                                 append(" (")
-                                pushStyle(SpanStyle(color = Color(0xFF1976D2)))
+                                pushStyle(SpanStyle(color = Primary500))
                                 append("$probability%")
                                 pop()
                                 append(")")
@@ -239,6 +243,9 @@ object MessageFormatter {
         return buildAnnotatedString {
             val lines = markdown.lines()
             var i = 0
+            var lastWasParagraph = false
+            var lastWasBlank = false
+            var isFirstElement = true // Track if this is the first element (no top spacing)
             
             while (i < lines.size) {
                 val line = lines[i]
@@ -246,27 +253,48 @@ object MessageFormatter {
                 when {
                     // Headings
                     line.matches(Regex("^#{1,6}\\s+.+")) -> {
+                        // Add spacing before heading (0.75em = ~1 line) unless it's the first element
+                        if (!isFirstElement) {
+                            if (lastWasParagraph || lastWasBlank) {
+                                appendLine() // Spacing before heading
+                            } else {
+                                // Even if not coming from paragraph/blank, add spacing for consistency
+                                appendLine()
+                            }
+                        }
+                        
                         val level = line.takeWhile { it == '#' }.length
                         val text = line.substringAfter("#").trim()
                         val (emoji, headingText) = extractEmoji(text)
                         
-                        appendLine()
                         addHeading(emoji + headingText, level)
                         appendLine()
+                        lastWasParagraph = false
+                        lastWasBlank = false
+                        isFirstElement = false
                         i++
                     }
                     
                     // Unordered lists
                     line.matches(Regex("^[-*]\\s+.+")) -> {
+                        if (!isFirstElement && (lastWasParagraph || lastWasBlank)) {
+                            appendLine() // Single line break before list
+                        }
                         val content = line.substringAfter("- ").substringAfter("* ").trim()
                         append("• ")
                         appendFormattedText(content)
                         appendLine()
+                        lastWasParagraph = false
+                        lastWasBlank = false
+                        isFirstElement = false
                         i++
                     }
                     
                     // Ordered lists
                     line.matches(Regex("^\\d+\\.\\s+.+")) -> {
+                        if (!isFirstElement && (lastWasParagraph || lastWasBlank)) {
+                            appendLine() // Single line break before list
+                        }
                         val match = Regex("^(\\d+)\\.\\s+(.+)").find(line)
                         if (match != null) {
                             val number = match.groupValues[1]
@@ -275,24 +303,37 @@ object MessageFormatter {
                             appendFormattedText(content)
                             appendLine()
                         }
+                        lastWasParagraph = false
+                        lastWasBlank = false
+                        isFirstElement = false
                         i++
                     }
                     
                     // Blockquotes
                     line.startsWith("> ") -> {
+                        if (!isFirstElement && (lastWasParagraph || lastWasBlank)) {
+                            appendLine() // Single line break before blockquote
+                        }
                         val quote = line.substringAfter("> ").trim()
                         pushStyle(SpanStyle(
                             fontStyle = FontStyle.Italic,
-                            background = Color(0xFFF5F5F5)
+                            background = Gray100,
+                            color = TextPrimary
                         ))
                         append("💬 $quote")
                         pop()
                         appendLine()
+                        lastWasParagraph = false
+                        lastWasBlank = false
+                        isFirstElement = false
                         i++
                     }
                     
                     // Code blocks (simple detection)
                     line.startsWith("```") -> {
+                        if (!isFirstElement && (lastWasParagraph || lastWasBlank)) {
+                            appendLine() // Single line break before code block
+                        }
                         val language = line.substringAfter("```").trim()
                         i++
                         val codeLines = mutableListOf<String>()
@@ -304,28 +345,71 @@ object MessageFormatter {
                         
                         pushStyle(SpanStyle(
                             fontFamily = FontFamily.Monospace,
-                            background = Color(0xFFF5F5F5)
+                            background = Gray100,
+                            color = TextPrimary
                         ))
                         append(codeLines.joinToString("\n"))
                         pop()
                         appendLine()
+                        lastWasParagraph = false
+                        lastWasBlank = false
+                        isFirstElement = false
                     }
                     
                     // Horizontal rule
                     line.matches(Regex("^[-*_]{3,}$")) -> {
-                        appendLine()
+                        if (!isFirstElement) {
+                            appendLine()
+                        }
                         append("─".repeat(20))
                         appendLine()
+                        lastWasParagraph = false
+                        lastWasBlank = false
+                        isFirstElement = false
                         i++
                     }
                     
                     // Regular paragraph
                     else -> {
                         if (line.isNotBlank()) {
+                            // If this starts a new paragraph (after a blank line), add single spacing
+                            if (lastWasBlank && lastWasParagraph) {
+                                appendLine() // Single line break between paragraphs (matches web view spacing)
+                            }
+                            
+                            // Append the paragraph line
                             appendFormattedText(line)
-                            appendLine()
+                            
+                            // Check what comes next
+                            val nextLine = if (i + 1 < lines.size) lines[i + 1] else ""
+                            
+                            if (nextLine.isBlank()) {
+                                // Next is blank line - end of paragraph
+                                // Don't add newline here - the blank line itself provides spacing
+                                // We'll add spacing when we process the next paragraph
+                            } else if (nextLine.matches(Regex("^#{1,6}\\s+.+")) ||
+                                      nextLine.matches(Regex("^[-*]\\s+.+")) ||
+                                      nextLine.matches(Regex("^\\d+\\.\\s+.+")) ||
+                                      nextLine.startsWith("> ") ||
+                                      nextLine.startsWith("```") ||
+                                      nextLine.matches(Regex("^[-*_]{3,}$"))) {
+                                // Next is special element - end of paragraph, add one newline
+                                appendLine()
+                            } else {
+                                // Next line is continuation of same paragraph - add space, no newline
+                                append(" ")
+                            }
+                            
+                            lastWasParagraph = true
+                            lastWasBlank = false
+                            isFirstElement = false
                         } else {
-                            appendLine()
+                            // Blank line - paragraph separator, don't add anything here
+                            // The spacing will be added when we process the next paragraph
+                            if (lastWasParagraph) {
+                                lastWasBlank = true
+                            }
+                            // Don't append anything for blank lines
                         }
                         i++
                     }
@@ -433,7 +517,8 @@ object MessageFormatter {
                     val content = codeMatch!!.groupValues[1]
                     pushStyle(SpanStyle(
                         fontFamily = FontFamily.Monospace,
-                        background = Color(0xFFF5F5F5)
+                        background = Gray100,
+                        color = TextPrimary
                     ))
                     append(content)
                     pop()
@@ -442,7 +527,7 @@ object MessageFormatter {
                     val linkText = linkMatch!!.groupValues[1]
                     val url = linkMatch.groupValues[2]
                     pushStyle(SpanStyle(
-                        color = Color(0xFF1976D2),
+                        color = Primary500,
                         textDecoration = TextDecoration.Underline
                     ))
                     append(linkText)
@@ -455,26 +540,33 @@ object MessageFormatter {
     }
     
     /**
-     * Adds a heading with appropriate styling
+     * Adds a heading with appropriate styling matching web view
      */
     private fun AnnotatedString.Builder.addHeading(text: String, level: Int = 2) {
+        // Match web view font sizes (converted from em to sp)
+        // Web: h1=1.75em, h2=1.5em, h3=1.3em, h4=1.15em, h5=1.1em, h6=1em
+        // Base font size is ~14px, so 1em ≈ 14sp
         val fontSize = when (level) {
-            1 -> 24.sp
-            2 -> 20.sp
-            3 -> 18.sp
-            4 -> 16.sp
-            5 -> 14.sp
-            6 -> 12.sp
-            else -> 20.sp
+            1 -> 24.5.sp  // 1.75em ≈ 24.5sp
+            2 -> 21.sp    // 1.5em ≈ 21sp
+            3 -> 18.2.sp  // 1.3em ≈ 18.2sp
+            4 -> 16.1.sp  // 1.15em ≈ 16.1sp
+            5 -> 15.4.sp  // 1.1em ≈ 15.4sp
+            6 -> 14.sp    // 1em = 14sp
+            else -> 21.sp
         }
         
+        // All headings use primary color (teal) matching web view
         pushStyle(SpanStyle(
             fontSize = fontSize,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFF1976D2)
+            fontWeight = FontWeight.SemiBold, // 600 weight
+            color = Primary500 // Use theme primary color (teal) instead of blue
         ))
         append(text)
         pop()
+        
+        // Add spacing after heading (matching web view margin-bottom)
+        appendLine()
     }
 }
 

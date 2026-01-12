@@ -11,6 +11,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 data class ChatUiState(
     val isLoading: Boolean = false,
@@ -59,9 +62,27 @@ class ChatViewModel : ViewModel() {
     fun loadSessions() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
+            val currentSessionId = _uiState.value.currentSession?.id
             chatRepository.getSessions()
-                .onSuccess {
-                    _uiState.value = _uiState.value.copy(isLoading = false)
+                .onSuccess { sessions ->
+                    // Sessions are already sorted in the repository
+                    // The flow collector will update the UI state automatically
+                    // But we also explicitly update to ensure immediate refresh
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        sessions = sessions
+                    )
+                    
+                    // Update current session if it exists - this ensures we have the latest session name
+                    if (currentSessionId != null) {
+                        val updatedSession = sessions.find { it.id == currentSessionId }
+                        if (updatedSession != null) {
+                            chatRepository.setCurrentSession(updatedSession)
+                            _uiState.value = _uiState.value.copy(
+                                currentSession = updatedSession
+                            )
+                        }
+                    }
                 }
                 .onFailure { e ->
                     // When the user is not authenticated yet, the backend may return
@@ -84,22 +105,32 @@ class ChatViewModel : ViewModel() {
         }
     }
     
-    fun createSession(sessionName: String = "New Chat") {
+    fun createSession(sessionName: String = "Session") {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
             // Clear messages first to show empty state
             chatRepository.clearMessages()
             chatRepository.createSession(sessionName)
                 .onSuccess { session ->
-                    // Session is already set in repository
-                    // For a new session, messages will be empty, so we don't need to load them
-                    // Just update UI state and reload sessions list
+                    // Session is already set in repository and added to sessions list
+                    // Update UI state with the new session
+                    // The repository flow collector will automatically update the sessions list
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        currentSession = session
+                        currentSession = session,
+                        // Ensure the new session is in the sessions list
+                        sessions = _uiState.value.sessions.toMutableList().apply {
+                            if (!any { it.id == session.id }) {
+                                add(0, session) // Add at the beginning (most recent)
+                            }
+                        }
                     )
-                    // Reload sessions to update the list
-                    loadSessions()
+                    // Reload sessions in background to ensure we have the latest from backend
+                    // This ensures consistency but doesn't block the UI
+                    launch {
+                        delay(300) // Small delay to ensure backend has committed
+                        loadSessions()
+                    }
                 }
                 .onFailure { e ->
                     _uiState.value = _uiState.value.copy(
@@ -200,9 +231,28 @@ class ChatViewModel : ViewModel() {
                     )
                     chatRepository.addMessage(aiMessage)
                     
-                    // Update session if created
-                    if (finalSessionId != null && _uiState.value.currentSession == null) {
+                    // Handle session - backend may have created/updated session
+                    val responseSessionId = response.data.session_id
+                    val actualSessionId = responseSessionId ?: finalSessionId
+                    
+                    // Backend updates session name from first user message when saving the first message
+                    // The update happens synchronously before response, so reload sessions to get updated name
+                    if (actualSessionId != null) {
+                        // Reload sessions to get updated session name (backend updates name from first message)
                         loadSessions()
+                        
+                        // If backend created a new session (responseSessionId is different), update current session
+                        if (responseSessionId != null && responseSessionId != finalSessionId) {
+                            // Backend created a new session - find and set it
+                            launch {
+                                delay(400) // Wait for loadSessions to complete
+                                val updatedSessions = _uiState.value.sessions
+                                val session = updatedSessions.find { it.id == responseSessionId }
+                                if (session != null) {
+                                    chatRepository.setCurrentSession(session)
+                                }
+                            }
+                        }
                     }
                     
                     _uiState.value = _uiState.value.copy(isSending = false)

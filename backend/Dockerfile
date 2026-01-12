@@ -39,7 +39,10 @@ COPY . .
 # Make sure the credentials file has the right permissions
 RUN if [ -f "/backend/regal-autonomy-454806-d1-edf68610c57a.json" ]; then chmod 600 /backend/regal-autonomy-454806-d1-edf68610c57a.json; fi
 
+# Make startup scripts executable
+RUN chmod +x scripts/startup.sh scripts/startup_prod.sh scripts/seed_admin_user.py
+
 EXPOSE 8050
 
-# Run Alembic migrations, then start the uvicorn application server
-CMD alembic upgrade head && uvicorn healthnavi.main:app --host 0.0.0.0 --port 8050 --timeout-keep-alive 120
+# Run migrations, seed admin user, then start the uvicorn application server
+CMD ["scripts/startup_prod.sh"]

@@ -13,7 +13,7 @@ services:
       - ./logs:/backend/logs
       - ./regal-autonomy-454806-d1-edf68610c57a.json:/backend/regal-autonomy-454806-d1-edf68610c57a.json  # commented for local dev
 
-    command: sh -c "alembic upgrade head && uvicorn healthnavi.main:app --host 0.0.0.0 --port 8050 --reload"
+    command: sh -c "python3 /backend/scripts/fix_line_endings.py /backend/scripts/startup.sh && chmod +x /backend/scripts/startup.sh && bash /backend/scripts/startup.sh"
     restart: unless-stopped
     depends_on:
       db:

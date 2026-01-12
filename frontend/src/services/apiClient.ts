@@ -495,6 +495,92 @@ export const chatApi = {
   },
 }
 
+export const adminApi = {
+  getMetrics(days: number = 30) {
+    return apiFetch<{ success: boolean; data: any }>(
+      `/admin/metrics?days=${days}`,
+      'GET',
+    )
+  },
+  getUsageMetrics(days: number = 30) {
+    return apiFetch<{ success: boolean; data: any }>(
+      `/admin/metrics/usage?days=${days}`,
+      'GET',
+    )
+  },
+  getClinicalValueMetrics(days: number = 30) {
+    return apiFetch<{ success: boolean; data: any }>(
+      `/admin/metrics/clinical-value?days=${days}`,
+      'GET',
+    )
+  },
+  getSafetyMetrics(days: number = 30) {
+    return apiFetch<{ success: boolean; data: any }>(
+      `/admin/metrics/safety?days=${days}`,
+      'GET',
+    )
+  },
+  getPmfMetrics(days: number = 30) {
+    return apiFetch<{ success: boolean; data: any }>(
+      `/admin/metrics/pmf?days=${days}`,
+      'GET',
+    )
+  },
+  getAlerts(unreadOnly: boolean = false) {
+    return apiFetch<{ success: boolean; data: { alerts: any[]; count: number } }>(
+      `/admin/alerts?unread_only=${unreadOnly}`,
+      'GET',
+    )
+  },
+  checkAlerts() {
+    return apiFetch<{ success: boolean; data: { alerts_created: number } }>(
+      '/admin/alerts/check',
+      'POST',
+    )
+  },
+  markAlertRead(alertId: number) {
+    return apiFetch<{ success: boolean; data: any }>(
+      `/admin/alerts/${alertId}/read`,
+      'PUT',
+    )
+  },
+  getAuditLogs(limit: number = 100, offset: number = 0, action?: string, userId?: number) {
+    const params = new URLSearchParams({
+      limit: limit.toString(),
+      offset: offset.toString(),
+    })
+    if (action) params.append('action', action)
+    if (userId) params.append('user_id', userId.toString())
+    return apiFetch<{ success: boolean; data: { logs: any[]; total: number } }>(
+      `/admin/audit-logs?${params.toString()}`,
+      'GET',
+    )
+  },
+  getSafetyEvents(status?: string, severity?: string, limit: number = 50, offset: number = 0) {
+    const params = new URLSearchParams({
+      limit: limit.toString(),
+      offset: offset.toString(),
+    })
+    if (status) params.append('status', status)
+    if (severity) params.append('severity', severity)
+    return apiFetch<{ success: boolean; data: { events: any[]; total: number } }>(
+      `/admin/safety-events?${params.toString()}`,
+      'GET',
+    )
+  },
+  getSurveys(surveyType?: string, limit: number = 100, offset: number = 0) {
+    const params = new URLSearchParams({
+      limit: limit.toString(),
+      offset: offset.toString(),
+    })
+    if (surveyType) params.append('survey_type', surveyType)
+    return apiFetch<{ success: boolean; data: { surveys: any[]; total: number } }>(
+      `/admin/surveys?${params.toString()}`,
+      'GET',
+    )
+  },
+}
+
 export const transcriptionApi = {
   transcribe(audioBlob: Blob) {
     const formData = new FormData()
