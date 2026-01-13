@@ -262,7 +262,25 @@ export default function HomePage() {
           <div className={`chat-wrapper ${hasMessages ? 'has-messages' : 'empty'}`}>
             {/* Messages Area */}
             <div className="messages-container">
-              <MessageList messages={messages} />
+              <MessageList 
+                messages={messages} 
+                onDeepSearch={async (userQuestion: string) => {
+                  // Send the user's question again with deep search enabled
+                  setFollowupQuestions([])
+                  try {
+                    const result = await sendMessage({
+                      message: userQuestion,
+                      sessionId: currentSession?.id,
+                      deepSearch: true,
+                    })
+                    if (result && 'followupQuestions' in result && result.followupQuestions) {
+                      setFollowupQuestions(result.followupQuestions)
+                    }
+                  } catch (error) {
+                    console.error('Error sending deep search message:', error)
+                  }
+                }}
+              />
               <LoadingIndicator isVisible={isSending || isFetchingFollowup} />
               
               {/* Follow-up Questions - Below model response */}

@@ -8,13 +8,15 @@ import { FeedbackDialog } from './FeedbackDialog'
 interface MessageListProps {
   messages: ChatMessage[]
   showWelcomeMessage?: boolean
+  onDeepSearch?: (userQuestion: string) => void
 }
 
-export function MessageList({ messages, showWelcomeMessage = false }: MessageListProps) {
+export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const { isAuthenticated } = useAuth()
   const [feedback, setFeedback] = useState<Record<string, 'helpful' | 'not_helpful' | null>>({})
   const [shareStatus, setShareStatus] = useState<Record<string, 'shared' | 'copied' | null>>({})
+  const [copyStatus, setCopyStatus] = useState<Record<string, 'copied' | null>>({})
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState<Record<string, boolean>>({})
   const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false)
   const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null)
@@ -30,6 +32,7 @@ export function MessageList({ messages, showWelcomeMessage = false }: MessageLis
       if (shareTimeoutRef.current) {
         clearTimeout(shareTimeoutRef.current)
       }
+      setCopyStatus({})
     }
   }, [])
 
@@ -46,6 +49,42 @@ export function MessageList({ messages, showWelcomeMessage = false }: MessageLis
     setSelectedMessage(message)
     setSelectedFeedbackType(value)
     setFeedbackDialogOpen(true)
+  }
+
+  const handleDeepSearch = (aiMessage: ChatMessage) => {
+    if (!onDeepSearch) return
+    
+    // Find the user's question that prompted this AI response
+    // Look for the previous user message before this AI message
+    const currentIndex = messages.findIndex(m => m.id === aiMessage.id)
+    if (currentIndex > 0) {
+      // Look backwards for the most recent user message
+      for (let i = currentIndex - 1; i >= 0; i--) {
+        if (messages[i].author === 'user') {
+          onDeepSearch(messages[i].content)
+          return
+        }
+      }
+    }
+  }
+
+  const handleCopy = async (messageId: string, content: string) => {
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopyStatus((prev) => ({ ...prev, [messageId]: 'copied' }))
+      if (shareTimeoutRef.current) {
+        clearTimeout(shareTimeoutRef.current)
+      }
+      shareTimeoutRef.current = setTimeout(() => {
+        setCopyStatus((prev) => {
+          const updated = { ...prev }
+          delete updated[messageId]
+          return updated
+        })
+      }, 2000)
+    } catch (err) {
+      console.error('Failed to copy AI response:', err)
+    }
   }
 
   const handleFeedback = async (
@@ -205,6 +244,25 @@ export function MessageList({ messages, showWelcomeMessage = false }: MessageLis
                     </button>
                     <button
                       type="button"
+                      className="message-action deep-search"
+                      onClick={() => handleDeepSearch(message)}
+                      aria-label="Deep search"
+                      title="Get a more detailed response"
+                    >
+                      <i className="fas fa-brain" aria-hidden="true" />
+                      <span className="sr-only">Deep search</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="message-action neutral"
+                      onClick={() => handleCopy(message.id, message.content)}
+                      aria-label="Copy AI response"
+                    >
+                      <i className="fas fa-copy" aria-hidden="true" />
+                      <span className="sr-only">Copy</span>
+                    </button>
+                    <button
+                      type="button"
                       className="message-action neutral"
                       onClick={() => handleShare(message.id, message.content)}
                       aria-label="Share"
@@ -215,6 +273,11 @@ export function MessageList({ messages, showWelcomeMessage = false }: MessageLis
                     {shareStatus[message.id] && (
                       <span className="message-action-status">
                         {shareStatus[message.id] === 'shared' ? 'Shared!' : 'Copied to clipboard'}
+                      </span>
+                    )}
+                    {copyStatus[message.id] && (
+                      <span className="message-action-status">
+                        Copied!
                       </span>
                     )}
                   </div>
