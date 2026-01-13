@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.ThumbDown
@@ -442,6 +443,14 @@ fun MessageBubble(
                             isActive = feedbackState == "not_helpful",
                             onClick = {
                                 viewModel.openFeedbackDialog(message.messageId!!, "not_helpful")
+                            }
+                        )
+                        FeedbackChip(
+                            label = "Deep search",
+                            icon = Icons.Default.AutoAwesome,
+                            isActive = false,
+                            onClick = {
+                                viewModel.performDeepSearch(message)
                             }
                         )
                         FeedbackChip(

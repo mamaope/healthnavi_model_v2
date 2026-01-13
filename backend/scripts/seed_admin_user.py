@@ -56,8 +56,8 @@ def seed_admin_user():
             return
         
         # Create default admin user
-        admin_email = os.getenv("ADMIN_EMAIL", "admin@healthnavi.com")
-        admin_password = os.getenv("ADMIN_PASSWORD", "admin123")
+        admin_email = os.getenv("ADMIN_EMAIL", "admin@empirico.com")
+        admin_password = os.getenv("ADMIN_PASSWORD", "3mpiric0")
         admin_username = os.getenv("ADMIN_USERNAME", "admin")
         admin_full_name = os.getenv("ADMIN_FULL_NAME", "System Administrator")
         admin_role = os.getenv("ADMIN_ROLE", "super_admin")

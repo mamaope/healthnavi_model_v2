@@ -279,6 +279,27 @@ class ChatViewModel : ViewModel() {
         )
     }
     
+    fun performDeepSearch(aiMessage: ChatMessage) {
+        // Find the user's question that prompted this AI response
+        val currentIndex = _uiState.value.messages.indexOfFirst { it.id == aiMessage.id }
+        if (currentIndex > 0) {
+            // Look backwards for the most recent user message
+            for (i in currentIndex - 1 downTo 0) {
+                val message = _uiState.value.messages[i]
+                if (message.author == MessageAuthor.USER) {
+                    // Send the user's question again with deep search enabled
+                    viewModelScope.launch {
+                        _uiState.value = _uiState.value.copy(deepSearchEnabled = true)
+                        sendMessage(message.content)
+                        // Reset deep search after sending
+                        _uiState.value = _uiState.value.copy(deepSearchEnabled = false)
+                    }
+                    return
+                }
+            }
+        }
+    }
+    
     fun openFeedbackDialog(messageId: Int, feedbackType: String) {
         val currentFeedback = _uiState.value.feedback[messageId]
         val isRemoving = currentFeedback == feedbackType

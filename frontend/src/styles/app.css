@@ -3441,6 +3441,19 @@ body,
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
+.message-action.deep-search {
+    color: var(--primary-500);
+    background: var(--surface-light);
+}
+
+.message-action.deep-search:hover {
+    border-color: var(--primary-500);
+    color: var(--primary-600);
+    background: var(--primary-50);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(13, 148, 136, 0.2);
+}
+
 /* Feedback Dialog Styles */
 .feedback-dialog-overlay {
     position: fixed !important;
