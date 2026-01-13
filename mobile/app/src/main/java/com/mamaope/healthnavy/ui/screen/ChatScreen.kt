@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.*
 import com.mamaope.healthnavy.util.MessageFormatter
 import androidx.compose.runtime.*
@@ -28,6 +29,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import com.mamaope.healthnavy.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -51,6 +54,7 @@ fun ChatScreen(
     var messageText by remember { mutableStateOf("") }
     val uiState by chatViewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
+    val clipboardManager = LocalClipboardManager.current
 
     LaunchedEffect(uiState.messages.size) {
         if (uiState.messages.isNotEmpty()) {
@@ -451,6 +455,14 @@ fun MessageBubble(
                             isActive = false,
                             onClick = {
                                 viewModel.performDeepSearch(message)
+                            }
+                        )
+                        FeedbackChip(
+                            label = "Copy",
+                            icon = Icons.Default.ContentCopy,
+                            isActive = false,
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(message.content ?: ""))
                             }
                         )
                         FeedbackChip(

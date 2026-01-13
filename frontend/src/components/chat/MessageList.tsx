@@ -16,6 +16,7 @@ export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch
   const { isAuthenticated } = useAuth()
   const [feedback, setFeedback] = useState<Record<string, 'helpful' | 'not_helpful' | null>>({})
   const [shareStatus, setShareStatus] = useState<Record<string, 'shared' | 'copied' | null>>({})
+  const [copyStatus, setCopyStatus] = useState<Record<string, 'copied' | null>>({})
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState<Record<string, boolean>>({})
   const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false)
   const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null)
@@ -31,6 +32,7 @@ export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch
       if (shareTimeoutRef.current) {
         clearTimeout(shareTimeoutRef.current)
       }
+      setCopyStatus({})
     }
   }, [])
 
@@ -63,6 +65,25 @@ export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch
           return
         }
       }
+    }
+  }
+
+  const handleCopy = async (messageId: string, content: string) => {
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopyStatus((prev) => ({ ...prev, [messageId]: 'copied' }))
+      if (shareTimeoutRef.current) {
+        clearTimeout(shareTimeoutRef.current)
+      }
+      shareTimeoutRef.current = setTimeout(() => {
+        setCopyStatus((prev) => {
+          const updated = { ...prev }
+          delete updated[messageId]
+          return updated
+        })
+      }, 2000)
+    } catch (err) {
+      console.error('Failed to copy AI response:', err)
     }
   }
 
@@ -234,6 +255,15 @@ export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch
                     <button
                       type="button"
                       className="message-action neutral"
+                      onClick={() => handleCopy(message.id, message.content)}
+                      aria-label="Copy AI response"
+                    >
+                      <i className="fas fa-copy" aria-hidden="true" />
+                      <span className="sr-only">Copy</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="message-action neutral"
                       onClick={() => handleShare(message.id, message.content)}
                       aria-label="Share"
                     >
@@ -243,6 +273,11 @@ export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch
                     {shareStatus[message.id] && (
                       <span className="message-action-status">
                         {shareStatus[message.id] === 'shared' ? 'Shared!' : 'Copied to clipboard'}
+                      </span>
+                    )}
+                    {copyStatus[message.id] && (
+                      <span className="message-action-status">
+                        Copied!
                       </span>
                     )}
                   </div>
