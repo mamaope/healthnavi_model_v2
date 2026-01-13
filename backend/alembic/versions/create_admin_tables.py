@@ -19,6 +19,36 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Create admin-related tables."""
+    # Create enum types if they don't exist
+    bind = op.get_bind()
+    
+    # Check and create safetyeventseverity enum
+    result = bind.execute(sa.text("""
+        SELECT EXISTS (
+            SELECT 1 FROM pg_type WHERE typname = 'safetyeventseverity'
+        )
+    """)).scalar()
+    if not result:
+        bind.execute(sa.text("CREATE TYPE safetyeventseverity AS ENUM ('low', 'medium', 'high', 'critical')"))
+    
+    # Check and create safetyeventstatus enum
+    result = bind.execute(sa.text("""
+        SELECT EXISTS (
+            SELECT 1 FROM pg_type WHERE typname = 'safetyeventstatus'
+        )
+    """)).scalar()
+    if not result:
+        bind.execute(sa.text("CREATE TYPE safetyeventstatus AS ENUM ('open', 'investigating', 'resolved', 'closed')"))
+    
+    # Check and create surveytype enum
+    result = bind.execute(sa.text("""
+        SELECT EXISTS (
+            SELECT 1 FROM pg_type WHERE typname = 'surveytype'
+        )
+    """)).scalar()
+    if not result:
+        bind.execute(sa.text("CREATE TYPE surveytype AS ENUM ('baseline', 'mid', 'final', 'pmf')"))
+    
     # Create safety_events table
     op.create_table(
         'safety_events',
@@ -26,8 +56,8 @@ def upgrade() -> None:
         sa.Column('user_id', sa.Integer(), nullable=True),
         sa.Column('message_id', sa.Integer(), nullable=True),
         sa.Column('session_id', sa.Integer(), nullable=True),
-        sa.Column('severity', sa.Enum('low', 'medium', 'high', 'critical', name='safetyeventseverity'), nullable=False),
-        sa.Column('status', sa.Enum('open', 'investigating', 'resolved', 'closed', name='safetyeventstatus'), nullable=False),
+        sa.Column('severity', postgresql.ENUM('low', 'medium', 'high', 'critical', name='safetyeventseverity', create_type=False), nullable=False),
+        sa.Column('status', postgresql.ENUM('open', 'investigating', 'resolved', 'closed', name='safetyeventstatus', create_type=False), nullable=False),
         sa.Column('title', sa.String(length=255), nullable=False),
         sa.Column('description', sa.Text(), nullable=True),
         sa.Column('event_type', sa.String(length=50), nullable=False),
@@ -57,7 +87,7 @@ def upgrade() -> None:
         'surveys',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('user_id', sa.Integer(), nullable=False),
-        sa.Column('survey_type', sa.Enum('baseline', 'mid', 'final', 'pmf', name='surveytype'), nullable=False),
+        sa.Column('survey_type', postgresql.ENUM('baseline', 'mid', 'final', 'pmf', name='surveytype', create_type=False), nullable=False),
         sa.Column('pmf_score', sa.Integer(), nullable=True),
         sa.Column('very_disappointed', sa.Boolean(), nullable=True),
         sa.Column('willingness_to_pay', sa.Integer(), nullable=True),
@@ -103,7 +133,7 @@ def upgrade() -> None:
         'alerts',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('alert_type', sa.String(length=50), nullable=False),
-        sa.Column('severity', sa.Enum('low', 'medium', 'high', 'critical', name='safetyeventseverity'), nullable=False),
+        sa.Column('severity', postgresql.ENUM('low', 'medium', 'high', 'critical', name='safetyeventseverity', create_type=False), nullable=False),
         sa.Column('title', sa.String(length=255), nullable=False),
         sa.Column('message', sa.Text(), nullable=False),
         sa.Column('safety_event_id', sa.Integer(), nullable=True),
