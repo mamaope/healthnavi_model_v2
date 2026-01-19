@@ -40,7 +40,7 @@ COPY . .
 RUN if [ -f "/backend/regal-autonomy-454806-d1-edf68610c57a.json" ]; then chmod 600 /backend/regal-autonomy-454806-d1-edf68610c57a.json; fi
 
 # Make startup scripts executable
-RUN chmod +x scripts/startup.sh scripts/startup_prod.sh scripts/seed_admin_user.py
+RUN chmod +x scripts/startup.sh scripts/startup_prod.sh scripts/seed_admin_user.py scripts/check_migrations.py
 
 EXPOSE 8050
 
