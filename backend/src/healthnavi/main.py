@@ -8,6 +8,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
 import time
 
 logging.basicConfig(
@@ -120,6 +122,28 @@ async def log_requests(request: Request, call_next):
         logger.error(f"!!! FAILED {request.url.path} after {process_time:.2f}s: {e}")
         raise
 
+
+# Request validation error handler (422 errors)
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle request validation errors (422)."""
+    logger.error(f"Request validation error for {request.method} {request.url.path}: {exc.errors()}")
+    logger.error(f"Request query params: {request.query_params}")
+    logger.error(f"Request path params: {request.path_params}")
+    
+    # Create standardized error response
+    error_details = [f"{err.get('loc', [])}: {err.get('msg', '')}" for err in exc.errors()]
+    error_response = create_error_response(
+        message="Request validation failed",
+        status_code=422,
+        errors=error_details,
+        execution_time=0.0
+    )
+    
+    return JSONResponse(
+        status_code=422,
+        content=error_response.model_dump(mode='json')
+    )
 
 # HTTPException handler
 @app.exception_handler(HTTPException)

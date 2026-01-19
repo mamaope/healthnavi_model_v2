@@ -497,8 +497,20 @@ export const chatApi = {
 
 export const adminApi = {
   getMetrics(days: number = 30) {
+    // Ensure days is a valid number, default to 30 if invalid
+    let daysParam = 30
+    if (typeof days === 'number' && !isNaN(days) && days > 0) {
+      daysParam = Math.floor(days)
+    } else if (typeof days === 'string') {
+      const parsed = parseInt(days, 10)
+      if (!isNaN(parsed) && parsed > 0) {
+        daysParam = parsed
+      }
+    }
+    // Clamp to valid range
+    daysParam = Math.max(1, Math.min(365, daysParam))
     return apiFetch<{ success: boolean; data: any }>(
-      `/admin/metrics?days=${days}`,
+      `/admin/metrics?days=${daysParam}`,
       'GET',
     )
   },
@@ -542,6 +554,95 @@ export const adminApi = {
     return apiFetch<{ success: boolean; data: any }>(
       `/admin/alerts/${alertId}/read`,
       'PUT',
+    )
+  },
+  getUsers(limit: number = 50, offset: number = 0, isActive?: boolean, role?: string, medicalProfessionalType?: string, search?: string) {
+    const params = new URLSearchParams()
+    params.append('limit', limit.toString())
+    params.append('offset', offset.toString())
+    if (isActive !== undefined) params.append('is_active', isActive.toString())
+    if (role) params.append('role', role)
+    if (medicalProfessionalType) params.append('medical_professional_type', medicalProfessionalType)
+    if (search) params.append('search', search)
+    return apiFetch<{ success: boolean; data: { users: any[]; total: number; limit: number; offset: number } }>(
+      `/admin/users?${params.toString()}`,
+      'GET',
+    )
+  },
+  getUser(userId: number) {
+    return apiFetch<{ success: boolean; data: any }>(
+      `/admin/users/${userId}`,
+      'GET',
+    )
+  },
+  updateUser(userId: number, data: { is_active?: boolean; role?: string; medical_professional_type?: string; full_name?: string }) {
+    return apiFetch<{ success: boolean; data: any }>(
+      `/admin/users/${userId}`,
+      'PUT',
+      { body: JSON.stringify(data) },
+    )
+  },
+  changeUserPassword(userId: number, newPassword: string) {
+    return apiFetch<{ success: boolean; data: any }>(
+      `/admin/users/${userId}/change-password`,
+      'POST',
+      { body: JSON.stringify({ new_password: newPassword }) },
+    )
+  },
+  getUserStatistics(days: number = 30) {
+    // Ensure days is a valid number, default to 30 if invalid
+    let daysParam = 30
+    if (typeof days === 'number' && !isNaN(days) && days > 0) {
+      daysParam = Math.floor(days)
+    } else if (typeof days === 'string') {
+      const parsed = parseInt(days, 10)
+      if (!isNaN(parsed) && parsed > 0) {
+        daysParam = parsed
+      }
+    }
+    // Clamp to valid range
+    daysParam = Math.max(1, Math.min(365, daysParam))
+    // Ensure we always send a valid number as a string in the URL
+    const url = `/admin/users/statistics?days=${encodeURIComponent(daysParam)}`
+    return apiFetch<{ success: boolean; data: any }>(
+      url,
+      'GET',
+    )
+  },
+  getSessionStatistics(days: number = 30) {
+    // Ensure days is a valid number, default to 30 if invalid
+    let daysParam = 30
+    if (typeof days === 'number' && !isNaN(days) && days > 0) {
+      daysParam = Math.floor(days)
+    } else if (typeof days === 'string') {
+      const parsed = parseInt(days, 10)
+      if (!isNaN(parsed) && parsed > 0) {
+        daysParam = parsed
+      }
+    }
+    // Clamp to valid range
+    daysParam = Math.max(1, Math.min(365, daysParam))
+    return apiFetch<{ success: boolean; data: any }>(
+      `/admin/sessions/statistics?days=${daysParam}`,
+      'GET',
+    )
+  },
+  getAiResponseStatistics(days: number = 30) {
+    // Ensure days is a valid number, default to 30 if invalid
+    let daysParam = 30
+    if (typeof days === 'number' && !isNaN(days) && days > 0) {
+      daysParam = Math.floor(days)
+    } else if (typeof days === 'string') {
+      const parsed = parseInt(days, 10)
+      if (!isNaN(parsed) && parsed > 0) {
+        daysParam = parsed
+      }
+    }
+    // Clamp to valid range
+    daysParam = Math.max(1, Math.min(365, daysParam))
+    return apiFetch<{ success: boolean; data: any }>(
+      `/admin/ai-responses/statistics?days=${daysParam}`,
+      'GET',
     )
   },
   getAuditLogs(limit: number = 100, offset: number = 0, action?: string, userId?: number) {

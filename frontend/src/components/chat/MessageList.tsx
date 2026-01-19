@@ -1,8 +1,9 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import type { ChatMessage } from '../../types/chat'
 import { renderModelResponse } from '../../utils/markdown'
-import { chatApi } from '../../services/apiClient'
+import { chatApi, sessionsApi } from '../../services/apiClient'
 import { useAuth } from '../../providers/AuthProvider'
+import { useChatStore } from '../../store/useChatStore'
 import { FeedbackDialog } from './FeedbackDialog'
 
 interface MessageListProps {
@@ -94,11 +95,22 @@ export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch
     rating: number = 0,
     isRemoving: boolean = false
   ) => {
+    console.log('handleFeedback called:', {
+      messageId: message.id,
+      backendMessageId: message.messageId,
+      value,
+      feedbackTextLength: feedbackText.length,
+      rating,
+      isRemoving,
+      isAuthenticated
+    })
+    
     const messageId = message.id
 
     // Only submit feedback if user is authenticated and message has a backend ID
-    if (!isAuthenticated || !message.messageId) {
-      // For unauthenticated users or messages without backend ID, just update local state
+    if (!isAuthenticated) {
+      console.warn('Cannot submit feedback: User not authenticated')
+      // For unauthenticated users, just update local state
       setFeedback((prev) => ({
         ...prev,
         [messageId]: isRemoving ? null : value,
@@ -110,7 +122,65 @@ export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch
       return
     }
 
+    if (!message.messageId) {
+      console.error('Cannot submit feedback: Message missing backend ID', {
+        messageId: message.id,
+        message: message,
+        allMessages: messages.map(m => ({ id: m.id, messageId: m.messageId, author: m.author }))
+      })
+      
+      // Try to reload the session to get fresh message data with messageId
+      const { currentSession } = useChatStore.getState()
+      if (currentSession && message.author === 'assistant') {
+        console.log('Attempting to reload session to get messageId...')
+        try {
+          const sessionMessages = await sessionsApi.messages(currentSession.id)
+          if (sessionMessages.success && sessionMessages.data.messages) {
+            // Find matching message by content
+            const matchingMessage = sessionMessages.data.messages.find(m => 
+              m.message_type === 'assistant' && 
+              (m.content.trim() === message.content.trim() || 
+               m.content.trim().includes(message.content.trim().substring(0, 100)))
+            )
+            if (matchingMessage && matchingMessage.id) {
+              const fetchedMessageId = typeof matchingMessage.id === 'number' ? matchingMessage.id : parseInt(String(matchingMessage.id), 10)
+              // Update the message in the store
+              useChatStore.getState().replaceMessage(message.id, {
+                messageId: fetchedMessageId
+              })
+              console.log('✅ Fetched messageId from session:', fetchedMessageId)
+              // Retry feedback submission with the fetched messageId
+              message.messageId = fetchedMessageId
+            } else {
+              throw new Error('Message not found in session')
+            }
+          } else {
+            throw new Error('Failed to load session messages')
+          }
+        } catch (reloadError) {
+          console.error('Failed to reload session for messageId:', reloadError)
+          alert('Unable to submit feedback: Message ID is missing. This may happen with older messages. Please try refreshing the page or submitting feedback on a newly received message.')
+          setFeedbackDialogOpen(false)
+          setSelectedMessage(null)
+          setSelectedFeedbackType(null)
+          return
+        }
+      } else {
+        alert('Unable to submit feedback: Message ID is missing. This may happen with older messages. Please try refreshing the page or submitting feedback on a newly received message.')
+        setFeedbackDialogOpen(false)
+        setSelectedMessage(null)
+        setSelectedFeedbackType(null)
+        return
+      }
+    }
+
     const backendMessageId = message.messageId
+    console.log('Submitting feedback:', {
+      backendMessageId,
+      feedbackType: value,
+      rating,
+      feedbackText: feedbackText.substring(0, 50) + '...'
+    })
 
     // Optimistically update UI
     setFeedback((prev) => ({
@@ -123,31 +193,58 @@ export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch
       if (isRemoving) {
         // Remove feedback
         await chatApi.removeFeedback(backendMessageId)
+        console.log('Feedback removed successfully')
       } else {
         // Submit feedback with text and rating
-        await chatApi.submitFeedback(backendMessageId, value, feedbackText, rating)
+        const response = await chatApi.submitFeedback(backendMessageId, value, feedbackText, rating)
+        console.log('Feedback submitted successfully:', response)
       }
       // Close dialog immediately on successful submission
       setFeedbackDialogOpen(false)
       setSelectedMessage(null)
       setSelectedFeedbackType(null)
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to submit feedback:', error)
+      const errorMessage = error?.message || error?.toString() || 'Unknown error occurred'
+      alert(`Failed to submit feedback: ${errorMessage}`)
       // Revert optimistic update on error
-      const currentFeedback = feedback[messageId]
+      const previousFeedback = feedback[messageId]
       setFeedback((prev) => ({
         ...prev,
-        [messageId]: currentFeedback,
+        [messageId]: previousFeedback,
       }))
       // Keep dialog open on error so user can retry
+      // Don't close dialog here - let user see the error and retry
     } finally {
       setIsSubmittingFeedback((prev) => ({ ...prev, [messageId]: false }))
     }
   }
 
-  const handleFeedbackSubmit = (feedbackText: string, rating: number) => {
-    if (selectedMessage && selectedFeedbackType) {
-      handleFeedback(selectedMessage, selectedFeedbackType, feedbackText, rating, false)
+  const handleFeedbackSubmit = async (feedbackText: string, rating: number) => {
+    console.log('handleFeedbackSubmit called:', {
+      hasSelectedMessage: !!selectedMessage,
+      selectedFeedbackType,
+      feedbackTextLength: feedbackText.length,
+      rating
+    })
+    
+    if (!selectedMessage || !selectedFeedbackType) {
+      console.error('Cannot submit feedback: Missing selected message or feedback type', {
+        selectedMessage,
+        selectedFeedbackType
+      })
+      setFeedbackDialogOpen(false)
+      setSelectedMessage(null)
+      setSelectedFeedbackType(null)
+      return
+    }
+    
+    try {
+      await handleFeedback(selectedMessage, selectedFeedbackType, feedbackText, rating, false)
+    } catch (error) {
+      console.error('Error in handleFeedbackSubmit:', error)
+      // Error is already handled in handleFeedback, but we log it here too
+      // Don't close dialog here - let handleFeedback decide
     }
   }
 
@@ -223,10 +320,19 @@ export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch
                     <button
                       type="button"
                       className={`message-action positive ${feedback[message.id] === 'helpful' ? 'active' : ''}`}
-                      onClick={() => handleFeedbackClick(message, 'helpful')}
+                      onClick={() => {
+                        console.log('Helpful button clicked:', {
+                          messageId: message.id,
+                          backendMessageId: message.messageId,
+                          hasMessageId: !!message.messageId,
+                          message: message
+                        })
+                        handleFeedbackClick(message, 'helpful')
+                      }}
                       aria-pressed={feedback[message.id] === 'helpful'}
                       aria-label="Helpful"
                       disabled={isSubmittingFeedback[message.id]}
+                      title={!message.messageId ? 'Message ID missing - cannot submit feedback' : 'Mark as helpful'}
                     >
                       <i className="fas fa-thumbs-up" aria-hidden="true" />
                       <span className="sr-only">Helpful</span>
@@ -234,10 +340,19 @@ export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch
                     <button
                       type="button"
                       className={`message-action negative ${feedback[message.id] === 'not_helpful' ? 'active' : ''}`}
-                      onClick={() => handleFeedbackClick(message, 'not_helpful')}
+                      onClick={() => {
+                        console.log('Not helpful button clicked:', {
+                          messageId: message.id,
+                          backendMessageId: message.messageId,
+                          hasMessageId: !!message.messageId,
+                          message: message
+                        })
+                        handleFeedbackClick(message, 'not_helpful')
+                      }}
                       aria-pressed={feedback[message.id] === 'not_helpful'}
                       aria-label="Not helpful"
                       disabled={isSubmittingFeedback[message.id]}
+                      title={!message.messageId ? 'Message ID missing - cannot submit feedback' : 'Mark as not helpful'}
                     >
                       <i className="fas fa-thumbs-down" aria-hidden="true" />
                       <span className="sr-only">Not helpful</span>

@@ -20,6 +20,10 @@ function toChatMessage(message: {
   diagnosis_complete?: boolean
   created_at: string
 }): ChatMessage {
+  // The backend returns id as a number (database ID), use it for both id and messageId
+  const numericId = typeof message.id === 'number' ? message.id : parseInt(String(message.id), 10)
+  const isValidId = !isNaN(numericId) && numericId > 0
+  
   return {
     id: String(message.id),
     author:
@@ -31,7 +35,7 @@ function toChatMessage(message: {
     content: message.content,
     diagnosisComplete: message.diagnosis_complete,
     createdAt: message.created_at ?? nowIso(),
-    messageId: typeof message.id === 'number' ? message.id : undefined, // Store numeric ID if available
+    messageId: isValidId ? numericId : undefined, // Use the numeric database ID for feedback
   }
 }
 
@@ -195,13 +199,33 @@ export function useChatEngine() {
           let followupQuestions: string[] = []
           let pendingFollowupJson = ''
           let foundFollowupMarker = false
+          let messageIdFromStream: number | null = null
+          let allChunks: string[] = [] // Store all chunks to search for markers at the end
           const setFollowupQuestionsHook = useChatStore.getState().setFollowupQuestions
           
           setIsFetchingFollowup(true)
           
           while (!(streamResult = await streamGenerator.next()).done) {
             const chunk = streamResult.value
+            allChunks.push(chunk) // Store all chunks
             
+            // Check for message_id marker first (before processing content)
+            if (chunk.includes('[MESSAGE_ID]:')) {
+              const messageIdMatch = chunk.match(/\[MESSAGE_ID\]:(\d+)/)
+              if (messageIdMatch) {
+                messageIdFromStream = parseInt(messageIdMatch[1], 10)
+                console.log('✅ Extracted message_id from stream:', messageIdFromStream)
+                // Remove the marker from content before adding to stream
+                const contentWithoutMarker = chunk.replace(/\[MESSAGE_ID\]:\d+\s*/g, '').trim()
+                if (contentWithoutMarker) {
+                  streamedContent += contentWithoutMarker
+                  appendMessageContent(aiMessageId, contentWithoutMarker)
+                }
+                continue
+              }
+            }
+            
+            // Check for followup questions marker
             if (chunk.includes('[FOLLOWUP_QUESTIONS]:')) {
               foundFollowupMarker = true
               const jsonStart = chunk.indexOf('[FOLLOWUP_QUESTIONS]:') + '[FOLLOWUP_QUESTIONS]:'.length
@@ -232,8 +256,56 @@ export function useChatEngine() {
               }
               continue
             } else {
+              // Regular content - add to streamed content
               streamedContent += chunk
               appendMessageContent(aiMessageId, chunk)
+            }
+          }
+          
+          // After stream ends, search all chunks for message_id if we didn't find it yet
+          if (!messageIdFromStream) {
+            const allContent = allChunks.join('')
+            const messageIdMatch = allContent.match(/\[MESSAGE_ID\]:(\d+)/)
+            if (messageIdMatch) {
+              messageIdFromStream = parseInt(messageIdMatch[1], 10)
+              console.log('✅ Extracted message_id from stream (end of stream search):', messageIdFromStream)
+            }
+          }
+          
+          // Update message with messageId if we got it from the stream
+          if (messageIdFromStream) {
+            useChatStore.getState().replaceMessage(aiMessageId, {
+              messageId: messageIdFromStream
+            })
+            console.log('✅ Updated message with messageId:', messageIdFromStream, 'for message:', aiMessageId)
+          } else {
+            console.warn('⚠️ No messageId received from stream for message:', aiMessageId, 'Content length:', streamedContent.length)
+            // Try to fetch messageId from session if we have a session
+            const returnValue = streamResult.value
+            const finalSessionId = returnValue?.sessionId || sessionId
+            if (finalSessionId && isAuthenticated && currentSession) {
+              console.log('Attempting to fetch messageId from session...')
+              try {
+                const sessionMessages = await sessionsApi.messages(finalSessionId)
+                if (sessionMessages.success && sessionMessages.data.messages) {
+                  // Find the most recent assistant message that matches our content
+                  const matchingMessage = sessionMessages.data.messages
+                    .filter(m => m.message_type === 'assistant')
+                    .reverse()
+                    .find(m => m.content.trim() === streamedContent.trim() || 
+                               m.content.trim().includes(streamedContent.trim().substring(0, 100)))
+                  if (matchingMessage && matchingMessage.id) {
+                    const fetchedMessageId = typeof matchingMessage.id === 'number' ? matchingMessage.id : parseInt(String(matchingMessage.id), 10)
+                    useChatStore.getState().replaceMessage(aiMessageId, {
+                      messageId: fetchedMessageId
+                    })
+                    console.log('✅ Fetched and updated messageId from session:', fetchedMessageId)
+                    messageIdFromStream = fetchedMessageId
+                  }
+                }
+              } catch (fetchError) {
+                console.error('Failed to fetch messageId from session:', fetchError)
+              }
             }
           }
           

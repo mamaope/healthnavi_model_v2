@@ -64,10 +64,8 @@ class AdminService:
             else:
                 activated_users = 0
             
-            # Total users
-            total_users = self.db.query(func.count(User.id)).filter(
-                User.is_active == True
-            ).scalar() or 0
+            # Total users (all users on the system, not just active)
+            total_users = self.db.query(func.count(User.id)).scalar() or 0
             
             # Queries per clinician (average messages per user)
             # Use subquery to count messages per user, then average
@@ -150,26 +148,26 @@ class AdminService:
         try:
             period_start = (datetime.utcnow() - timedelta(days=days)).isoformat()
             
-            # Total feedback - cast to string for proper comparison
+            # Total feedback - use text() for string date comparison
             total_feedback = self.db.query(func.count(MessageFeedback.id)).filter(
-                MessageFeedback.created_at >= period_start
+                text("message_feedback.created_at >= :period_start").bindparams(period_start=period_start)
             ).scalar() or 0
             
-            # Helpful feedback - cast to string for proper comparison
+            # Helpful feedback - use text() for string date comparison
             helpful_feedback = self.db.query(func.count(MessageFeedback.id)).filter(
                 and_(
                     MessageFeedback.feedback_type == 'helpful',
-                    MessageFeedback.created_at >= period_start
+                    text("message_feedback.created_at >= :period_start").bindparams(period_start=period_start)
                 )
             ).scalar() or 0
             
             helpful_percentage = (helpful_feedback / total_feedback * 100) if total_feedback > 0 else 0.0
             
-            # Average usefulness score (rating) - direct string comparison
+            # Average usefulness score (rating) - use text() for string date comparison
             avg_rating_result = self.db.query(func.avg(MessageFeedback.rating)).filter(
                 and_(
                     MessageFeedback.rating.isnot(None),
-                    MessageFeedback.created_at >= period_start
+                    text("message_feedback.created_at >= :period_start").bindparams(period_start=period_start)
                 )
             ).scalar()
             avg_rating = float(avg_rating_result) if avg_rating_result is not None else 0.0
@@ -199,17 +197,6 @@ class AdminService:
                 )
             ).scalar()
             avg_time_saved = float(avg_time_saved_result) if avg_time_saved_result is not None else 0.0
-            
-            # Log for debugging
-            logger.debug(f"Clinical Value Metrics - Period: {days} days, Start: {period_start}")
-            logger.debug(f"  Total feedback: {total_feedback}, Helpful: {helpful_feedback}, Percentage: {helpful_percentage:.2f}%")
-            logger.debug(f"  Total survey queries: {total_survey_queries}, Relevant: {relevant_queries}, Percentage: {relevant_percentage:.2f}%")
-            
-            # Log for debugging - helps verify calculations match database
-            logger.info(f"Clinical Value Metrics (last {days} days):")
-            logger.info(f"  Total feedback: {total_feedback}, Helpful: {helpful_feedback}, Percentage: {helpful_percentage:.2f}%")
-            logger.info(f"  Total survey queries: {total_survey_queries}, Relevant: {relevant_queries}, Percentage: {relevant_percentage:.2f}%")
-            logger.info(f"  Avg usefulness score: {avg_rating:.2f}, Avg time saved: {avg_time_saved:.2f} min")
             
             return {
                 "helpful_feedback_percentage": round(helpful_percentage, 2),
@@ -569,3 +556,310 @@ class AdminService:
         self.db.commit()
         self.db.refresh(audit_log)
         return audit_log
+    
+    def get_users(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        is_active: Optional[bool] = None,
+        role: Optional[str] = None,
+        medical_professional_type: Optional[str] = None,
+        search: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Get users with filters and pagination."""
+        try:
+            query = self.db.query(User)
+            
+            if is_active is not None:
+                query = query.filter(User.is_active == is_active)
+            if role:
+                query = query.filter(User.role == role)
+            if medical_professional_type:
+                query = query.filter(User.medical_professional_type == medical_professional_type)
+            if search:
+                search_pattern = f"%{search}%"
+                query = query.filter(
+                    or_(
+                        User.email.ilike(search_pattern),
+                        User.username.ilike(search_pattern),
+                        User.full_name.ilike(search_pattern)
+                    )
+                )
+            
+            total = query.count()
+            users = query.order_by(User.created_at.desc()).offset(offset).limit(limit).all()
+            
+            users_data = []
+            for user in users:
+                # Get user statistics
+                session_count = self.db.query(func.count(DiagnosisSession.id)).filter(
+                    DiagnosisSession.user_id == user.id
+                ).scalar() or 0
+                
+                message_count = self.db.query(func.count(ChatMessage.id)).join(
+                    DiagnosisSession, DiagnosisSession.id == ChatMessage.session_id
+                ).filter(DiagnosisSession.user_id == user.id).scalar() or 0
+                
+                users_data.append({
+                    "id": user.id,
+                    "username": user.username,
+                    "email": user.email,
+                    "full_name": user.full_name,
+                    "role": user.role,
+                    "medical_professional_type": user.medical_professional_type,
+                    "is_active": user.is_active,
+                    "is_email_verified": user.is_email_verified,
+                    "created_at": user.created_at,
+                    "updated_at": user.updated_at,
+                    "session_count": session_count,
+                    "message_count": message_count
+                })
+            
+            return {
+                "users": users_data,
+                "total": total,
+                "limit": limit,
+                "offset": offset
+            }
+        except Exception as e:
+            logger.error(f"Error getting users: {e}")
+            raise
+    
+    def get_user_statistics(self, days: int = 30) -> Dict[str, Any]:
+        """Get user statistics by type and activity."""
+        try:
+            period_start = (datetime.utcnow() - timedelta(days=days)).isoformat()
+            
+            # Total users
+            total_users = self.db.query(func.count(User.id)).scalar() or 0
+            
+            # Active users
+            active_users = self.db.query(func.count(User.id)).filter(
+                User.is_active == True
+            ).scalar() or 0
+            
+            # Users by role
+            users_by_role = {}
+            roles = self.db.query(User.role, func.count(User.id)).group_by(User.role).all()
+            for role, count in roles:
+                # Ensure role is not None and count is valid
+                if role is not None:
+                    users_by_role[str(role)] = int(count) if count is not None else 0
+                else:
+                    users_by_role["Unknown"] = users_by_role.get("Unknown", 0) + (int(count) if count is not None else 0)
+            
+            # Users by medical professional type
+            users_by_type = {}
+            types = self.db.query(
+                User.medical_professional_type,
+                func.count(User.id)
+            ).filter(
+                User.medical_professional_type.isnot(None)
+            ).group_by(User.medical_professional_type).all()
+            for prof_type, count in types:
+                # Ensure prof_type is not None and is a valid string
+                if prof_type is not None and isinstance(prof_type, str) and prof_type.strip():
+                    users_by_type[str(prof_type)] = int(count) if count is not None else 0
+                elif prof_type is None:
+                    # Handle edge case where None might slip through
+                    users_by_type["Unknown"] = users_by_type.get("Unknown", 0) + (int(count) if count is not None else 0)
+            
+            # Count users without a professional type
+            users_without_type = self.db.query(func.count(User.id)).filter(
+                or_(
+                    User.medical_professional_type.is_(None),
+                    User.medical_professional_type == ""
+                )
+            ).scalar() or 0
+            if users_without_type > 0:
+                users_by_type["Not Specified"] = users_without_type
+            
+            # Activated users (users with at least one session)
+            activated_user_ids = self.db.query(DiagnosisSession.user_id).distinct().all()
+            activated_user_ids_list = [row[0] for row in activated_user_ids if row[0] is not None]
+            activated_users = len(activated_user_ids_list) if activated_user_ids_list else 0
+            
+            # New users in period
+            new_users = self.db.query(func.count(User.id)).filter(
+                text("users.created_at >= :period_start").bindparams(period_start=period_start)
+            ).scalar() or 0
+            
+            # Users active in period (users with sessions in period)
+            active_in_period = self.db.query(func.count(func.distinct(DiagnosisSession.user_id))).filter(
+                text("diagnosis_sessions.created_at >= :period_start").bindparams(period_start=period_start)
+            ).scalar() or 0
+            
+            # Ensure all counts are integers
+            return {
+                "total_users": int(total_users) if total_users is not None else 0,
+                "active_users": int(active_users) if active_users is not None else 0,
+                "inactive_users": int(total_users - active_users) if total_users is not None and active_users is not None else 0,
+                "activated_users": int(activated_users) if activated_users is not None else 0,
+                "users_by_role": users_by_role,  # Already converted to int in the loop above
+                "users_by_type": users_by_type,  # Already converted to int in the loop above
+                "new_users": int(new_users) if new_users is not None else 0,
+                "active_in_period": int(active_in_period) if active_in_period is not None else 0
+            }
+        except Exception as e:
+            logger.error(f"Error getting user statistics: {e}")
+            raise
+    
+    def get_session_statistics(self, days: int = 30) -> Dict[str, Any]:
+        """Get session statistics including active sessions and average length."""
+        try:
+            period_start = (datetime.utcnow() - timedelta(days=days)).isoformat()
+            now = datetime.utcnow()
+            
+            # Total sessions
+            total_sessions = self.db.query(func.count(DiagnosisSession.id)).filter(
+                text("diagnosis_sessions.created_at >= :period_start").bindparams(period_start=period_start)
+            ).scalar() or 0
+            
+            # Active sessions (sessions updated in last 24 hours)
+            last_24h = (now - timedelta(hours=24)).isoformat()
+            active_sessions = self.db.query(func.count(DiagnosisSession.id)).filter(
+                text("diagnosis_sessions.updated_at >= :last_24h").bindparams(last_24h=last_24h)
+            ).scalar() or 0
+            
+            # Average session length (in messages)
+            session_lengths = self.db.query(
+                DiagnosisSession.id,
+                func.count(ChatMessage.id).label('message_count')
+            ).join(
+                ChatMessage, ChatMessage.session_id == DiagnosisSession.id
+            ).filter(
+                text("diagnosis_sessions.created_at >= :period_start").bindparams(period_start=period_start)
+            ).group_by(DiagnosisSession.id).subquery()
+            
+            avg_length_result = self.db.query(func.avg(session_lengths.c.message_count)).scalar()
+            avg_session_length = float(avg_length_result) if avg_length_result is not None else 0.0
+            
+            # Average session duration (time between first and last message)
+            # This is approximate - we'll use created_at and updated_at
+            sessions_with_duration = self.db.query(
+                DiagnosisSession.id,
+                DiagnosisSession.created_at,
+                DiagnosisSession.updated_at
+            ).filter(
+                text("diagnosis_sessions.created_at >= :period_start").bindparams(period_start=period_start)
+            ).all()
+            
+            durations = []
+            for session in sessions_with_duration:
+                try:
+                    created = self.parse_datetime(session.created_at) if session.created_at else None
+                    updated = self.parse_datetime(session.updated_at) if session.updated_at else None
+                    if created and updated:
+                        duration_seconds = (updated - created).total_seconds()
+                        if duration_seconds > 0:
+                            durations.append(duration_seconds / 60)  # Convert to minutes
+                except:
+                    continue
+            
+            avg_duration_minutes = sum(durations) / len(durations) if durations else 0.0
+            
+            return {
+                "total_sessions": total_sessions,
+                "active_sessions": active_sessions,
+                "avg_session_length": round(avg_session_length, 2),
+                "avg_duration_minutes": round(avg_duration_minutes, 2)
+            }
+        except Exception as e:
+            logger.error(f"Error getting session statistics: {e}")
+            raise
+    
+    def get_ai_response_statistics(self, days: int = 30) -> Dict[str, Any]:
+        """Get AI response statistics including feedback and response times."""
+        try:
+            period_start = (datetime.utcnow() - timedelta(days=days)).isoformat()
+            
+            # Total AI responses (assistant messages)
+            total_responses = self.db.query(func.count(ChatMessage.id)).filter(
+                and_(
+                    ChatMessage.message_type == 'assistant',
+                    text("chat_messages.created_at >= :period_start").bindparams(period_start=period_start)
+                )
+            ).scalar() or 0
+            
+            # Responses with feedback - filter by feedback creation date to see recent feedback
+            responses_with_feedback = self.db.query(func.count(MessageFeedback.id)).filter(
+                text("message_feedback.created_at >= :period_start").bindparams(period_start=period_start)
+            ).scalar() or 0
+            
+            # Helpful feedback - filter by feedback creation date
+            helpful_count = self.db.query(func.count(MessageFeedback.id)).filter(
+                and_(
+                    MessageFeedback.feedback_type == 'helpful',
+                    text("message_feedback.created_at >= :period_start").bindparams(period_start=period_start)
+                )
+            ).scalar() or 0
+            
+            # Not helpful feedback - filter by feedback creation date
+            not_helpful_count = self.db.query(func.count(MessageFeedback.id)).filter(
+                and_(
+                    MessageFeedback.feedback_type == 'not_helpful',
+                    text("message_feedback.created_at >= :period_start").bindparams(period_start=period_start)
+                )
+            ).scalar() or 0
+            
+            # Average rating - filter by feedback creation date
+            avg_rating_result = self.db.query(func.avg(MessageFeedback.rating)).filter(
+                and_(
+                    MessageFeedback.rating.isnot(None),
+                    text("message_feedback.created_at >= :period_start").bindparams(period_start=period_start)
+                )
+            ).scalar()
+            avg_rating = float(avg_rating_result) if avg_rating_result is not None else 0.0
+            
+            # Response time calculation (time between user message and AI response)
+            # Get pairs of user messages and their following assistant messages
+            user_messages = self.db.query(
+                ChatMessage.id,
+                ChatMessage.session_id,
+                ChatMessage.created_at
+            ).filter(
+                and_(
+                    ChatMessage.message_type == 'user',
+                    text("chat_messages.created_at >= :period_start").bindparams(period_start=period_start)
+                )
+            ).order_by(ChatMessage.created_at).all()
+            
+            response_times = []
+            for user_msg in user_messages:
+                # Find the next assistant message in the same session
+                next_assistant = self.db.query(ChatMessage).filter(
+                    and_(
+                        ChatMessage.session_id == user_msg.session_id,
+                        ChatMessage.message_type == 'assistant',
+                        text("chat_messages.created_at > :user_time").bindparams(user_time=user_msg.created_at)
+                    )
+                ).order_by(ChatMessage.created_at).first()
+                
+                if next_assistant:
+                    try:
+                        user_time = self.parse_datetime(user_msg.created_at)
+                        ai_time = self.parse_datetime(next_assistant.created_at)
+                        if user_time and ai_time:
+                            response_time_seconds = (ai_time - user_time).total_seconds()
+                            if 0 < response_time_seconds < 300:  # Reasonable range: 0-5 minutes
+                                response_times.append(response_time_seconds)
+                    except:
+                        continue
+            
+            avg_response_time_seconds = sum(response_times) / len(response_times) if response_times else 0.0
+            avg_response_time_ms = avg_response_time_seconds * 1000
+            
+            return {
+                "total_responses": total_responses,
+                "responses_with_feedback": responses_with_feedback,
+                "helpful_count": helpful_count,
+                "not_helpful_count": not_helpful_count,
+                "helpful_percentage": round((helpful_count / responses_with_feedback * 100) if responses_with_feedback > 0 else 0, 2),
+                "not_helpful_percentage": round((not_helpful_count / responses_with_feedback * 100) if responses_with_feedback > 0 else 0, 2),
+                "avg_rating": round(avg_rating, 2),
+                "avg_response_time_ms": round(avg_response_time_ms, 2),
+                "avg_response_time_seconds": round(avg_response_time_seconds, 2)
+            }
+        except Exception as e:
+            logger.error(f"Error getting AI response statistics: {e}")
+            raise

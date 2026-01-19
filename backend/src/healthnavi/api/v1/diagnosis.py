@@ -386,6 +386,9 @@ async def diagnose_stream(data: DiagnosisInput, current_user: User = Depends(get
                     except Exception as cleanup_error:
                         logger.warning(f"Could not clean up empty session after error: {cleanup_error}")
 
+        # Container to store the AI message ID after it's saved
+        ai_message_id_container = {"value": None}
+        
         async def streaming_with_storage():
             full_response = ""
             ai_response_content = ""  # Track only the AI response content (without markers)
@@ -436,9 +439,13 @@ async def diagnose_stream(data: DiagnosisInput, current_user: User = Depends(get
                                         patient_data=data.patient_data,
                                         diagnosis_complete=True
                                     )
-                                    save_session_service.add_message(session_id_int, user_in_new_session, ai_message)
-                                    ai_message_saved = True
-                                    logger.info(f"✅ Stored AI streaming response in session {session_id_int}: {len(content_to_save)} chars")
+                                    saved_message = save_session_service.add_message(session_id_int, user_in_new_session, ai_message)
+                                    if saved_message:
+                                        ai_message_id_container["value"] = saved_message.id
+                                        ai_message_saved = True
+                                        logger.info(f"✅ Stored AI streaming response in session {session_id_int}: message_id={saved_message.id}, {len(content_to_save)} chars")
+                                    else:
+                                        logger.warning(f"⚠️ Failed to save AI message - add_message returned None")
                             except Exception as save_error:
                                 save_db.rollback()
                                 raise save_error
@@ -467,10 +474,14 @@ async def diagnose_stream(data: DiagnosisInput, current_user: User = Depends(get
                         followup_json = json.dumps(followup_questions)
                         yield f"\n\n[FOLLOWUP_QUESTIONS]:{followup_json}"
                 
+                # Send message_id at the end if available (before stream ends)
+                if ai_message_id_container["value"]:
+                    yield f"\n[MESSAGE_ID]:{ai_message_id_container['value']}\n"
+                
                 # Log final status
                 if session_id_int and user_id:
                     if ai_message_saved:
-                        logger.info(f"✅ Successfully saved AI message to session {session_id_int}")
+                        logger.info(f"✅ Successfully saved AI message to session {session_id_int}, message_id={ai_message_id_container['value']}")
                     else:
                         logger.warning(f"⚠️ AI message was NOT saved to session {session_id_int} (stream_error={stream_error}, content_len={len(ai_response_content.strip())})")
                         
@@ -550,6 +561,12 @@ async def submit_feedback(
                 MessageFeedback.message_id == feedback_data.message_id
             ).first()
 
+            logger.info(
+                f"Feedback submission attempt: message_id={feedback_data.message_id}, "
+                f"user_id={current_user.id}, type={feedback_data.feedback_type}, "
+                f"rating={feedback_data.rating}, existing={existing_feedback is not None}"
+            )
+
             if existing_feedback:
                 # Update existing feedback
                 existing_feedback.feedback_type = feedback_data.feedback_type
@@ -559,7 +576,11 @@ async def submit_feedback(
                 db.commit()
                 db.refresh(existing_feedback)
 
-                logger.info(f"Updated feedback {existing_feedback.id} for message {feedback_data.message_id} by user {current_user.id}")
+                logger.info(
+                    f"Updated feedback {existing_feedback.id} for message {feedback_data.message_id} by user {current_user.id}. "
+                    f"Type: {feedback_data.feedback_type}, Rating: {feedback_data.rating}, "
+                    f"Updated At: {existing_feedback.updated_at}"
+                )
 
                 feedback_response = MessageFeedbackResponse(
                     id=existing_feedback.id,
@@ -594,7 +615,11 @@ async def submit_feedback(
                 db.commit()
                 db.refresh(new_feedback)
 
-                logger.info(f"Created feedback {new_feedback.id} for message {feedback_data.message_id} by user {current_user.id}")
+                logger.info(
+                    f"Created feedback {new_feedback.id} for message {feedback_data.message_id} by user {current_user.id}. "
+                    f"Type: {feedback_data.feedback_type}, Rating: {feedback_data.rating}, "
+                    f"Created At: {new_feedback.created_at}"
+                )
 
                 feedback_response = MessageFeedbackResponse(
                     id=new_feedback.id,

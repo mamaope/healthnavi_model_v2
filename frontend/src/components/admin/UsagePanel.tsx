@@ -1,10 +1,13 @@
 import './AdminPanel.css'
+import './UserManagementPanel.css'
 
 interface UsagePanelProps {
   metrics: any
+  days?: number
 }
 
-export default function UsagePanel({ metrics }: UsagePanelProps) {
+export default function UsagePanel({ metrics, days = 30 }: UsagePanelProps) {
+
   if (!metrics) return null
 
   return (
@@ -41,10 +44,9 @@ export default function UsagePanel({ metrics }: UsagePanelProps) {
             icon="📝"
           />
           <MetricCard
-            label="Retention (W1→W3)"
-            value={typeof metrics.retention_week1_to_week3 === 'number' ? `${metrics.retention_week1_to_week3.toFixed(1)}%` : '0.0%'}
-            subtitle={`${metrics.week3_active_users || 0} of ${metrics.week1_users || 0} users`}
-            icon="🔄"
+            label="Total Users on System"
+            value={metrics.total_users || 0}
+            icon="👥"
           />
         </div>
       </div>

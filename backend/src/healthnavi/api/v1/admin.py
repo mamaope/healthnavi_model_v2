@@ -5,17 +5,18 @@ Provides dashboard metrics, alerts, and admin functionality.
 
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Union, Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from healthnavi.core.database import get_db
 from healthnavi.core.response_utils import create_success_response, create_error_response, ResponseTimer
 from healthnavi.models.user import User
-from healthnavi.api.v1.auth import require_admin_role
+from healthnavi.api.v1.auth import require_admin_role, get_password_hash
 from healthnavi.services.admin_service import AdminService
 from healthnavi.models.admin import SafetyEvent, Survey, Alert, AuditLog
 from healthnavi.schemas import StandardResponse
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -23,21 +24,31 @@ router = APIRouter()
 
 @router.get("/metrics", response_model=StandardResponse)
 async def get_admin_metrics(
-    days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
+    days: str = Query("30", description="Number of days to analyze"),
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db)
 ):
     """Get all admin dashboard metrics."""
     with ResponseTimer() as timer:
         try:
+            # Parse days parameter - query params are always strings
+            try:
+                days_int = int(days) if days else 30
+            except (ValueError, TypeError):
+                days_int = 30
+            
+            # Clamp to valid range
+            if days_int < 1 or days_int > 365:
+                days_int = 30
+            
             service = AdminService(db)
-            metrics = service.get_all_metrics(days=days)
+            metrics = service.get_all_metrics(days=days_int)
             
             # Log admin access
             service.log_audit_event(
                 user_id=current_user.id,
                 action="admin_metrics_viewed",
-                description=f"Viewed admin metrics for {days} days"
+                description=f"Viewed admin metrics for {days_int} days"
             )
             
             return create_success_response(
@@ -46,7 +57,7 @@ async def get_admin_metrics(
                 execution_time=timer.get_execution_time()
             )
         except Exception as e:
-            logger.error(f"Error getting admin metrics: {e}")
+            logger.error(f"Error getting admin metrics: {e}", exc_info=True)
             return create_error_response(
                 message="Failed to retrieve admin metrics",
                 status_code=500,
@@ -56,22 +67,32 @@ async def get_admin_metrics(
 
 @router.get("/metrics/usage", response_model=StandardResponse)
 async def get_usage_metrics(
-    days: int = Query(30, ge=1, le=365),
+    days: str = Query("30", description="Number of days for statistics"),
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db)
 ):
     """Get usage panel metrics."""
     with ResponseTimer() as timer:
         try:
+            # Parse days parameter - query params are always strings
+            try:
+                days_int = int(days) if days else 30
+            except (ValueError, TypeError):
+                days_int = 30
+            
+            # Clamp to valid range
+            if days_int < 1 or days_int > 365:
+                days_int = 30
+            
             service = AdminService(db)
-            metrics = service.get_usage_metrics(days=days)
+            metrics = service.get_usage_metrics(days=days_int)
             return create_success_response(
                 data=metrics,
                 status_code=200,
                 execution_time=timer.get_execution_time()
             )
         except Exception as e:
-            logger.error(f"Error getting usage metrics: {e}")
+            logger.error(f"Error getting usage metrics: {e}", exc_info=True)
             return create_error_response(
                 message="Failed to retrieve usage metrics",
                 status_code=500,
@@ -81,22 +102,32 @@ async def get_usage_metrics(
 
 @router.get("/metrics/clinical-value", response_model=dict)
 async def get_clinical_value_metrics(
-    days: int = Query(30, ge=1, le=365),
+    days: str = Query("30", description="Number of days for statistics"),
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db)
 ):
     """Get clinical value panel metrics."""
     with ResponseTimer() as timer:
         try:
+            # Parse days parameter - query params are always strings
+            try:
+                days_int = int(days) if days else 30
+            except (ValueError, TypeError):
+                days_int = 30
+            
+            # Clamp to valid range
+            if days_int < 1 or days_int > 365:
+                days_int = 30
+            
             service = AdminService(db)
-            metrics = service.get_clinical_value_metrics(days=days)
+            metrics = service.get_clinical_value_metrics(days=days_int)
             return create_success_response(
                 data=metrics,
                 status_code=200,
                 execution_time=timer.get_execution_time()
             )
         except Exception as e:
-            logger.error(f"Error getting clinical value metrics: {e}")
+            logger.error(f"Error getting clinical value metrics: {e}", exc_info=True)
             return create_error_response(
                 message="Failed to retrieve clinical value metrics",
                 status_code=500,
@@ -106,22 +137,32 @@ async def get_clinical_value_metrics(
 
 @router.get("/metrics/safety", response_model=StandardResponse)
 async def get_safety_metrics(
-    days: int = Query(30, ge=1, le=365),
+    days: str = Query("30", description="Number of days for statistics"),
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db)
 ):
     """Get safety panel metrics."""
     with ResponseTimer() as timer:
         try:
+            # Parse days parameter - query params are always strings
+            try:
+                days_int = int(days) if days else 30
+            except (ValueError, TypeError):
+                days_int = 30
+            
+            # Clamp to valid range
+            if days_int < 1 or days_int > 365:
+                days_int = 30
+            
             service = AdminService(db)
-            metrics = service.get_safety_metrics(days=days)
+            metrics = service.get_safety_metrics(days=days_int)
             return create_success_response(
                 data=metrics,
                 status_code=200,
                 execution_time=timer.get_execution_time()
             )
         except Exception as e:
-            logger.error(f"Error getting safety metrics: {e}")
+            logger.error(f"Error getting safety metrics: {e}", exc_info=True)
             return create_error_response(
                 message="Failed to retrieve safety metrics",
                 status_code=500,
@@ -131,22 +172,32 @@ async def get_safety_metrics(
 
 @router.get("/metrics/pmf", response_model=StandardResponse)
 async def get_pmf_metrics(
-    days: int = Query(30, ge=1, le=365),
+    days: str = Query("30", description="Number of days for statistics"),
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db)
 ):
     """Get Product-Market Fit panel metrics."""
     with ResponseTimer() as timer:
         try:
+            # Parse days parameter - query params are always strings
+            try:
+                days_int = int(days) if days else 30
+            except (ValueError, TypeError):
+                days_int = 30
+            
+            # Clamp to valid range
+            if days_int < 1 or days_int > 365:
+                days_int = 30
+            
             service = AdminService(db)
-            metrics = service.get_pmf_metrics(days=days)
+            metrics = service.get_pmf_metrics(days=days_int)
             return create_success_response(
                 data=metrics,
                 status_code=200,
                 execution_time=timer.get_execution_time()
             )
         except Exception as e:
-            logger.error(f"Error getting PMF metrics: {e}")
+            logger.error(f"Error getting PMF metrics: {e}", exc_info=True)
             return create_error_response(
                 message="Failed to retrieve PMF metrics",
                 status_code=500,
@@ -431,6 +482,409 @@ async def get_surveys(
             logger.error(f"Error getting surveys: {e}")
             return create_error_response(
                 message="Failed to retrieve surveys",
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
+# Pydantic models for user management
+class UserUpdateRequest(BaseModel):
+    is_active: Optional[bool] = None
+    role: Optional[str] = None
+    medical_professional_type: Optional[str] = None
+    full_name: Optional[str] = None
+
+
+class PasswordChangeRequest(BaseModel):
+    new_password: str
+
+
+@router.get("/users/statistics", response_model=StandardResponse)
+async def get_user_statistics(
+    days: str = Query("30", description="Number of days for statistics"),
+    current_user: User = Depends(require_admin_role),
+    db: Session = Depends(get_db)
+):
+    """Get user statistics by type and activity."""
+    with ResponseTimer() as timer:
+        try:
+            # Parse days parameter - handle None, empty string, or actual string values
+            days_str = days if days is not None and days != "" else "30"
+            logger.info(f"Received days parameter: {repr(days_str)} (type: {type(days_str)})")
+            
+            try:
+                days_int = int(days_str)
+                logger.info(f"Parsed days_int: {days_int}")
+            except (ValueError, TypeError) as parse_error:
+                logger.warning(f"Failed to parse days parameter '{days_str}': {parse_error}, defaulting to 30")
+                days_int = 30
+            
+            # Clamp to valid range
+            if days_int < 1 or days_int > 365:
+                logger.warning(f"Days parameter {days_int} out of range, clamping to 30")
+                days_int = 30
+            
+            service = AdminService(db)
+            stats = service.get_user_statistics(days=days_int)
+            logger.info(f"Successfully retrieved user statistics for {days_int} days")
+            
+            return create_success_response(
+                data=stats,
+                status_code=200,
+                execution_time=timer.get_execution_time()
+            )
+        except ValueError as ve:
+            logger.error(f"ValueError in get_user_statistics: {ve}", exc_info=True)
+            return create_error_response(
+                message=f"Invalid parameter: {str(ve)}",
+                status_code=400,
+                execution_time=timer.get_execution_time()
+            )
+        except Exception as e:
+            logger.error(f"Error getting user statistics: {e}", exc_info=True)
+            return create_error_response(
+                message="Failed to retrieve user statistics",
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
+@router.get("/users/statistics", response_model=StandardResponse)
+async def get_user_statistics(
+    days: str = Query("30", description="Number of days for statistics"),
+    current_user: User = Depends(require_admin_role),
+    db: Session = Depends(get_db)
+):
+    """Get user statistics by type and activity."""
+    with ResponseTimer() as timer:
+        try:
+            # Parse days parameter - handle None, empty string, or actual string values
+            days_str = days if days is not None and days != "" else "30"
+            logger.info(f"Received days parameter: {repr(days_str)} (type: {type(days_str)})")
+            
+            try:
+                days_int = int(days_str)
+                logger.info(f"Parsed days_int: {days_int}")
+            except (ValueError, TypeError) as parse_error:
+                logger.warning(f"Failed to parse days parameter '{days_str}': {parse_error}, defaulting to 30")
+                days_int = 30
+            
+            # Clamp to valid range
+            if days_int < 1 or days_int > 365:
+                logger.warning(f"Days parameter {days_int} out of range, clamping to 30")
+                days_int = 30
+            
+            service = AdminService(db)
+            stats = service.get_user_statistics(days=days_int)
+            logger.info(f"Successfully retrieved user statistics for {days_int} days")
+            
+            return create_success_response(
+                data=stats,
+                status_code=200,
+                execution_time=timer.get_execution_time()
+            )
+        except ValueError as ve:
+            logger.error(f"ValueError in get_user_statistics: {ve}", exc_info=True)
+            return create_error_response(
+                message=f"Invalid parameter: {str(ve)}",
+                status_code=400,
+                execution_time=timer.get_execution_time()
+            )
+        except Exception as e:
+            logger.error(f"Error getting user statistics: {e}", exc_info=True)
+            return create_error_response(
+                message="Failed to retrieve user statistics",
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
+@router.get("/users", response_model=StandardResponse)
+async def get_users(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
+    role: Optional[str] = Query(None, description="Filter by role"),
+    medical_professional_type: Optional[str] = Query(None, description="Filter by professional type"),
+    search: Optional[str] = Query(None, description="Search by email, username, or name"),
+    current_user: User = Depends(require_admin_role),
+    db: Session = Depends(get_db)
+):
+    """Get users with filters and pagination."""
+    with ResponseTimer() as timer:
+        try:
+            service = AdminService(db)
+            result = service.get_users(
+                limit=limit,
+                offset=offset,
+                is_active=is_active,
+                role=role,
+                medical_professional_type=medical_professional_type,
+                search=search
+            )
+            
+            service.log_audit_event(
+                user_id=current_user.id,
+                action="users_viewed",
+                description=f"Viewed users list (limit={limit}, offset={offset})"
+            )
+            
+            return create_success_response(
+                data=result,
+                status_code=200,
+                execution_time=timer.get_execution_time()
+            )
+        except Exception as e:
+            logger.error(f"Error getting users: {e}")
+            return create_error_response(
+                message="Failed to retrieve users",
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
+@router.get("/users/{user_id}", response_model=StandardResponse)
+async def get_user(
+    user_id: int,
+    current_user: User = Depends(require_admin_role),
+    db: Session = Depends(get_db)
+):
+    """Get a specific user by ID."""
+    with ResponseTimer() as timer:
+        try:
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
+                return create_error_response(
+                    message="User not found",
+                    status_code=404,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            # Get user statistics
+            from healthnavi.models.diagnosis_session import DiagnosisSession, ChatMessage
+            from sqlalchemy import func
+            
+            session_count = db.query(func.count(DiagnosisSession.id)).filter(
+                DiagnosisSession.user_id == user.id
+            ).scalar() or 0
+            
+            message_count = db.query(func.count(ChatMessage.id)).join(
+                DiagnosisSession, DiagnosisSession.id == ChatMessage.session_id
+            ).filter(DiagnosisSession.user_id == user.id).scalar() or 0
+            
+            user_data = {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "full_name": user.full_name,
+                "role": user.role,
+                "medical_professional_type": user.medical_professional_type,
+                "is_active": user.is_active,
+                "is_email_verified": user.is_email_verified,
+                "created_at": user.created_at,
+                "updated_at": user.updated_at,
+                "session_count": session_count,
+                "message_count": message_count
+            }
+            
+            return create_success_response(
+                data=user_data,
+                status_code=200,
+                execution_time=timer.get_execution_time()
+            )
+        except Exception as e:
+            logger.error(f"Error getting user: {e}")
+            return create_error_response(
+                message="Failed to retrieve user",
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
+@router.put("/users/{user_id}", response_model=StandardResponse)
+async def update_user(
+    user_id: int,
+    user_data: UserUpdateRequest,
+    current_user: User = Depends(require_admin_role),
+    db: Session = Depends(get_db)
+):
+    """Update user information."""
+    with ResponseTimer() as timer:
+        try:
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
+                return create_error_response(
+                    message="User not found",
+                    status_code=404,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            # Update fields
+            if user_data.is_active is not None:
+                user.is_active = user_data.is_active
+            if user_data.role is not None:
+                user.role = user_data.role
+            if user_data.medical_professional_type is not None:
+                user.medical_professional_type = user_data.medical_professional_type
+            if user_data.full_name is not None:
+                user.full_name = user_data.full_name
+            
+            user.updated_at = datetime.utcnow().isoformat()
+            db.commit()
+            db.refresh(user)
+            
+            service = AdminService(db)
+            service.log_audit_event(
+                user_id=current_user.id,
+                action="user_updated",
+                resource_type="user",
+                resource_id=user_id,
+                description=f"Updated user {user_id}: {user_data.dict(exclude_none=True)}"
+            )
+            
+            return create_success_response(
+                data={
+                    "id": user.id,
+                    "username": user.username,
+                    "email": user.email,
+                    "is_active": user.is_active,
+                    "role": user.role
+                },
+                status_code=200,
+                message="User updated successfully",
+                execution_time=timer.get_execution_time()
+            )
+        except Exception as e:
+            logger.error(f"Error updating user: {e}")
+            db.rollback()
+            return create_error_response(
+                message="Failed to update user",
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
+@router.post("/users/{user_id}/change-password", response_model=StandardResponse)
+async def change_user_password(
+    user_id: int,
+    password_data: PasswordChangeRequest,
+    current_user: User = Depends(require_admin_role),
+    db: Session = Depends(get_db)
+):
+    """Change a user's password (admin action)."""
+    with ResponseTimer() as timer:
+        try:
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
+                return create_error_response(
+                    message="User not found",
+                    status_code=404,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            # Validate password length
+            if len(password_data.new_password) < 8:
+                return create_error_response(
+                    message="Password must be at least 8 characters long",
+                    status_code=400,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            # Hash and update password
+            user.hashed_password = get_password_hash(password_data.new_password)
+            user.updated_at = datetime.utcnow().isoformat()
+            db.commit()
+            
+            service = AdminService(db)
+            service.log_audit_event(
+                user_id=current_user.id,
+                action="user_password_changed",
+                resource_type="user",
+                resource_id=user_id,
+                description=f"Admin changed password for user {user_id}"
+            )
+            
+            return create_success_response(
+                data={"id": user.id},
+                status_code=200,
+                message="Password changed successfully",
+                execution_time=timer.get_execution_time()
+            )
+        except Exception as e:
+            logger.error(f"Error changing user password: {e}")
+            db.rollback()
+            return create_error_response(
+                message="Failed to change password",
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
+@router.get("/sessions/statistics", response_model=StandardResponse)
+async def get_session_statistics(
+    days: str = Query("30", description="Number of days for statistics"),
+    current_user: User = Depends(require_admin_role),
+    db: Session = Depends(get_db)
+):
+    """Get session statistics including active sessions and average length."""
+    with ResponseTimer() as timer:
+        try:
+            # Parse days parameter - query params are always strings
+            try:
+                days_int = int(days) if days else 30
+            except (ValueError, TypeError):
+                days_int = 30
+            
+            # Clamp to valid range
+            if days_int < 1 or days_int > 365:
+                days_int = 30
+            
+            service = AdminService(db)
+            stats = service.get_session_statistics(days=days_int)
+            return create_success_response(
+                data=stats,
+                status_code=200,
+                execution_time=timer.get_execution_time()
+            )
+        except Exception as e:
+            logger.error(f"Error getting session statistics: {e}", exc_info=True)
+            return create_error_response(
+                message="Failed to retrieve session statistics",
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
+@router.get("/ai-responses/statistics", response_model=StandardResponse)
+async def get_ai_response_statistics(
+    days: str = Query("30", description="Number of days for statistics"),
+    current_user: User = Depends(require_admin_role),
+    db: Session = Depends(get_db)
+):
+    """Get AI response statistics including feedback and response times."""
+    with ResponseTimer() as timer:
+        try:
+            # Parse days parameter - query params are always strings
+            try:
+                days_int = int(days) if days else 30
+            except (ValueError, TypeError):
+                days_int = 30
+            
+            # Clamp to valid range
+            if days_int < 1 or days_int > 365:
+                days_int = 30
+            
+            service = AdminService(db)
+            stats = service.get_ai_response_statistics(days=days_int)
+            return create_success_response(
+                data=stats,
+                status_code=200,
+                execution_time=timer.get_execution_time()
+            )
+        except Exception as e:
+            logger.error(f"Error getting AI response statistics: {e}", exc_info=True)
+            return create_error_response(
+                message="Failed to retrieve AI response statistics",
                 status_code=500,
                 execution_time=timer.get_execution_time()
             )

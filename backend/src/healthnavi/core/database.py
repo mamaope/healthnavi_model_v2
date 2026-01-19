@@ -27,8 +27,8 @@ engine = create_engine(
     pool_timeout=config.database.db_pool_timeout,
     pool_pre_ping=True,  # Verify connections before use
     pool_recycle=3600,   # Recycle connections every hour
-    echo=config.application.debug,  # Log SQL queries in debug mode
-    echo_pool=config.application.debug,  # Log pool events in debug mode
+    echo=False,  # Disable SQL query logging
+    echo_pool=False,  # Disable pool event logging
 )
 
 # Session factory
@@ -129,13 +129,15 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
             cursor.execute("SET idle_in_transaction_session_timeout = '600s'")
 
 
-@event.listens_for(engine, "before_cursor_execute")
-def receive_before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
-    """Log SQL queries in debug mode."""
-    if config.application.debug:
-        logger.debug(f"SQL Query: {statement}")
-        if parameters:
-            logger.debug(f"SQL Parameters: {parameters}")
+# SQL query logging disabled to reduce log noise
+# Uncomment below if you need to debug SQL queries
+# @event.listens_for(engine, "before_cursor_execute")
+# def receive_before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+#     """Log SQL queries in debug mode."""
+#     if config.application.debug:
+#         logger.debug(f"SQL Query: {statement}")
+#         if parameters:
+#             logger.debug(f"SQL Parameters: {parameters}")
 
 
 # Initialize database on module import
