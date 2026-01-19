@@ -317,6 +317,38 @@ export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch
                 {/* Show actions when message has content */}
                 {message.content.length > 0 && (
                   <div className="message-actions" role="group" aria-label="AI response feedback">
+                    {/* Deep search - first */}
+                    <button
+                      type="button"
+                      className="message-action deep-search"
+                      onClick={() => handleDeepSearch(message)}
+                      aria-label="Deep search"
+                      title="Get a more detailed response"
+                    >
+                      <i className="fas fa-brain" aria-hidden="true" />
+                      <span className="sr-only">Deep search</span>
+                    </button>
+                    {/* Copy - second */}
+                    <button
+                      type="button"
+                      className="message-action neutral"
+                      onClick={() => handleCopy(message.id, message.content)}
+                      aria-label="Copy AI response"
+                    >
+                      <i className="fas fa-copy" aria-hidden="true" />
+                      <span className="sr-only">Copy</span>
+                    </button>
+                    {/* Share - third */}
+                    <button
+                      type="button"
+                      className="message-action neutral"
+                      onClick={() => handleShare(message.id, message.content)}
+                      aria-label="Share"
+                    >
+                      <i className="fas fa-share-alt" aria-hidden="true" />
+                      <span className="sr-only">Share</span>
+                    </button>
+                    {/* Useful (Helpful) - fourth */}
                     <button
                       type="button"
                       className={`message-action positive ${feedback[message.id] === 'helpful' ? 'active' : ''}`}
@@ -337,6 +369,7 @@ export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch
                       <i className="fas fa-thumbs-up" aria-hidden="true" />
                       <span className="sr-only">Helpful</span>
                     </button>
+                    {/* Not useful - fifth */}
                     <button
                       type="button"
                       className={`message-action negative ${feedback[message.id] === 'not_helpful' ? 'active' : ''}`}
@@ -356,34 +389,6 @@ export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch
                     >
                       <i className="fas fa-thumbs-down" aria-hidden="true" />
                       <span className="sr-only">Not helpful</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="message-action deep-search"
-                      onClick={() => handleDeepSearch(message)}
-                      aria-label="Deep search"
-                      title="Get a more detailed response"
-                    >
-                      <i className="fas fa-brain" aria-hidden="true" />
-                      <span className="sr-only">Deep search</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="message-action neutral"
-                      onClick={() => handleCopy(message.id, message.content)}
-                      aria-label="Copy AI response"
-                    >
-                      <i className="fas fa-copy" aria-hidden="true" />
-                      <span className="sr-only">Copy</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="message-action neutral"
-                      onClick={() => handleShare(message.id, message.content)}
-                      aria-label="Share"
-                    >
-                      <i className="fas fa-share-alt" aria-hidden="true" />
-                      <span className="sr-only">Share</span>
                     </button>
                     {shareStatus[message.id] && (
                       <span className="message-action-status">

@@ -14,7 +14,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.ThumbUp
@@ -306,7 +306,7 @@ private fun InputArea(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            imageVector = Icons.Default.AutoAwesome,
+                            imageVector = Icons.Filled.Psychology,
                             contentDescription = if (isDeepSearch) "Deep search enabled" else "Deep search disabled",
                             tint = if (isDeepSearch) Primary500 else TextTertiary,
                             modifier = Modifier.size(22.dp)
@@ -431,30 +431,16 @@ fun MessageBubble(
                     Spacer(modifier = Modifier.height(12.dp))
                     val feedbackState = uiState.feedback[message.messageId]
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FeedbackChip(
-                            label = "Helpful",
-                            icon = Icons.Default.ThumbUp,
-                            isActive = feedbackState == "helpful",
-                            onClick = {
-                                viewModel.openFeedbackDialog(message.messageId!!, "helpful")
-                            }
-                        )
-                        FeedbackChip(
-                            label = "Not helpful",
-                            icon = Icons.Default.ThumbDown,
-                            isActive = feedbackState == "not_helpful",
-                            onClick = {
-                                viewModel.openFeedbackDialog(message.messageId!!, "not_helpful")
-                            }
-                        )
+                        // Deep search - first
                         FeedbackChip(
                             label = "Deep search",
-                            icon = Icons.Default.AutoAwesome,
+                            icon = Icons.Filled.Psychology,
                             isActive = false,
                             onClick = {
                                 viewModel.performDeepSearch(message)
                             }
                         )
+                        // Copy - second
                         FeedbackChip(
                             label = "Copy",
                             icon = Icons.Default.ContentCopy,
@@ -463,6 +449,7 @@ fun MessageBubble(
                                 clipboardManager.setText(AnnotatedString(message.content ?: ""))
                             }
                         )
+                        // Share - third
                         FeedbackChip(
                             label = "Share",
                             icon = Icons.Default.Share,
@@ -474,6 +461,24 @@ fun MessageBubble(
                                     putExtra(Intent.EXTRA_SUBJECT, "Empirico AI Response")
                                 }
                                 context.startActivity(Intent.createChooser(shareIntent, "Share via"))
+                            }
+                        )
+                        // Useful (Helpful) - fourth
+                        FeedbackChip(
+                            label = "Useful",
+                            icon = Icons.Default.ThumbUp,
+                            isActive = feedbackState == "helpful",
+                            onClick = {
+                                viewModel.openFeedbackDialog(message.messageId!!, "helpful")
+                            }
+                        )
+                        // Not useful - fifth
+                        FeedbackChip(
+                            label = "Not useful",
+                            icon = Icons.Default.ThumbDown,
+                            isActive = feedbackState == "not_helpful",
+                            onClick = {
+                                viewModel.openFeedbackDialog(message.messageId!!, "not_helpful")
                             }
                         )
                     }
