@@ -469,18 +469,18 @@ async def get_safety_events(
             query = db.query(SafetyEvent)
             
             if status:
-                # Convert string to enum and use text() for proper enum comparison
+                # Convert string to enum and use direct enum comparison
                 try:
                     status_enum = SafetyEventStatus[status.upper()]
-                    query = query.filter(text("safety_events.status = :status").bindparams(status=status_enum.value))
+                    query = query.filter(SafetyEvent.status == status_enum)
                 except (KeyError, AttributeError):
                     # If invalid status, return empty results
                     query = query.filter(False)
             if severity:
-                # Convert string to enum and use text() for proper enum comparison
+                # Convert string to enum and use direct enum comparison
                 try:
                     severity_enum = SafetyEventSeverity[severity.upper()]
-                    query = query.filter(text("safety_events.severity = :severity").bindparams(severity=severity_enum.value))
+                    query = query.filter(SafetyEvent.severity == severity_enum)
                 except (KeyError, AttributeError):
                     # If invalid severity, return empty results
                     query = query.filter(False)
