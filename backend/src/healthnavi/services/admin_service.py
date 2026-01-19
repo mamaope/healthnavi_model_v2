@@ -564,9 +564,11 @@ class AdminService:
         is_active: Optional[bool] = None,
         role: Optional[str] = None,
         medical_professional_type: Optional[str] = None,
-        search: Optional[str] = None
+        search: Optional[str] = None,
+        sort_by: str = "created_at",
+        sort_order: str = "desc"
     ) -> Dict[str, Any]:
-        """Get users with filters and pagination."""
+        """Get users with filters, pagination, and sorting."""
         try:
             query = self.db.query(User)
             
@@ -586,8 +588,15 @@ class AdminService:
                     )
                 )
             
+            # Apply sorting
+            sort_column = getattr(User, sort_by, User.created_at)
+            if sort_order.lower() == "desc":
+                query = query.order_by(desc(sort_column))
+            else:
+                query = query.order_by(sort_column)
+            
             total = query.count()
-            users = query.order_by(User.created_at.desc()).offset(offset).limit(limit).all()
+            users = query.offset(offset).limit(limit).all()
             
             users_data = []
             for user in users:

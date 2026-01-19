@@ -4,6 +4,7 @@ Main FastAPI application for HealthNavi AI CDSS.
 
 import logging
 import sys
+import uuid
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -92,34 +93,53 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Add CORS middleware
+# Add CORS middleware with environment-aware configuration
+# Get CORS origins from environment variable or config
+import os
+cors_origins_env = os.getenv("CORS_ORIGINS", "")
+if cors_origins_env:
+    cors_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+else:
+    cors_origins = ["*"]  # Default to all in development
+
+# Warn if production allows all origins
+if config.application.environment == "production" and cors_origins == ["*"]:
+    logger.warning("CORS is set to allow all origins in production. Set CORS_ORIGINS environment variable!")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure properly for production
+    allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["X-Correlation-ID"],
 )
 
 
-# Request logging middleware
+# Request logging middleware with correlation IDs
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """Log all requests."""
+    """Log all requests with correlation IDs for tracing."""
+    # Generate correlation ID for this request
+    correlation_id = str(uuid.uuid4())[:8]
+    request.state.correlation_id = correlation_id
+    
     start_time = time.time()
     
     # Log request immediately when received
     client_ip = request.client.host if request.client else "unknown"
-    logger.info(f">>> {request.method} {request.url.path} from {client_ip}")
+    logger.info(f"[{correlation_id}] >>> {request.method} {request.url.path} from {client_ip}")
     
     try:
         response = await call_next(request)
         process_time = time.time() - start_time
-        logger.info(f"<<< {response.status_code} {request.url.path} ({process_time:.2f}s)")
+        logger.info(f"[{correlation_id}] <<< {response.status_code} {request.url.path} ({process_time:.2f}s)")
+        # Add correlation ID to response headers
+        response.headers["X-Correlation-ID"] = correlation_id
         return response
     except Exception as e:
         process_time = time.time() - start_time
-        logger.error(f"!!! FAILED {request.url.path} after {process_time:.2f}s: {e}")
+        logger.error(f"[{correlation_id}] !!! FAILED {request.url.path} after {process_time:.2f}s: {e}")
         raise
 
 

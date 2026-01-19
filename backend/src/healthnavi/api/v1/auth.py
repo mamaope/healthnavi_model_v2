@@ -185,9 +185,69 @@ def require_user_role(current_user: User = Depends(get_current_user)):
     return current_user
 
 
-@router.post("/register", response_model=StandardResponse, status_code=201)
-def register(user: UserCreate, db: Session = Depends(get_db)):
-    """Register a new user."""
+@router.post(
+    "/register",
+    response_model=StandardResponse,
+    status_code=201,
+    responses={
+        201: {"description": "User created successfully"},
+        400: {"description": "Invalid input or user already exists"},
+        429: {"description": "Rate limit exceeded"},
+        422: {"description": "Validation error"},
+        500: {"description": "Internal server error"}
+    }
+)
+def register(user: UserCreate, request: Request, db: Session = Depends(get_db)):
+    """
+    Register a new user.
+    
+    Example request:
+        {
+            "email": "user@example.com",
+            "username": "newuser",
+            "password": "securepass123",
+            "first_name": "John",
+            "last_name": "Doe"
+        }
+    
+    Example response (201):
+        {
+            "success": 1,
+            "data": {
+                "access_token": "eyJ...",
+                "user": {
+                    "id": 1,
+                    "email": "user@example.com",
+                    "username": "newuser",
+                    ...
+                }
+            }
+        }
+    
+    Error codes:
+        - 400: Email or username already exists
+        - 429: Rate limit exceeded (too many registration attempts)
+        - 422: Invalid input (email format, password length, etc.)
+        - 500: Server error
+    """
+    # Rate limiting for registration endpoint
+    client_ip = request.client.host if request.client else "unknown"
+    from healthnavi.core.rate_limiter import get_rate_limiter
+    rate_limiter = get_rate_limiter()
+    is_allowed, message = rate_limiter.is_allowed(
+        key=f"register:{client_ip}",
+        max_requests=3,  # 3 registrations per hour
+        window_seconds=3600,
+        lockout_seconds=3600  # 1 hour lockout
+    )
+    
+    if not is_allowed:
+        return create_error_response(
+            message=message,
+            status_code=429,
+            execution_time=0.0
+        )
+    
     with ResponseTimer() as timer:
         try:
             # Debug logging
@@ -303,9 +363,40 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
             )
 
 
-@router.post("/login", response_model=StandardResponse)
+@router.post(
+    "/login",
+    response_model=StandardResponse,
+    responses={
+        200: {"description": "Login successful"},
+        401: {"description": "Invalid credentials"},
+        422: {"description": "Validation error"},
+        500: {"description": "Internal server error"}
+    }
+)
 def login_for_access_token(login_data: LoginRequest, db: Session = Depends(get_db)):
-    """Login with email and password."""
+    """
+    Login and get access token.
+    
+    Example request:
+        {
+            "email": "user@example.com",
+            "password": "securepass123"
+        }
+    
+    Example response (200):
+        {
+            "success": 1,
+            "data": {
+                "access_token": "eyJ...",
+                "user": {...}
+            }
+        }
+    
+    Error codes:
+        - 401: Invalid email or password
+        - 422: Invalid input format
+        - 500: Server error
+    """
     with ResponseTimer() as timer:
         try:
             # Find user by email
@@ -853,13 +944,45 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(..., min_length=8, description="New password (min 8 characters)")
 
 
-@router.post("/change-password", response_model=StandardResponse)
+@router.post(
+    "/change-password",
+    response_model=StandardResponse,
+    responses={
+        200: {"description": "Password changed successfully"},
+        400: {"description": "Invalid current password or new password too short"},
+        401: {"description": "Unauthorized"},
+        422: {"description": "Validation error"},
+        500: {"description": "Internal server error"}
+    }
+)
 def change_password(
     password_data: ChangePasswordRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Change current user's password."""
+    """
+    Change current user's password.
+    
+    Example request:
+        {
+            "current_password": "oldpass123",
+            "new_password": "newpass123"
+        }
+    
+    Example response (200):
+        {
+            "success": 1,
+            "data": {
+                "message": "Password changed successfully"
+            }
+        }
+    
+    Error codes:
+        - 400: Current password incorrect or new password too short
+        - 401: Not authenticated
+        - 422: Validation error
+        - 500: Server error
+    """
     with ResponseTimer() as timer:
         try:
             # Verify current password

@@ -28,18 +28,36 @@ async def get_admin_metrics(
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db)
 ):
-    """Get all admin dashboard metrics."""
+    """
+    Get all admin dashboard metrics.
+    
+    Example request:
+        GET /api/v2/admin/metrics?days=30
+    
+    Example response (200):
+        {
+            "success": 1,
+            "data": {
+                "usage": {...},
+                "clinical_value": {...},
+                "ai_responses": {...}
+            },
+            "metadata": {
+                "statusCode": 200,
+                "executionTime": 0.123
+            }
+        }
+    
+    Error codes:
+        - 401: Unauthorized (not authenticated)
+        - 403: Forbidden (not admin)
+        - 500: Internal server error
+    """
     with ResponseTimer() as timer:
         try:
-            # Parse days parameter - query params are always strings
-            try:
-                days_int = int(days) if days else 30
-            except (ValueError, TypeError):
-                days_int = 30
-            
-            # Clamp to valid range
-            if days_int < 1 or days_int > 365:
-                days_int = 30
+            # Use utility function for days parsing
+            from healthnavi.core.query_utils import parse_days_parameter
+            days_int = parse_days_parameter(days, default=30, min_days=1, max_days=365)
             
             service = AdminService(db)
             metrics = service.get_all_metrics(days=days_int)
@@ -71,18 +89,33 @@ async def get_usage_metrics(
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db)
 ):
-    """Get usage panel metrics."""
+    """
+    Get usage panel metrics.
+    
+    Example request:
+        GET /api/v2/admin/metrics/usage?days=30
+    
+    Example response (200):
+        {
+            "success": 1,
+            "data": {
+                "daily_active_users": 150,
+                "weekly_active_users": 450,
+                "total_users": 1000,
+                ...
+            }
+        }
+    
+    Error codes:
+        - 401: Unauthorized
+        - 403: Forbidden (not admin)
+        - 500: Internal server error
+    """
     with ResponseTimer() as timer:
         try:
-            # Parse days parameter - query params are always strings
-            try:
-                days_int = int(days) if days else 30
-            except (ValueError, TypeError):
-                days_int = 30
-            
-            # Clamp to valid range
-            if days_int < 1 or days_int > 365:
-                days_int = 30
+            # Use utility function for days parsing
+            from healthnavi.core.query_utils import parse_days_parameter
+            days_int = parse_days_parameter(days, default=30, min_days=1, max_days=365)
             
             service = AdminService(db)
             metrics = service.get_usage_metrics(days=days_int)
@@ -106,18 +139,32 @@ async def get_clinical_value_metrics(
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db)
 ):
-    """Get clinical value panel metrics."""
+    """
+    Get clinical value panel metrics.
+    
+    Example request:
+        GET /api/v2/admin/metrics/clinical-value?days=30
+    
+    Example response (200):
+        {
+            "success": 1,
+            "data": {
+                "helpful_feedback_percentage": 85.5,
+                "avg_usefulness_score": 4.2,
+                ...
+            }
+        }
+    
+    Error codes:
+        - 401: Unauthorized
+        - 403: Forbidden (not admin)
+        - 500: Internal server error
+    """
     with ResponseTimer() as timer:
         try:
-            # Parse days parameter - query params are always strings
-            try:
-                days_int = int(days) if days else 30
-            except (ValueError, TypeError):
-                days_int = 30
-            
-            # Clamp to valid range
-            if days_int < 1 or days_int > 365:
-                days_int = 30
+            # Use utility function for days parsing
+            from healthnavi.core.query_utils import parse_days_parameter
+            days_int = parse_days_parameter(days, default=30, min_days=1, max_days=365)
             
             service = AdminService(db)
             metrics = service.get_clinical_value_metrics(days=days_int)
@@ -141,18 +188,32 @@ async def get_safety_metrics(
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db)
 ):
-    """Get safety panel metrics."""
+    """
+    Get safety panel metrics.
+    
+    Example request:
+        GET /api/v2/admin/metrics/safety?days=30
+    
+    Example response (200):
+        {
+            "success": 1,
+            "data": {
+                "flags_per_100_queries": 2.5,
+                "open_safety_events": 5,
+                ...
+            }
+        }
+    
+    Error codes:
+        - 401: Unauthorized
+        - 403: Forbidden (not admin)
+        - 500: Internal server error
+    """
     with ResponseTimer() as timer:
         try:
-            # Parse days parameter - query params are always strings
-            try:
-                days_int = int(days) if days else 30
-            except (ValueError, TypeError):
-                days_int = 30
-            
-            # Clamp to valid range
-            if days_int < 1 or days_int > 365:
-                days_int = 30
+            # Use utility function for days parsing
+            from healthnavi.core.query_utils import parse_days_parameter
+            days_int = parse_days_parameter(days, default=30, min_days=1, max_days=365)
             
             service = AdminService(db)
             metrics = service.get_safety_metrics(days=days_int)
@@ -176,18 +237,32 @@ async def get_pmf_metrics(
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db)
 ):
-    """Get Product-Market Fit panel metrics."""
+    """
+    Get Product-Market Fit panel metrics.
+    
+    Example request:
+        GET /api/v2/admin/metrics/pmf?days=30
+    
+    Example response (200):
+        {
+            "success": 1,
+            "data": {
+                "heavy_users": 150,
+                "users_active_week3": 200,
+                ...
+            }
+        }
+    
+    Error codes:
+        - 401: Unauthorized
+        - 403: Forbidden (not admin)
+        - 500: Internal server error
+    """
     with ResponseTimer() as timer:
         try:
-            # Parse days parameter - query params are always strings
-            try:
-                days_int = int(days) if days else 30
-            except (ValueError, TypeError):
-                days_int = 30
-            
-            # Clamp to valid range
-            if days_int < 1 or days_int > 365:
-                days_int = 30
+            # Use utility function for days parsing
+            from healthnavi.core.query_utils import parse_days_parameter
+            days_int = parse_days_parameter(days, default=30, min_days=1, max_days=365)
             
             service = AdminService(db)
             metrics = service.get_pmf_metrics(days=days_int)
@@ -607,12 +682,48 @@ async def get_users(
     role: Optional[str] = Query(None, description="Filter by role"),
     medical_professional_type: Optional[str] = Query(None, description="Filter by professional type"),
     search: Optional[str] = Query(None, description="Search by email, username, or name"),
+    sort_by: Optional[str] = Query("created_at", description="Field to sort by (id, email, username, created_at)"),
+    sort_order: Optional[str] = Query("desc", description="Sort order (asc, desc)"),
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db)
 ):
-    """Get users with filters and pagination."""
+    """
+    Get users with filters, pagination, and sorting.
+    
+    Example request:
+        GET /api/v2/admin/users?limit=20&offset=0&is_active=true&sort_by=created_at&sort_order=desc
+    
+    Example response (200):
+        {
+            "success": 1,
+            "data": {
+                "users": [...],
+                "total": 1000
+            }
+        }
+    
+    Error codes:
+        - 401: Unauthorized
+        - 403: Forbidden (not admin)
+        - 500: Internal server error
+    """
     with ResponseTimer() as timer:
         try:
+            # Sanitize search query
+            from healthnavi.core.security_utils import sanitize_search_query
+            sanitized_search = sanitize_search_query(search) if search else None
+            
+            # Validate and parse sort parameters
+            from healthnavi.core.query_utils import parse_sort_params
+            allowed_sort_fields = ["id", "email", "username", "created_at", "updated_at"]
+            sort_field, sort_order = parse_sort_params(
+                sort_by=sort_by,
+                sort_order=sort_order,
+                allowed_fields=allowed_sort_fields,
+                default_field="created_at",
+                default_order="desc"
+            )
+            
             service = AdminService(db)
             result = service.get_users(
                 limit=limit,
@@ -620,7 +731,9 @@ async def get_users(
                 is_active=is_active,
                 role=role,
                 medical_professional_type=medical_professional_type,
-                search=search
+                search=sanitized_search,
+                sort_by=sort_field,
+                sort_order=sort_order
             )
             
             service.log_audit_event(
@@ -826,18 +939,33 @@ async def get_session_statistics(
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db)
 ):
-    """Get session statistics including active sessions and average length."""
+    """
+    Get session statistics.
+    
+    Example request:
+        GET /api/v2/admin/sessions/statistics?days=30
+    
+    Example response (200):
+        {
+            "success": 1,
+            "data": {
+                "total_sessions": 5000,
+                "active_sessions": 1200,
+                "avg_session_length": 15.5,
+                ...
+            }
+        }
+    
+    Error codes:
+        - 401: Unauthorized
+        - 403: Forbidden (not admin)
+        - 500: Internal server error
+    """
     with ResponseTimer() as timer:
         try:
-            # Parse days parameter - query params are always strings
-            try:
-                days_int = int(days) if days else 30
-            except (ValueError, TypeError):
-                days_int = 30
-            
-            # Clamp to valid range
-            if days_int < 1 or days_int > 365:
-                days_int = 30
+            # Use utility function for days parsing
+            from healthnavi.core.query_utils import parse_days_parameter
+            days_int = parse_days_parameter(days, default=30, min_days=1, max_days=365)
             
             service = AdminService(db)
             stats = service.get_session_statistics(days=days_int)
@@ -861,18 +989,34 @@ async def get_ai_response_statistics(
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db)
 ):
-    """Get AI response statistics including feedback and response times."""
+    """
+    Get AI response statistics.
+    
+    Example request:
+        GET /api/v2/admin/ai-responses/statistics?days=30
+    
+    Example response (200):
+        {
+            "success": 1,
+            "data": {
+                "total_responses": 10000,
+                "helpful_count": 8500,
+                "not_helpful_count": 1500,
+                "helpful_percentage": 85.0,
+                ...
+            }
+        }
+    
+    Error codes:
+        - 401: Unauthorized
+        - 403: Forbidden (not admin)
+        - 500: Internal server error
+    """
     with ResponseTimer() as timer:
         try:
-            # Parse days parameter - query params are always strings
-            try:
-                days_int = int(days) if days else 30
-            except (ValueError, TypeError):
-                days_int = 30
-            
-            # Clamp to valid range
-            if days_int < 1 or days_int > 365:
-                days_int = 30
+            # Use utility function for days parsing
+            from healthnavi.core.query_utils import parse_days_parameter
+            days_int = parse_days_parameter(days, default=30, min_days=1, max_days=365)
             
             service = AdminService(db)
             stats = service.get_ai_response_statistics(days=days_int)
