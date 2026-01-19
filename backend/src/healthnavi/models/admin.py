@@ -48,8 +48,17 @@ class SafetyEvent(Base):
     message_id = Column(Integer, ForeignKey("chat_messages.id"), nullable=True, index=True)
     session_id = Column(Integer, ForeignKey("diagnosis_sessions.id"), nullable=True, index=True)
     
-    severity = Column(SQLEnum(SafetyEventSeverity), nullable=False, default=SafetyEventSeverity.MEDIUM)
-    status = Column(SQLEnum(SafetyEventStatus), nullable=False, default=SafetyEventStatus.OPEN)
+    # Use values_callable to ensure enum values (lowercase) are stored, not enum names (uppercase)
+    severity = Column(
+        SQLEnum(SafetyEventSeverity, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        default=SafetyEventSeverity.MEDIUM
+    )
+    status = Column(
+        SQLEnum(SafetyEventStatus, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        default=SafetyEventStatus.OPEN
+    )
     
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
@@ -159,7 +168,12 @@ class Alert(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     alert_type = Column(String(50), nullable=False, index=True)  # e.g., "critical_safety_event", "high_flag_rate", "missing_citations"
-    severity = Column(SQLEnum(SafetyEventSeverity), nullable=False, default=SafetyEventSeverity.HIGH)
+    # Use values_callable to ensure enum values (lowercase) are stored, not enum names (uppercase)
+    severity = Column(
+        SQLEnum(SafetyEventSeverity, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        default=SafetyEventSeverity.HIGH
+    )
     
     title = Column(String(255), nullable=False)
     message = Column(Text, nullable=False)

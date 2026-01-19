@@ -15,7 +15,7 @@ from healthnavi.core.response_utils import create_success_response, create_error
 from healthnavi.models.user import User
 from healthnavi.api.v1.auth import require_admin_role, get_password_hash
 from healthnavi.services.admin_service import AdminService
-from healthnavi.models.admin import SafetyEvent, Survey, Alert, AuditLog
+from healthnavi.models.admin import SafetyEvent, Survey, Alert, AuditLog, SafetyEventStatus, SafetyEventSeverity
 from healthnavi.schemas import StandardResponse
 from pydantic import BaseModel
 
@@ -464,12 +464,26 @@ async def get_safety_events(
     """Get safety events."""
     with ResponseTimer() as timer:
         try:
+            from sqlalchemy import text, and_
+            
             query = db.query(SafetyEvent)
             
             if status:
-                query = query.filter(SafetyEvent.status == status)
+                # Convert string to enum and use text() for proper enum comparison
+                try:
+                    status_enum = SafetyEventStatus[status.upper()]
+                    query = query.filter(text("safety_events.status = :status").bindparams(status=status_enum.value))
+                except (KeyError, AttributeError):
+                    # If invalid status, return empty results
+                    query = query.filter(False)
             if severity:
-                query = query.filter(SafetyEvent.severity == severity)
+                # Convert string to enum and use text() for proper enum comparison
+                try:
+                    severity_enum = SafetyEventSeverity[severity.upper()]
+                    query = query.filter(text("safety_events.severity = :severity").bindparams(severity=severity_enum.value))
+                except (KeyError, AttributeError):
+                    # If invalid severity, return empty results
+                    query = query.filter(False)
             
             total = query.count()
             events = query.order_by(SafetyEvent.created_at.desc()).offset(offset).limit(limit).all()
