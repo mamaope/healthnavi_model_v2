@@ -9,7 +9,6 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
-from sqlalchemy import inspect
 
 # revision identifiers, used by Alembic.
 revision: str = 'create_admin_tables'
@@ -19,10 +18,16 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def table_exists(table_name: str) -> bool:
-    """Check if a table exists."""
+    """Check if a table exists using direct SQL query."""
     bind = op.get_bind()
-    inspector = inspect(bind)
-    return table_name in inspector.get_table_names()
+    result = bind.execute(sa.text("""
+        SELECT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name = :table_name
+        )
+    """), {"table_name": table_name}).scalar()
+    return result
 
 
 def upgrade() -> None:
