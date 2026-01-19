@@ -242,9 +242,10 @@ class AdminService:
             
             flags_per_100_queries = (total_flags / total_queries * 100) if total_queries > 0 else 0.0
             
-            # Open safety events - cast to enum type for proper comparison
+            # Open safety events - use text comparison to handle enum case issues
+            # Cast enum to text and compare (works regardless of enum case in DB)
             open_events = self.db.query(func.count(SafetyEvent.id)).filter(
-                text("safety_events.status = CAST(:status AS safetyeventstatus)").bindparams(status=SafetyEventStatus.OPEN.value)
+                text("LOWER(safety_events.status::text) = LOWER(:status)").bindparams(status=SafetyEventStatus.OPEN.value)
             ).scalar() or 0
             
             # Critical incidents - use text() for string date comparison
@@ -485,7 +486,7 @@ class AdminService:
             critical_events = self.db.query(SafetyEvent).filter(
                 and_(
                     SafetyEvent.is_critical == True,
-                    SafetyEvent.status == SafetyEventStatus.OPEN,
+                    text("LOWER(safety_events.status::text) = LOWER(:status)").bindparams(status=SafetyEventStatus.OPEN.value),
                     text("safety_events.created_at >= :last_24h").bindparams(last_24h=last_24h)
                 )
             ).all()
