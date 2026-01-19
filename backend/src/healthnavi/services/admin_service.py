@@ -351,10 +351,10 @@ class AdminService:
             ).distinct().subquery()
             week3_active = self.db.query(func.count(week3_subquery.c.user_id)).scalar() or 0
             
-            # PMF survey responses - use text() to force string comparison
+            # PMF survey responses - use enum directly for proper type handling
             pmf_surveys = self.db.query(Survey).filter(
                 and_(
-                    text("surveys.survey_type = 'pmf'"),
+                    Survey.survey_type == SurveyType.PMF,
                     text("surveys.created_at >= :period_start").bindparams(period_start=period_start)
                 )
             ).all()
@@ -363,10 +363,10 @@ class AdminService:
             very_disappointed_count = sum(1 for s in pmf_surveys if s.very_disappointed == True)
             very_disappointed_percentage = (very_disappointed_count / total_pmf_responses * 100) if total_pmf_responses > 0 else 0.0
             
-            # Average PMF score - use text() to force string comparison
+            # Average PMF score - use enum directly for proper type handling
             avg_pmf_score_result = self.db.query(func.avg(Survey.pmf_score)).filter(
                 and_(
-                    text("surveys.survey_type = 'pmf'"),
+                    Survey.survey_type == SurveyType.PMF,
                     Survey.pmf_score.isnot(None),
                     text("surveys.created_at >= :period_start").bindparams(period_start=period_start)
                 )
@@ -379,10 +379,10 @@ class AdminService:
                 if survey.replacement_behavior:
                     replacement_counts[survey.replacement_behavior] = replacement_counts.get(survey.replacement_behavior, 0) + 1
             
-            # Willingness to pay - use text() to force string comparison
+            # Willingness to pay - use enum directly for proper type handling
             avg_wtp_result = self.db.query(func.avg(Survey.willingness_to_pay)).filter(
                 and_(
-                    text("surveys.survey_type = 'pmf'"),
+                    Survey.survey_type == SurveyType.PMF,
                     Survey.willingness_to_pay.isnot(None),
                     text("surveys.created_at >= :period_start").bindparams(period_start=period_start)
                 )
