@@ -242,9 +242,9 @@ class AdminService:
             
             flags_per_100_queries = (total_flags / total_queries * 100) if total_queries > 0 else 0.0
             
-            # Open safety events - use enum directly for proper type handling
+            # Open safety events - use text() with enum value for proper type handling
             open_events = self.db.query(func.count(SafetyEvent.id)).filter(
-                SafetyEvent.status == SafetyEventStatus.OPEN
+                text("safety_events.status = :status").bindparams(status=SafetyEventStatus.OPEN.value)
             ).scalar() or 0
             
             # Critical incidents - use text() for string date comparison
@@ -351,10 +351,10 @@ class AdminService:
             ).distinct().subquery()
             week3_active = self.db.query(func.count(week3_subquery.c.user_id)).scalar() or 0
             
-            # PMF survey responses - use enum directly for proper type handling
+            # PMF survey responses - use text() with enum value for proper type handling
             pmf_surveys = self.db.query(Survey).filter(
                 and_(
-                    Survey.survey_type == SurveyType.PMF,
+                    text("surveys.survey_type = :survey_type").bindparams(survey_type=SurveyType.PMF.value),
                     text("surveys.created_at >= :period_start").bindparams(period_start=period_start)
                 )
             ).all()
@@ -363,10 +363,10 @@ class AdminService:
             very_disappointed_count = sum(1 for s in pmf_surveys if s.very_disappointed == True)
             very_disappointed_percentage = (very_disappointed_count / total_pmf_responses * 100) if total_pmf_responses > 0 else 0.0
             
-            # Average PMF score - use enum directly for proper type handling
+            # Average PMF score - use text() with enum value for proper type handling
             avg_pmf_score_result = self.db.query(func.avg(Survey.pmf_score)).filter(
                 and_(
-                    Survey.survey_type == SurveyType.PMF,
+                    text("surveys.survey_type = :survey_type").bindparams(survey_type=SurveyType.PMF.value),
                     Survey.pmf_score.isnot(None),
                     text("surveys.created_at >= :period_start").bindparams(period_start=period_start)
                 )
@@ -379,10 +379,10 @@ class AdminService:
                 if survey.replacement_behavior:
                     replacement_counts[survey.replacement_behavior] = replacement_counts.get(survey.replacement_behavior, 0) + 1
             
-            # Willingness to pay - use enum directly for proper type handling
+            # Willingness to pay - use text() with enum value for proper type handling
             avg_wtp_result = self.db.query(func.avg(Survey.willingness_to_pay)).filter(
                 and_(
-                    Survey.survey_type == SurveyType.PMF,
+                    text("surveys.survey_type = :survey_type").bindparams(survey_type=SurveyType.PMF.value),
                     Survey.willingness_to_pay.isnot(None),
                     text("surveys.created_at >= :period_start").bindparams(period_start=period_start)
                 )
@@ -403,6 +403,66 @@ class AdminService:
             logger.error(f"Error getting PMF metrics: {e}")
             raise
     
+    def get_survey_statistics(self, days: int = 30) -> Dict[str, Any]:
+        """Get survey completion statistics."""
+        try:
+            period_start = (datetime.utcnow() - timedelta(days=days)).isoformat()
+            
+            # Get total users
+            total_users = self.db.query(func.count(User.id)).scalar() or 0
+            
+            # Get survey statistics by type
+            survey_stats = {}
+            for survey_type in [SurveyType.BASELINE, SurveyType.MID, SurveyType.FINAL]:
+                # Count completed surveys
+                completed_count = self.db.query(func.count(Survey.id)).filter(
+                    and_(
+                        text("surveys.survey_type = :survey_type").bindparams(survey_type=survey_type.value),
+                        text("surveys.created_at >= :period_start").bindparams(period_start=period_start)
+                    )
+                ).scalar() or 0
+                
+                # Count unique users who completed this survey
+                unique_users = self.db.query(func.count(func.distinct(Survey.user_id))).filter(
+                    and_(
+                        text("surveys.survey_type = :survey_type").bindparams(survey_type=survey_type.value),
+                        text("surveys.created_at >= :period_start").bindparams(period_start=period_start)
+                    )
+                ).scalar() or 0
+                
+                # Calculate pending (users who haven't completed)
+                pending_count = max(0, total_users - unique_users)
+                
+                # Calculate completion percentage
+                completion_percentage = (unique_users / total_users * 100) if total_users > 0 else 0
+                
+                survey_stats[survey_type.value] = {
+                    "completed": completed_count,
+                    "unique_users_completed": unique_users,
+                    "pending": pending_count,
+                    "completion_percentage": round(completion_percentage, 2),
+                    "total_users": total_users
+                }
+            
+            # Overall statistics
+            total_completed = sum(stats["completed"] for stats in survey_stats.values())
+            total_unique_users = self.db.query(func.count(func.distinct(Survey.user_id))).filter(
+                text("surveys.created_at >= :period_start").bindparams(period_start=period_start)
+            ).scalar() or 0
+            
+            return {
+                "by_type": survey_stats,
+                "overall": {
+                    "total_completed": total_completed,
+                    "total_unique_users_completed": total_unique_users,
+                    "total_users": total_users,
+                    "overall_completion_percentage": round((total_unique_users / total_users * 100) if total_users > 0 else 0, 2)
+                }
+            }
+        except Exception as e:
+            logger.error(f"Error getting survey statistics: {e}")
+            raise
+    
     def get_all_metrics(self, days: int = 30) -> Dict[str, Any]:
         """Get all dashboard metrics."""
         return {
@@ -410,6 +470,7 @@ class AdminService:
             "clinical_value": self.get_clinical_value_metrics(days),
             "safety": self.get_safety_metrics(days),
             "pmf": self.get_pmf_metrics(days),
+            "surveys": self.get_survey_statistics(days),
             "period_days": days,
             "generated_at": datetime.utcnow().isoformat()
         }
@@ -420,11 +481,11 @@ class AdminService:
         try:
             last_24h = (datetime.utcnow() - timedelta(hours=24)).isoformat()
             
-            # Check for critical safety events - use enum directly for proper type handling
+            # Check for critical safety events - use text() with enum value for proper type handling
             critical_events = self.db.query(SafetyEvent).filter(
                 and_(
                     SafetyEvent.is_critical == True,
-                    SafetyEvent.status == SafetyEventStatus.OPEN,
+                    text("safety_events.status = :status").bindparams(status=SafetyEventStatus.OPEN.value),
                     text("safety_events.created_at >= :last_24h").bindparams(last_24h=last_24h)
                 )
             ).all()

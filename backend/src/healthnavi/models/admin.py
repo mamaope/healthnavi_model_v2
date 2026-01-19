@@ -88,7 +88,12 @@ class Survey(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    survey_type = Column(SQLEnum(SurveyType), nullable=False, index=True)
+    # Use values_callable to ensure enum values (lowercase) are stored, not enum names (uppercase)
+    survey_type = Column(
+        SQLEnum(SurveyType, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        index=True
+    )
     
     # PMF-specific fields
     pmf_score = Column(Integer, nullable=True)  # 0-10 scale
@@ -180,3 +185,23 @@ class Alert(Base):
 
     def __repr__(self):
         return f"<Alert(id={self.id}, type='{self.alert_type}', severity='{self.severity}', is_read={self.is_read})>"
+
+
+class SurveyConfig(Base):
+    """
+    Configuration for survey visibility and metadata.
+    Allows admins to control when surveys are visible to users.
+    """
+    __tablename__ = "survey_config"
+
+    id = Column(Integer, primary_key=True, index=True)
+    survey_type = Column(String(50), nullable=False, unique=True, index=True)
+    is_visible = Column(Boolean, nullable=False, default=False)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    
+    created_at = Column(String, nullable=True, default=lambda: datetime.utcnow().isoformat())
+    updated_at = Column(String, nullable=True, default=lambda: datetime.utcnow().isoformat())
+
+    def __repr__(self):
+        return f"<SurveyConfig(id={self.id}, survey_type='{self.survey_type}', is_visible={self.is_visible})>"

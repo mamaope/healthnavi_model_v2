@@ -1,6 +1,7 @@
 import { useMemo, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getDisplayName, getRoleLabel, useAuth } from '../../providers/AuthProvider'
+import { surveysApi } from '../../services/apiClient'
 import type { ChatSession } from '../../types/chat'
 
 interface SidebarProps {
@@ -32,6 +33,8 @@ export function Sidebar({
   const sidebarRef = useRef<HTMLElement>(null)
   const { user, logout } = useAuth()
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
+  const [hasSurveyNotification, setHasSurveyNotification] = useState(false)
+  const [pendingSurveyCount, setPendingSurveyCount] = useState(0)
   const userMenuRef = useRef<HTMLDivElement>(null)
 
   const userName = getDisplayName(user)
@@ -68,6 +71,28 @@ export function Sidebar({
     document.addEventListener('click', handleClickOutside)
     return () => document.removeEventListener('click', handleClickOutside)
   }, [isUserMenuOpen])
+
+  // Check for survey notifications
+  useEffect(() => {
+    if (!user) return
+
+    const checkSurveyNotification = async () => {
+      try {
+        const response = await surveysApi.getSurveyNotification()
+        if (response.success && response.data) {
+          setHasSurveyNotification(response.data.has_notification || false)
+          setPendingSurveyCount(response.data.pending_count || 0)
+        }
+      } catch (err) {
+        console.error('Error checking survey notification:', err)
+      }
+    }
+
+    checkSurveyNotification()
+    // Check every 5 minutes
+    const interval = setInterval(checkSurveyNotification, 5 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [user])
   
   // Close sidebar when clicking outside on mobile
   useEffect(() => {
@@ -291,6 +316,30 @@ export function Sidebar({
                       <span>Admin Dashboard</span>
                     </button>
                   )}
+                  <button
+                    className="sidebar-user-item"
+                    onClick={async () => {
+                      setIsUserMenuOpen(false)
+                      // Dismiss notification when user clicks on Pilot
+                      if (hasSurveyNotification) {
+                        try {
+                          await surveysApi.dismissSurveyNotification()
+                          setHasSurveyNotification(false)
+                        } catch (err) {
+                          console.error('Error dismissing notification:', err)
+                        }
+                      }
+                      navigate('/pilot')
+                    }}
+                  >
+                    <i className="fas fa-clipboard-list" />
+                    <span>Pilot</span>
+                    {hasSurveyNotification && pendingSurveyCount > 0 && (
+                      <span className="notification-badge" title={`${pendingSurveyCount} survey${pendingSurveyCount > 1 ? 's' : ''} pending`}>
+                        {pendingSurveyCount}
+                      </span>
+                    )}
+                  </button>
                   <button
                     className="sidebar-user-item"
                     onClick={() => {

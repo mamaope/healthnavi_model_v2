@@ -4,6 +4,7 @@ Provides dashboard metrics, alerts, and admin functionality.
 """
 
 import logging
+import json
 from datetime import datetime
 from typing import Optional, Union, Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -510,6 +511,35 @@ async def get_safety_events(
             )
 
 
+@router.get("/surveys/statistics", response_model=StandardResponse)
+async def get_survey_statistics(
+    days: str = Query("30", description="Number of days for statistics"),
+    current_user: User = Depends(require_admin_role),
+    db: Session = Depends(get_db)
+):
+    """Get survey completion statistics."""
+    with ResponseTimer() as timer:
+        try:
+            from healthnavi.core.query_utils import parse_days_parameter
+            days_int = parse_days_parameter(days, default=30, min_days=1, max_days=365)
+            
+            service = AdminService(db)
+            stats = service.get_survey_statistics(days=days_int)
+            
+            return create_success_response(
+                data=stats,
+                status_code=200,
+                execution_time=timer.get_execution_time()
+            )
+        except Exception as e:
+            logger.error(f"Error getting survey statistics: {e}", exc_info=True)
+            return create_error_response(
+                message="Failed to retrieve survey statistics",
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
 @router.get("/surveys", response_model=StandardResponse)
 async def get_surveys(
     survey_type: Optional[str] = Query(None, description="Filter by survey type"),
@@ -518,30 +548,39 @@ async def get_surveys(
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db)
 ):
-    """Get survey responses."""
+    """Get survey responses with user information."""
     with ResponseTimer() as timer:
         try:
-            query = db.query(Survey)
+            from sqlalchemy import text
+            query = db.query(Survey, User).join(User, Survey.user_id == User.id)
             
             if survey_type:
-                query = query.filter(Survey.survey_type == survey_type)
+                query = query.filter(
+                    text("surveys.survey_type = :survey_type").bindparams(survey_type=survey_type)
+                )
             
             total = query.count()
-            surveys = query.order_by(Survey.created_at.desc()).offset(offset).limit(limit).all()
+            results = query.order_by(Survey.created_at.desc()).offset(offset).limit(limit).all()
             
-            surveys_data = [{
-                "id": survey.id,
-                "user_id": survey.user_id,
-                "survey_type": survey.survey_type.value,
-                "pmf_score": survey.pmf_score,
-                "very_disappointed": survey.very_disappointed,
-                "willingness_to_pay": survey.willingness_to_pay,
-                "replacement_behavior": survey.replacement_behavior,
-                "time_saved_minutes": survey.time_saved_minutes,
-                "usefulness_score": survey.usefulness_score,
-                "query_relevance": survey.query_relevance,
-                "created_at": survey.created_at
-            } for survey in surveys]
+            surveys_data = []
+            for survey, user in results:
+                survey_data = {
+                    "id": survey.id,
+                    "user_id": survey.user_id,
+                    "user_name": user.full_name or user.username or user.email,
+                    "user_email": user.email,
+                    "survey_type": survey.survey_type.value,
+                    "pmf_score": survey.pmf_score,
+                    "very_disappointed": survey.very_disappointed,
+                    "willingness_to_pay": survey.willingness_to_pay,
+                    "replacement_behavior": survey.replacement_behavior,
+                    "time_saved_minutes": survey.time_saved_minutes,
+                    "usefulness_score": survey.usefulness_score,
+                    "query_relevance": survey.query_relevance,
+                    "survey_data": json.loads(survey.survey_data) if survey.survey_data else None,
+                    "created_at": survey.created_at
+                }
+                surveys_data.append(survey_data)
             
             return create_success_response(
                 data={
@@ -554,7 +593,7 @@ async def get_surveys(
                 execution_time=timer.get_execution_time()
             )
         except Exception as e:
-            logger.error(f"Error getting surveys: {e}")
+            logger.error(f"Error getting surveys: {e}", exc_info=True)
             return create_error_response(
                 message="Failed to retrieve surveys",
                 status_code=500,

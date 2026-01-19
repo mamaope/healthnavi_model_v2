@@ -67,14 +67,16 @@ export function extractApiErrorMessage(payload: ApiErrorResponse, statusCode?: n
   }
 
   // Try to extract error message from payload
-  const messageFromMetadata = payload.metadata?.errors?.join(', ')
-  if (messageFromMetadata) {
-    return messageFromMetadata
-  }
-
+  // Check data.message first (ErrorResponse structure)
   const messageFromData = payload.data?.message
   if (messageFromData) {
     return messageFromData
+  }
+
+  // Then check metadata.errors
+  const messageFromMetadata = payload.metadata?.errors?.join(', ')
+  if (messageFromMetadata) {
+    return messageFromMetadata
   }
 
   if (typeof payload.detail === 'string') {
@@ -678,15 +680,78 @@ export const adminApi = {
       'GET',
     )
   },
+  getSurveyStatistics(days: number = 30) {
+    let daysParam = 30
+    if (typeof days === 'number' && !isNaN(days) && days > 0) {
+      daysParam = Math.floor(days)
+    }
+    daysParam = Math.max(1, Math.min(365, daysParam))
+    return apiFetch<{ success: boolean; data: any }>(
+      `/admin/surveys/statistics?days=${daysParam}`,
+      'GET',
+    )
+  },
   getSurveys(surveyType?: string, limit: number = 100, offset: number = 0) {
     const params = new URLSearchParams({
       limit: limit.toString(),
       offset: offset.toString(),
     })
     if (surveyType) params.append('survey_type', surveyType)
-    return apiFetch<{ success: boolean; data: { surveys: any[]; total: number } }>(
+    return apiFetch<{ success: boolean; data: { surveys: any[]; total: number; limit: number; offset: number } }>(
       `/admin/surveys?${params.toString()}`,
       'GET',
+    )
+  },
+  getSurveyConfigs() {
+    return apiFetch<{ success: boolean; data: { configs: any[] } }>(
+      '/surveys/admin/config',
+      'GET',
+    )
+  },
+  toggleSurveyVisibility(surveyType: string, isVisible: boolean) {
+    return apiFetch<{ success: boolean; data: any }>(
+      `/surveys/admin/config/${surveyType}/visibility?is_visible=${isVisible}`,
+      'PUT',
+    )
+  },
+}
+
+export const surveysApi = {
+  getAvailableSurveys() {
+    return apiFetch<{ success: boolean; data: { surveys: any[] } }>(
+      '/surveys/available',
+      'GET',
+    )
+  },
+  getSurveyQuestions(surveyType: string) {
+    return apiFetch<{ success: boolean; data: any }>(
+      `/surveys/questions/${surveyType}`,
+      'GET',
+    )
+  },
+  submitSurvey(surveyType: string, responses: Record<string, any>) {
+    return apiFetch<{ success: boolean; data: any }>(
+      '/surveys/submit',
+      'POST',
+      { body: JSON.stringify({ survey_type: surveyType, responses }) },
+    )
+  },
+  getMySurveys() {
+    return apiFetch<{ success: boolean; data: { surveys: any[] } }>(
+      '/surveys/my-surveys',
+      'GET',
+    )
+  },
+  getSurveyNotification() {
+    return apiFetch<{ success: boolean; data: { has_notification: boolean; pending_count: number; pending_surveys?: any[] } }>(
+      '/surveys/notification',
+      'GET',
+    )
+  },
+  dismissSurveyNotification() {
+    return apiFetch<{ success: boolean; data: any }>(
+      '/surveys/notification/dismiss',
+      'POST',
     )
   },
 }

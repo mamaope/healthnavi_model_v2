@@ -7,6 +7,8 @@ import UserTypeBreakdownPanel from '../components/admin/UserTypeBreakdownPanel'
 import UserManagementPanel from '../components/admin/UserManagementPanel'
 import SessionManagementPanel from '../components/admin/SessionManagementPanel'
 import AIResponseStatisticsPanel from '../components/admin/AIResponseStatisticsPanel'
+import SurveyManagementPanel from '../components/admin/SurveyManagementPanel'
+import SurveyStatisticsPanel from '../components/admin/SurveyStatisticsPanel'
 import './AdminDashboard.css'
 
 export default function AdminDashboard() {
@@ -126,6 +128,8 @@ export default function AdminDashboard() {
           <SessionManagementPanel days={days} />
           <AIResponseStatisticsPanel days={days} />
           <UserManagementPanel days={days} />
+          <SurveyStatisticsPanel days={days} />
+          <SurveyManagementPanel />
         </div>
       )}
     </div>

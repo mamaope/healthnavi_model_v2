@@ -6,7 +6,7 @@ Database models.
 from .base import Base
 from .user import User
 from .diagnosis_session import DiagnosisSession, ChatMessage, MessageFeedback
-from .admin import SafetyEvent, Survey, AuditLog, Alert, SafetyEventSeverity, SafetyEventStatus, SurveyType
+from .admin import SafetyEvent, Survey, AuditLog, Alert, SafetyEventSeverity, SafetyEventStatus, SurveyType, SurveyConfig
 
 __all__ = [
     "Base", 
@@ -20,5 +20,6 @@ __all__ = [
     "Alert",
     "SafetyEventSeverity",
     "SafetyEventStatus",
-    "SurveyType"
+    "SurveyType",
+    "SurveyConfig"
 ]
