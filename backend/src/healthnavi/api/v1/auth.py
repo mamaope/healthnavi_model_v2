@@ -22,6 +22,7 @@ from healthnavi.core.config import get_config
 from healthnavi.core.response_utils import create_success_response, create_error_response, ResponseTimer
 from healthnavi.models.user import User
 from healthnavi.schemas import UserCreate, UserResponse, UserUpdate, Token, LoginRequest, StandardResponse, SuccessResponse, EmailVerificationRequest, ResendVerificationRequest, ForgotPasswordRequest, ResetPasswordRequest, GoogleSignInMobileRequest
+from pydantic import BaseModel, Field
 
 # Import email service with error handling
 try:
@@ -841,6 +842,58 @@ def update_user_profile(
             db.rollback()
             return create_error_response(
                 message="Failed to update profile",
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
+class ChangePasswordRequest(BaseModel):
+    """Request model for changing password."""
+    current_password: str = Field(..., min_length=1, description="Current password")
+    new_password: str = Field(..., min_length=8, description="New password (min 8 characters)")
+
+
+@router.post("/change-password", response_model=StandardResponse)
+def change_password(
+    password_data: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Change current user's password."""
+    with ResponseTimer() as timer:
+        try:
+            # Verify current password
+            if not current_user.hashed_password:
+                return create_error_response(
+                    message="Password not set for this account. Please use password reset.",
+                    status_code=400,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            if not verify_password(password_data.current_password, current_user.hashed_password):
+                return create_error_response(
+                    message="Current password is incorrect",
+                    status_code=400,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            # Hash and update password
+            current_user.hashed_password = get_password_hash(password_data.new_password)
+            current_user.updated_at = datetime.utcnow().isoformat()
+            db.commit()
+            db.refresh(current_user)
+            
+            return create_success_response(
+                data={"message": "Password changed successfully"},
+                status_code=200,
+                execution_time=timer.get_execution_time()
+            )
+            
+        except Exception as e:
+            logger.error(f"Change password error: {str(e)}")
+            db.rollback()
+            return create_error_response(
+                message="Failed to change password",
                 status_code=500,
                 execution_time=timer.get_execution_time()
             )

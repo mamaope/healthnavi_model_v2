@@ -295,7 +295,7 @@ export function Sidebar({
                     className="sidebar-user-item"
                     onClick={() => {
                       setIsUserMenuOpen(false)
-                      window.alert('Profile page coming soon!')
+                      navigate('/profile')
                     }}
                   >
                     <i className="fas fa-user" />

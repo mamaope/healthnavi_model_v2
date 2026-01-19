@@ -323,6 +323,15 @@ export const authApi = {
       },
     )
   },
+  changePassword(currentPassword: string, newPassword: string) {
+    return apiFetch<{ success: boolean; data: any }>(
+      '/auth/change-password',
+      'POST',
+      {
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+      },
+    )
+  },
 }
 
 export const sessionsApi = {

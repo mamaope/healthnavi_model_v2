@@ -3,6 +3,7 @@ import HomePage from './pages/HomePage'
 import TermsOfService from './pages/TermsOfService'
 import PrivacyPolicy from './pages/PrivacyPolicy'
 import AdminDashboard from './pages/AdminDashboard'
+import ProfilePage from './pages/ProfilePage'
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
       <Route path="/terms" element={<TermsOfService />} />
       <Route path="/privacy" element={<PrivacyPolicy />} />
       <Route path="/admin" element={<AdminDashboard />} />
+      <Route path="/profile" element={<ProfilePage />} />
     </Routes>
   )
 }
