@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.mamaope.healthnavy"
+    namespace = "ai.empirico.app"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.mamaope.healthnavy"
+        applicationId = "ai.empirico.app"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

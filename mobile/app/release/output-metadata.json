@@ -4,7 +4,7 @@
     "type": "APK",
     "kind": "Directory"
   },
-  "applicationId": "com.mamaope.healthnavy",
+  "applicationId": "ai.empirico.app",
   "variantName": "release",
   "elements": [
     {
