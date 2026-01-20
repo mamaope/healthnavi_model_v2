@@ -17,7 +17,10 @@ from healthnavi.core.constants import (
     MODEL_NAME, PROMPT_TOKEN_LIMIT, CACHE_TTL_MINUTES, MAX_CACHE_SIZE,
     DEFAULT_CONTEXT_MAX_CHARS, BALANCED_CONTEXT_MAX_CHARS,
     MAX_RETRY_ATTEMPTS, RETRY_MULTIPLIER, RETRY_MIN_WAIT, RETRY_MAX_WAIT,
-    QUICK_SEARCH_PROMPT, DEEP_SEARCH_PROMPT
+    QUICK_SEARCH_PROMPT, DEEP_SEARCH_PROMPT,
+    QUICK_SEARCH_MAX_OUTPUT_TOKENS, DEEP_SEARCH_MAX_OUTPUT_TOKENS,
+    CHARS_PER_TOKEN, MAX_CONTEXT_WINDOW, ROLE_INSTRUCTIONS,
+    BOLDING_RULES, EXAM_HANDLING
 )
 
 logging.basicConfig(
@@ -30,7 +33,37 @@ load_dotenv()
 
 # Simple in-memory cache for responses
 RESPONSE_CACHE: Dict[str, Tuple[str, datetime]] = {}
+
+
+def estimate_tokens(text: str) -> int:
+    """
+    Estimate token count from text.
+    Rough estimate: ~4 characters per token for English text.
+    """
+    if not text:
+        return 0
+    return len(text) // CHARS_PER_TOKEN
+
+
+def validate_prompt_size(prompt: str, max_output_tokens: int, max_input_tokens: int = PROMPT_TOKEN_LIMIT) -> tuple[bool, str, int]:
+    """
+    Validate that prompt size + output tokens doesn't exceed limits.
+    Returns: (is_valid, warning_message, estimated_input_tokens)
+    """
+    estimated_input_tokens = estimate_tokens(prompt)
+    total_tokens = estimated_input_tokens + max_output_tokens
     
+    if total_tokens > MAX_CONTEXT_WINDOW:
+        return False, f"Total tokens ({total_tokens}) exceeds model context window ({MAX_CONTEXT_WINDOW})", estimated_input_tokens
+    
+    if estimated_input_tokens > max_input_tokens:
+        return False, f"Input prompt tokens ({estimated_input_tokens}) exceeds limit ({max_input_tokens})", estimated_input_tokens
+    
+    if estimated_input_tokens > max_input_tokens * 0.9:  # Warn if >90% of limit
+        return True, f"Warning: Prompt is large ({estimated_input_tokens}/{max_input_tokens} tokens, {estimated_input_tokens/max_input_tokens*100:.1f}%)", estimated_input_tokens
+    
+    return True, "", estimated_input_tokens
+
 
 def optimize_context_for_llm(chunks: list[dict], max_chunks: int = 3) -> str:
     """
@@ -196,7 +229,7 @@ def _cache_response(cache_key: str, response: str):
     reraise=True,
     retry=retry_if_not_exception_type(HTTPException)
 )
-async def generate_response(query: str, chat_history: str, patient_data: str, deep_search: bool = False) -> tuple[str, bool, str, list[str]]:
+async def generate_response(query: str, chat_history: str, patient_data: str, deep_search: bool = False, user_role_from_db: str = None) -> tuple[str, bool, str, list[str]]:
     total_start_time = time.time()
     full_response_text = ""
     actual_sources = []
@@ -225,7 +258,7 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
             max_books = 8
             min_chunks = 10
             min_books = 5
-            max_output_tokens = 7000
+            max_output_tokens = DEEP_SEARCH_MAX_OUTPUT_TOKENS
             prompt_template = DEEP_SEARCH_PROMPT
             prompt_type = "deep_search"
             logger.info("🔍 Using DEEP SEARCH mode")
@@ -234,7 +267,7 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
             max_books = 4
             min_chunks = 5
             min_books = 3
-            max_output_tokens = 2500
+            max_output_tokens = QUICK_SEARCH_MAX_OUTPUT_TOKENS
             prompt_template = QUICK_SEARCH_PROMPT
             prompt_type = "quick_search"
         
@@ -267,8 +300,15 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
         truncated_chat_history = chat_history
         if chat_history and len(chat_history) > max_chat_history_chars:
             truncated_chat_history = chat_history[-max_chat_history_chars:]  # Keep last 2000 chars
-            
-        full_prompt = prompt_template.format(sources=sources_text, context=optimized_context)
+        
+        role_text = get_role_instruction(user_role_from_db)
+        full_prompt = prompt_template.format(
+            sources=sources_text,
+            context=optimized_context,
+            role_instruction=role_text,
+            bolding_rules=BOLDING_RULES,
+            exam_handling=EXAM_HANDLING
+        )
         user_context_block = f"""
             ### USER QUESTION:
             {query}
@@ -281,6 +321,16 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
             """
         full_prompt += f"\n\n{user_context_block.strip()}"
 
+        # Validate prompt size before sending
+        is_valid, warning_msg, estimated_input_tokens = validate_prompt_size(full_prompt, max_output_tokens)
+        if not is_valid:
+            logger.error(f"❌ Token limit error: {warning_msg}")
+            prompt_type = "deep_search" if deep_search else "quick_search"
+            return f"⚠️ Request too large: {warning_msg}. Please try a shorter query or enable deep search.", False, prompt_type, []
+        elif warning_msg:
+            logger.warning(f"⚠️ {warning_msg}")
+        
+        logger.info(f"📊 Token estimate - Input: ~{estimated_input_tokens}, Max output: {max_output_tokens}, Total: ~{estimated_input_tokens + max_output_tokens}")
         logger.info(f"--- PROMPT SENT TO API (first 500 chars) ---\n{full_prompt[:500]}\n...")
 
         client = get_genai_client()
@@ -319,7 +369,15 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
                 logger.info(f"Response finish reason: {finish_reason}")
 
                 if finish_reason == 'MAX_TOKENS':
-                    full_response_text += "\n\n**[Note: The response was truncated due to token limits. Try asking a more specific question.]**"
+                    truncation_note = (
+                        f"\n\n---\n"
+                        f"**📝 Note:** This response was cut short to keep it concise. "
+                        f"If you'd like more detailed information, you can:\n"
+                        f"- Ask a follow-up question about a specific part, or\n"
+                        f"- Enable **Deep Search** mode for a more comprehensive answer"
+                    )
+                    full_response_text += truncation_note
+                    logger.warning(f"⚠️ Response truncated at {max_output_tokens} tokens. Consider increasing limit or using deep search.")
                 elif finish_reason in ['SAFETY', 'RECITATION']:
                     full_response_text += "\n\n**[Note: Some content was filtered for safety or duplication.]**"
 
@@ -358,7 +416,33 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
         return f"🚨 Unexpected error: {str(e)}", False, prompt_type, []
 
 
-async def generate_response_stream(query: str, chat_history: str, patient_data: str, deep_search: bool = False) -> AsyncGenerator[str, None]:
+def get_role_instruction(user_role_from_db: str) -> str:
+    """Maps the medical_professional_type from the DB to AI prompt instructions."""
+    if not user_role_from_db:
+        return ROLE_INSTRUCTIONS["DEFAULT"]
+
+    mapping = {
+        # EXPERTS
+        'Consultant': ROLE_INSTRUCTIONS["EXPERT"],
+        'Specialist': ROLE_INSTRUCTIONS["EXPERT"],
+        
+        # CLINICIANS
+        'Senior House Officer': ROLE_INSTRUCTIONS["CLINICIAN"],
+        'Senior House Officers': ROLE_INSTRUCTIONS["CLINICIAN"],
+        'Medical Officer': ROLE_INSTRUCTIONS["CLINICIAN"],
+        'Clinical Officer': ROLE_INSTRUCTIONS["CLINICIAN"],
+        'Other Clinical Practitioner': ROLE_INSTRUCTIONS["CLINICIAN"],
+        
+        'Intern Clinician': ROLE_INSTRUCTIONS["TRAINEE"],
+        'Intern Doctor': ROLE_INSTRUCTIONS["TRAINEE"],
+        
+        'Clinical/Medical Student': ROLE_INSTRUCTIONS["STUDENT"],
+        'Student': ROLE_INSTRUCTIONS["STUDENT"]
+    }
+    
+    return mapping.get(user_role_from_db, ROLE_INSTRUCTIONS["DEFAULT"])
+
+async def generate_response_stream(query: str, chat_history: str, patient_data: str, deep_search: bool = False, user_role_from_db: str = None) -> AsyncGenerator[str, None]:
     """
     Generate a streaming response using the LLM.
     Yields text chunks as they are generated for real-time display.
@@ -381,6 +465,23 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
                     yield cached_response[i:i + chunk_size]
                     await asyncio.sleep(0.01)  # Small delay to simulate streaming
                 logger.info(f"⚡ Cached response streamed in {time.time() - total_start_time:.3f}s")
+                
+                # Generate and yield follow-up questions for cached responses
+                if len(cached_response.strip()) > 10:
+                    followup_questions = []
+                    try:
+                        followup_questions = generate_followup_questions_sync(query, cached_response)
+                    except Exception as e:
+                        logger.warning(f"Failed to generate follow-up questions for cached response: {e}")
+                    
+                    if followup_questions:
+                        import json
+                        followup_json = json.dumps(followup_questions)
+                        yield f"\n\n[FOLLOWUP_QUESTIONS]:{followup_json}"
+                        logger.info(f"✅ Generated {len(followup_questions)} follow-up questions for cached response")
+                    else:
+                        logger.warning("⚠️ No follow-up questions generated for cached response")
+                
                 return
 
         # Adjust chunks and sources based on search type
@@ -389,7 +490,7 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
             max_books = 8
             min_chunks = 10
             min_books = 5
-            max_output_tokens = 7000
+            max_output_tokens = DEEP_SEARCH_MAX_OUTPUT_TOKENS
             prompt_template = DEEP_SEARCH_PROMPT
             prompt_type = "deep_search"
             logger.info("🔍 Using DEEP SEARCH mode (streaming)")
@@ -398,7 +499,7 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
             max_books = 4
             min_chunks = 5
             min_books = 3
-            max_output_tokens = 3000
+            max_output_tokens = QUICK_SEARCH_MAX_OUTPUT_TOKENS
             prompt_template = QUICK_SEARCH_PROMPT
             prompt_type = "quick_search"
             logger.info("⚡ Using QUICK SEARCH mode (streaming)")
@@ -437,7 +538,14 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
         if chat_history and len(chat_history) > max_chat_history_chars:
             truncated_chat_history = chat_history[-max_chat_history_chars:]  # Keep last 2000 chars
 
-        full_prompt = prompt_template.format(sources=sources_text, context=optimized_context)
+        role_text = get_role_instruction(user_role_from_db)
+        full_prompt = prompt_template.format(
+            sources=sources_text,
+            context=optimized_context,
+            role_instruction=role_text,
+            bolding_rules=BOLDING_RULES,
+            exam_handling=EXAM_HANDLING
+        )
         user_context_block = f"""
             ### USER QUESTION:
             {query}
@@ -450,6 +558,16 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
             """
         full_prompt += f"\n\n{user_context_block.strip()}"
 
+        # Validate prompt size before sending
+        is_valid, warning_msg, estimated_input_tokens = validate_prompt_size(full_prompt, max_output_tokens)
+        if not is_valid:
+            logger.error(f"❌ Token limit error: {warning_msg}")
+            yield f"[STREAM_ERROR]: Request too large: {warning_msg}. Please try a shorter query or enable deep search."
+            return
+        elif warning_msg:
+            logger.warning(f"⚠️ {warning_msg}")
+        
+        logger.info(f"📊 Token estimate - Input: ~{estimated_input_tokens}, Max output: {max_output_tokens}, Total: ~{estimated_input_tokens + max_output_tokens}")
         logger.info(f"--- STREAMING PROMPT (first 500 chars) ---\n{full_prompt[:500]}\n...")
 
         client = get_genai_client()
@@ -535,7 +653,16 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
                         logger.info(f"Token usage - Output: {output_tokens}/{max_output_tokens} tokens ({output_tokens/max_output_tokens*100:.1f}%)")
                 
                 if finish_reason == 'MAX_TOKENS':
-                    logger.warning(f"⚠️ Response hit MAX_TOKENS limit ({max_output_tokens}) - response may be incomplete")
+                    truncation_note = (
+                        f"\n\n---\n"
+                        f"**📝 Note:** This response was cut short to keep it concise. "
+                        f"If you'd like more detailed information, you can:\n"
+                        f"- Ask a follow-up question about a specific part, or\n"
+                        f"- Enable **Deep Search** mode for a more comprehensive answer"
+                    )
+                    full_response_text += truncation_note
+                    yield truncation_note
+                    logger.warning(f"⚠️ Response truncated at {max_output_tokens} tokens. Consider increasing limit or using deep search.")
                 
                 # Warn if stream ended prematurely
                 if chunk_count < 10 and finish_reason == 'STOP':

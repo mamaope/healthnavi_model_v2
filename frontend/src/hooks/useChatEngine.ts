@@ -323,6 +323,54 @@ export function useChatEngine() {
             }
           }
           
+          let cleanedContent = streamedContent
+          let markerFound = true
+          
+          while (markerFound) {
+            const markerIndex = cleanedContent.indexOf('[FOLLOWUP_QUESTIONS]:')
+            if (markerIndex === -1) {
+              markerFound = false
+              break
+            }
+            
+            const beforeMarker = cleanedContent.substring(0, markerIndex)
+            const afterMarker = cleanedContent.substring(markerIndex + '[FOLLOWUP_QUESTIONS]:'.length)
+            
+            const jsonStart = afterMarker.search(/\s*\[/)
+            if (jsonStart !== -1) {
+              const jsonCandidate = afterMarker.substring(jsonStart).trim()
+              
+              let bracketCount = 0
+              let jsonEnd = -1
+              for (let i = 0; i < jsonCandidate.length; i++) {
+                if (jsonCandidate[i] === '[') bracketCount++
+                if (jsonCandidate[i] === ']') bracketCount--
+                if (bracketCount === 0 && i > 0) {
+                  jsonEnd = i + 1
+                  break
+                }
+              }
+              
+              if (jsonEnd > 0) {
+                // Found a complete JSON array, remove marker + JSON
+                cleanedContent = beforeMarker + afterMarker.substring(jsonStart + jsonEnd).trim()
+              } else {
+                // Incomplete JSON, just remove the marker
+                cleanedContent = beforeMarker + afterMarker.trim()
+              }
+            } else {
+              cleanedContent = beforeMarker + afterMarker.trim()
+            }
+            
+            cleanedContent = cleanedContent.replace(/\n\n+/g, '\n\n').trim()
+          }
+          
+          if (cleanedContent !== streamedContent) {
+            streamedContent = cleanedContent
+            useChatStore.getState().updateMessageContent(aiMessageId, cleanedContent)
+            console.log('🧹 Cleaned follow-up questions marker from message content')
+          }
+          
           // Always set isFetchingFollowup to false after stream completes
           // (follow-up questions either arrived or won't arrive)
           setIsFetchingFollowup(false)
