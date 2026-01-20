@@ -570,7 +570,7 @@ async def get_surveys(
             
             if survey_type:
                 query = query.filter(
-                    text("surveys.survey_type = :survey_type").bindparams(survey_type=survey_type)
+                    text("LOWER(surveys.survey_type::text) = LOWER(:survey_type)").bindparams(survey_type=survey_type)
                 )
             
             total = query.count()

@@ -352,10 +352,10 @@ class AdminService:
             ).distinct().subquery()
             week3_active = self.db.query(func.count(week3_subquery.c.user_id)).scalar() or 0
             
-            # PMF survey responses - use text() with enum value for proper type handling
+            # PMF survey responses - use text comparison to handle enum case issues
             pmf_surveys = self.db.query(Survey).filter(
                 and_(
-                    text("surveys.survey_type = :survey_type").bindparams(survey_type=SurveyType.PMF.value),
+                    text("LOWER(surveys.survey_type::text) = LOWER(:survey_type)").bindparams(survey_type=SurveyType.PMF.value),
                     text("surveys.created_at >= :period_start").bindparams(period_start=period_start)
                 )
             ).all()
@@ -364,10 +364,10 @@ class AdminService:
             very_disappointed_count = sum(1 for s in pmf_surveys if s.very_disappointed == True)
             very_disappointed_percentage = (very_disappointed_count / total_pmf_responses * 100) if total_pmf_responses > 0 else 0.0
             
-            # Average PMF score - use text() with enum value for proper type handling
+            # Average PMF score - use text comparison to handle enum case issues
             avg_pmf_score_result = self.db.query(func.avg(Survey.pmf_score)).filter(
                 and_(
-                    text("surveys.survey_type = :survey_type").bindparams(survey_type=SurveyType.PMF.value),
+                    text("LOWER(surveys.survey_type::text) = LOWER(:survey_type)").bindparams(survey_type=SurveyType.PMF.value),
                     Survey.pmf_score.isnot(None),
                     text("surveys.created_at >= :period_start").bindparams(period_start=period_start)
                 )
@@ -380,10 +380,10 @@ class AdminService:
                 if survey.replacement_behavior:
                     replacement_counts[survey.replacement_behavior] = replacement_counts.get(survey.replacement_behavior, 0) + 1
             
-            # Willingness to pay - use text() with enum value for proper type handling
+            # Willingness to pay - use text comparison to handle enum case issues
             avg_wtp_result = self.db.query(func.avg(Survey.willingness_to_pay)).filter(
                 and_(
-                    text("surveys.survey_type = :survey_type").bindparams(survey_type=SurveyType.PMF.value),
+                    text("LOWER(surveys.survey_type::text) = LOWER(:survey_type)").bindparams(survey_type=SurveyType.PMF.value),
                     Survey.willingness_to_pay.isnot(None),
                     text("surveys.created_at >= :period_start").bindparams(period_start=period_start)
                 )
@@ -415,18 +415,18 @@ class AdminService:
             # Get survey statistics by type
             survey_stats = {}
             for survey_type in [SurveyType.BASELINE, SurveyType.MID, SurveyType.FINAL]:
-                # Count completed surveys
+                # Count completed surveys - use text comparison to handle enum case issues
                 completed_count = self.db.query(func.count(Survey.id)).filter(
                     and_(
-                        text("surveys.survey_type = :survey_type").bindparams(survey_type=survey_type.value),
+                        text("LOWER(surveys.survey_type::text) = LOWER(:survey_type)").bindparams(survey_type=survey_type.value),
                         text("surveys.created_at >= :period_start").bindparams(period_start=period_start)
                     )
                 ).scalar() or 0
                 
-                # Count unique users who completed this survey
+                # Count unique users who completed this survey - use text comparison to handle enum case issues
                 unique_users = self.db.query(func.count(func.distinct(Survey.user_id))).filter(
                     and_(
-                        text("surveys.survey_type = :survey_type").bindparams(survey_type=survey_type.value),
+                        text("LOWER(surveys.survey_type::text) = LOWER(:survey_type)").bindparams(survey_type=survey_type.value),
                         text("surveys.created_at >= :period_start").bindparams(period_start=period_start)
                     )
                 ).scalar() or 0

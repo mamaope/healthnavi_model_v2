@@ -386,7 +386,7 @@ async def get_survey_questions(
                 existing_survey = db.query(Survey).filter(
                     and_(
                         Survey.user_id == current_user.id,
-                        text("surveys.survey_type = :survey_type").bindparams(survey_type=survey_type_enum.value)
+                        text("LOWER(surveys.survey_type::text) = LOWER(:survey_type)").bindparams(survey_type=survey_type_enum.value)
                     )
                 ).first()
             except Exception as survey_query_error:
@@ -465,11 +465,11 @@ async def submit_survey(
             
             # Check if user already completed this survey
             survey_type_enum = SurveyType[survey_data.survey_type.upper()]
-            # Use text() with enum value for proper type handling
+            # Use text comparison to handle enum case issues
             existing_survey = db.query(Survey).filter(
                 and_(
                     Survey.user_id == current_user.id,
-                    text("surveys.survey_type = :survey_type").bindparams(survey_type=survey_type_enum.value)
+                    text("LOWER(surveys.survey_type::text) = LOWER(:survey_type)").bindparams(survey_type=survey_type_enum.value)
                 )
             ).first()
             
@@ -618,7 +618,7 @@ async def get_survey_notification(
                 existing_survey = db.query(Survey).filter(
                     and_(
                         Survey.user_id == current_user.id,
-                        text("surveys.survey_type = :survey_type").bindparams(survey_type=survey_type_enum.value)
+                        text("LOWER(surveys.survey_type::text) = LOWER(:survey_type)").bindparams(survey_type=survey_type_enum.value)
                     )
                 ).first()
                 
