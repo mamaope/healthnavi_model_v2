@@ -30,9 +30,14 @@ done
 
 echo "✅ Database is ready!"
 
-# Run migrations
+# Run migrations (must succeed before starting the API)
 echo "🔄 Running database migrations..."
-alembic upgrade head
+if alembic upgrade head; then
+    echo "✅ Migrations completed successfully!"
+else
+    echo "❌ Migration failed! Exiting..."
+    exit 1
+fi
 
 # Seed admin user
 echo "🌱 Seeding admin user..."
