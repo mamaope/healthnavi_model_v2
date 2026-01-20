@@ -50,8 +50,8 @@ fun SessionsScreen(
     val filteredSessions = remember(uiState.sessions, searchText) {
         if (searchText.isBlank()) uiState.sessions
         else uiState.sessions.filter { session ->
-            session.session_name.contains(searchText, ignoreCase = true) ||
-                session.patient_summary?.contains(searchText, ignoreCase = true) == true
+            session.sessionName?.contains(searchText, ignoreCase = true) == true ||
+                session.patientSummary?.contains(searchText, ignoreCase = true) == true
         }
     }
 
@@ -266,8 +266,8 @@ private fun SessionCard(
 ) {
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()) }
     val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.getDefault()) }
-    val createdAt = remember(session.created_at) {
-        val createdDate = session.created_at
+    val createdAt = remember(session.createdAt) {
+        val createdDate = session.createdAt
         if (createdDate.isNullOrBlank()) {
             "Unknown date"
         } else {
@@ -285,9 +285,9 @@ private fun SessionCard(
     }
     
     // Get session title - match web view logic
-    // Compute directly from session.session_name so it updates when session data changes
-    val sessionTitle = remember(session.id, session.session_name) {
-        val name = session.session_name ?: ""
+    // Compute directly from session.sessionName so it updates when session data changes
+    val sessionTitle = remember(session.id, session.sessionName) {
+        val name = session.sessionName ?: ""
         val genericPrefixes = listOf("Diagnosis Session", "Session", "Streaming Session", "New Session", "New Chat")
         val isGenericName = name.isBlank() ||
             genericPrefixes.any { name.startsWith(it, ignoreCase = false) }
@@ -341,7 +341,7 @@ private fun SessionCard(
                 color = if (isSelected) Primary500.copy(alpha = 0.8f) else TextSecondary,
                 fontWeight = FontWeight.Medium
             )
-            session.patient_summary?.takeIf { it.isNotBlank() }?.let { summary ->
+            session.patientSummary?.takeIf { it.isNotBlank() }?.let { summary ->
                 Text(
                     text = summary,
                     style = MaterialTheme.typography.bodyMedium,

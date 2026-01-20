@@ -138,7 +138,7 @@ class ChatViewModel : ViewModel() {
         }
     }
     
-    fun loadSession(sessionId: String) {
+    fun loadSession(sessionId: Int) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
             
@@ -221,15 +221,15 @@ class ChatViewModel : ViewModel() {
                     val aiMessage = ChatMessage(
                         id = (System.currentTimeMillis() + 1).toString(),
                         author = MessageAuthor.ASSISTANT,
-                        content = response.data.model_response ?: "",
-                        diagnosisComplete = response.data.diagnosis_complete ?: false,
+                        content = response.modelResponse ?: "",
+                        diagnosisComplete = response.diagnosisComplete ?: false,
                         createdAt = System.currentTimeMillis().toString(),
-                        messageId = response.data.message_id
+                        messageId = response.messageId
                     )
                     chatRepository.addMessage(aiMessage)
                     
                     // Handle session - backend may have created/updated session
-                    val responseSessionId = response.data.session_id
+                    val responseSessionId = response.sessionId
                     val actualSessionId = responseSessionId ?: finalSessionId
                     
                     // Backend updates session name from first user message when saving the first message
@@ -287,7 +287,7 @@ class ChatViewModel : ViewModel() {
                     // Send the user's question again with deep search enabled
                     viewModelScope.launch {
                         _uiState.value = _uiState.value.copy(deepSearchEnabled = true)
-                        sendMessage(message.content)
+                        sendMessage(message.content ?: "")
                         // Reset deep search after sending
                         _uiState.value = _uiState.value.copy(deepSearchEnabled = false)
                     }

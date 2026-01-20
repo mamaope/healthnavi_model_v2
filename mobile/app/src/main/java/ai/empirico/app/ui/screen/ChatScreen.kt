@@ -21,6 +21,11 @@ import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Assignment
+import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -46,9 +51,13 @@ import ai.empirico.app.ui.viewmodel.ChatViewModel
 fun ChatScreen(
     onLogout: () -> Unit,
     onNavigateToSessions: () -> Unit,
+    onNavigateToProfile: () -> Unit = {},
+    onNavigateToSettings: () -> Unit = {},
+    onNavigateToPilot: () -> Unit = {},
     chatViewModel: ChatViewModel = viewModel()
 ) {
     var messageText by remember { mutableStateOf("") }
+    var menuExpanded by remember { mutableStateOf(false) }
     val uiState by chatViewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
     val clipboardManager = LocalClipboardManager.current
@@ -72,18 +81,19 @@ fun ChatScreen(
                 },
                 actions = {
                     IconButton(onClick = onNavigateToSessions) {
-                        Icon(
-                            Icons.Default.List,
-                            contentDescription = "Sessions",
-                            tint = Primary500
-                        )
+                        Icon(Icons.Default.List, contentDescription = "Sessions", tint = Primary500)
                     }
-                    TextButton(onClick = onLogout) {
-                        Text(
-                            "Logout",
-                            color = TextSecondary,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = TextPrimary)
+                        }
+                        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                            DropdownMenuItem(text = { Text("Pilot") }, onClick = { menuExpanded = false; onNavigateToPilot() }, leadingIcon = { Icon(Icons.Default.Assignment, null) })
+                            DropdownMenuItem(text = { Text("Profile") }, onClick = { menuExpanded = false; onNavigateToProfile() }, leadingIcon = { Icon(Icons.Default.Person, null) })
+                            DropdownMenuItem(text = { Text("Settings") }, onClick = { menuExpanded = false; onNavigateToSettings() }, leadingIcon = { Icon(Icons.Default.Settings, null) })
+                            HorizontalDivider()
+                            DropdownMenuItem(text = { Text("Log out", color = Error600) }, onClick = { menuExpanded = false; onLogout() }, leadingIcon = { Icon(Icons.Default.Logout, null, tint = Error600) })
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -408,6 +418,335 @@ fun MessageBubble(
             Column(modifier = Modifier.padding(16.dp)) {
                 val content = message.content ?: ""
                 if (message.author == MessageAuthor.ASSISTANT && !isError) {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
                     Text(
                         text = ai.empirico.app.util.MessageFormatter.formatMessage(content),
                         style = MaterialTheme.typography.bodyMedium.copy(

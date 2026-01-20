@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import ai.empirico.app.data.model.User
 import ai.empirico.app.data.repository.AuthRepository
+import ai.empirico.app.data.repository.DeletionStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -16,7 +17,13 @@ data class AuthUiState(
     val currentUser: User? = null,
     val errorMessage: String? = null,
     val forgotPasswordSuccess: Boolean = false,
-    val resetPasswordSuccess: Boolean = false
+    val resetPasswordSuccess: Boolean = false,
+    val profileLoading: Boolean = false,
+    val profileError: String? = null,
+    val profileSuccess: String? = null,
+    val deletionStatus: DeletionStatus? = null,
+    val deletionLoading: Boolean = false,
+    val deletionMessage: String? = null
 )
 
 class AuthViewModel(application: Application) : AndroidViewModel(application) {
@@ -176,6 +183,100 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     
     fun clearResetPasswordSuccess() {
         _uiState.value = _uiState.value.copy(resetPasswordSuccess = false)
+    }
+
+    fun updateProfile(fullName: String?, medicalProfessionalType: String?) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(profileLoading = true, profileError = null, profileSuccess = null)
+            authRepository.updateProfile(fullName, medicalProfessionalType)
+                .onSuccess { user ->
+                    _uiState.value = _uiState.value.copy(
+                        profileLoading = false,
+                        profileSuccess = "Profile updated",
+                        currentUser = user
+                    )
+                }
+                .onFailure { e ->
+                    _uiState.value = _uiState.value.copy(
+                        profileLoading = false,
+                        profileError = e.message ?: "Failed to update profile"
+                    )
+                }
+        }
+    }
+
+    fun changePassword(currentPassword: String, newPassword: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(profileLoading = true, profileError = null, profileSuccess = null)
+            authRepository.changePassword(currentPassword, newPassword)
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(profileLoading = false, profileSuccess = "Password changed")
+                }
+                .onFailure { e ->
+                    _uiState.value = _uiState.value.copy(
+                        profileLoading = false,
+                        profileError = e.message ?: "Failed to change password"
+                    )
+                }
+        }
+    }
+
+    fun clearProfileMessage() {
+        _uiState.value = _uiState.value.copy(profileError = null, profileSuccess = null)
+    }
+
+    fun loadDeletionStatus() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(deletionLoading = true, deletionMessage = null)
+            authRepository.getDeletionStatus()
+                .onSuccess { status ->
+                    _uiState.value = _uiState.value.copy(deletionStatus = status, deletionLoading = false)
+                }
+                .onFailure { e ->
+                    _uiState.value = _uiState.value.copy(
+                        deletionLoading = false,
+                        deletionMessage = e.message ?: "Failed to load status"
+                    )
+                }
+        }
+    }
+
+    fun requestDataDeletion() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(deletionLoading = true, deletionMessage = null)
+            authRepository.requestDataDeletion()
+                .onSuccess { msg ->
+                    _uiState.value = _uiState.value.copy(deletionLoading = false, deletionMessage = msg)
+                    loadDeletionStatus()
+                }
+                .onFailure { e ->
+                    _uiState.value = _uiState.value.copy(
+                        deletionLoading = false,
+                        deletionMessage = e.message ?: "Failed to request deletion"
+                    )
+                }
+        }
+    }
+
+    fun cancelDataDeletion() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(deletionLoading = true, deletionMessage = null)
+            authRepository.cancelDataDeletion()
+                .onSuccess { msg ->
+                    _uiState.value = _uiState.value.copy(deletionLoading = false, deletionMessage = msg)
+                    loadDeletionStatus()
+                }
+                .onFailure { e ->
+                    _uiState.value = _uiState.value.copy(
+                        deletionLoading = false,
+                        deletionMessage = e.message ?: "Failed to cancel"
+                    )
+                }
+        }
+    }
+
+    fun clearDeletionMessage() {
+        _uiState.value = _uiState.value.copy(deletionMessage = null)
     }
 }
 

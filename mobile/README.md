@@ -28,10 +28,17 @@ The app follows MVVM (Model-View-ViewModel) architecture:
 
 ## Setup
 
-1. **Configure API URL**: 
-   Update `BASE_URL` in `RetrofitClient.kt`:
-   - For Android Emulator: `http://10.0.2.2:8000/api/v2`
-   - For Physical Device: Use your computer's IP address (e.g., `http://192.168.1.100:8000/api/v2`)
+1. **Configure API URL** (required for **physical devices**; emulator can use the default):
+   - **Android Emulator**: Leave unset. The app uses `http://10.0.2.2:8050/api/v2/` (10.0.2.2 = host machine).
+   - **Physical Device**: `10.0.2.2` does **not** work on a real device and causes connection timeouts. Set your computer's LAN IP using one of:
+     - **gradle.properties** (project root):  
+       `API_BASE_URL=http://192.168.1.XXX:8050/api/v2/`  
+       (replace `192.168.1.XXX` with your machine’s IP; ensure the trailing `/`.)
+     - **local.properties** (project root, usually gitignored):  
+       `api.base.url=http://192.168.1.XXX:8050/api/v2/`
+     - **Command line**:  
+       `./gradlew assembleDebug -PAPI_BASE_URL=http://192.168.1.XXX:8050/api/v2/`
+   - Ensure the backend is running on that machine and port (default 8050). If the device and PC are on the same Wi‑Fi, allow cleartext in `network_security_config` if required.
 
 2. **Build the app**:
    ```bash

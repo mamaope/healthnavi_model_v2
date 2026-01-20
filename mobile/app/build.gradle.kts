@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -16,6 +18,13 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // API_BASE_URL: set in gradle.properties (API_BASE_URL=http://YOUR_IP:8050/api/v2/) or -PAPI_BASE_URL=...
+        // For emulator: leave empty to use 10.0.2.2:8050. For physical device: use your computer's LAN IP.
+        val apiBase = project.findProperty("API_BASE_URL")?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: (project.rootProject.file("local.properties").takeIf { it.exists() }?.let { f ->
+                Properties().apply { load(f.inputStream()) }.getProperty("api.base.url", "")?.trim()?.takeIf { it.isNotEmpty() }
+            } ?: "")
+        buildConfigField("String", "API_BASE_URL", "\"${apiBase}\"")
     }
 
     buildTypes {
@@ -36,6 +45,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

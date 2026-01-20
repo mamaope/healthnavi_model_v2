@@ -15,6 +15,13 @@ import ai.empirico.app.ui.screen.RegisterScreen
 import ai.empirico.app.ui.screen.SessionsScreen
 import ai.empirico.app.ui.screen.ForgotPasswordScreen
 import ai.empirico.app.ui.screen.ResetPasswordScreen
+import ai.empirico.app.ui.screen.ProfileScreen
+import ai.empirico.app.ui.screen.SettingsScreen
+import ai.empirico.app.ui.screen.SettingsBillingScreen
+import ai.empirico.app.ui.screen.SettingsPrivacyScreen
+import ai.empirico.app.ui.screen.SettingsCloseAccountScreen
+import ai.empirico.app.ui.screen.PilotScreen
+import ai.empirico.app.ui.screen.SurveyFormScreen
 import ai.empirico.app.ui.viewmodel.AuthViewModel
 import ai.empirico.app.ui.viewmodel.ChatViewModel
 
@@ -27,6 +34,15 @@ sealed class Screen(val route: String) {
     }
     object Chat : Screen("chat")
     object Sessions : Screen("sessions")
+    object Profile : Screen("profile")
+    object Settings : Screen("settings")
+    object SettingsBilling : Screen("settings/billing")
+    object SettingsPrivacy : Screen("settings/privacy")
+    object SettingsCloseAccount : Screen("settings/close_account")
+    object Pilot : Screen("pilot")
+    object SurveyForm : Screen("pilot/survey/{surveyType}") {
+        fun createRoute(surveyType: String) = "pilot/survey/$surveyType"
+    }
 }
 
 @Composable
@@ -122,9 +138,10 @@ fun NavGraph(
                         popUpTo(Screen.Chat.route) { inclusive = true }
                     }
                 },
-                onNavigateToSessions = {
-                    navController.navigate(Screen.Sessions.route)
-                },
+                onNavigateToSessions = { navController.navigate(Screen.Sessions.route) },
+                onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
+                onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
+                onNavigateToPilot = { navController.navigate(Screen.Pilot.route) },
                 chatViewModel = chatViewModel
             )
         }
@@ -132,10 +149,7 @@ fun NavGraph(
         composable(Screen.Sessions.route) {
             SessionsScreen(
                 onSessionSelected = { session ->
-                    // Load session - this will update the shared ViewModel state
                     chatViewModel.loadSession(session.id)
-                    // Navigate back to ChatScreen
-                    // The messages will load asynchronously and appear in ChatScreen
                     navController.popBackStack()
                 },
                 onNewSession = {
@@ -143,10 +157,56 @@ fun NavGraph(
                     chatViewModel.createSession()
                     navController.popBackStack()
                 },
-                onBack = {
-                    navController.popBackStack()
-                },
+                onBack = { navController.popBackStack() },
                 viewModel = chatViewModel
+            )
+        }
+
+        composable(Screen.Profile.route) {
+            ProfileScreen(onBack = { navController.popBackStack() }, viewModel = authViewModel)
+        }
+
+        composable(Screen.Settings.route) {
+            SettingsScreen(
+                onBack = { navController.popBackStack() },
+                onProfile = { navController.navigate(Screen.Profile.route) },
+                onBilling = { navController.navigate(Screen.SettingsBilling.route) },
+                onPrivacy = { navController.navigate(Screen.SettingsPrivacy.route) },
+                onCloseAccount = { navController.navigate(Screen.SettingsCloseAccount.route) }
+            )
+        }
+
+        composable(Screen.SettingsBilling.route) {
+            SettingsBillingScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(Screen.SettingsPrivacy.route) {
+            SettingsPrivacyScreen(
+                onBack = { navController.popBackStack() },
+                onCloseAccount = { navController.navigate(Screen.SettingsCloseAccount.route) }
+            )
+        }
+
+        composable(Screen.SettingsCloseAccount.route) {
+            SettingsCloseAccountScreen(onBack = { navController.popBackStack() }, viewModel = authViewModel)
+        }
+
+        composable(Screen.Pilot.route) {
+            PilotScreen(
+                onBack = { navController.popBackStack() },
+                onSurveyClick = { st -> navController.navigate(Screen.SurveyForm.createRoute(st)) }
+            )
+        }
+
+        composable(
+            route = Screen.SurveyForm.route,
+            arguments = listOf(navArgument("surveyType") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val st = backStackEntry.arguments?.getString("surveyType") ?: ""
+            SurveyFormScreen(
+                surveyType = st,
+                onBack = { navController.popBackStack() },
+                onSuccess = { navController.popBackStack() }
             )
         }
     }
