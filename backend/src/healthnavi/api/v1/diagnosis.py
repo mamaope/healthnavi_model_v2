@@ -114,11 +114,14 @@ async def diagnose(data: DiagnosisInput, current_user: User = Depends(get_curren
             logger.info(f"Search mode: {'DEEP SEARCH' if deep_search_enabled else 'QUICK SEARCH'}")
             
             try:
+                # Get user's medical professional type for role-based prompts
+                user_role = current_user.medical_professional_type if current_user else None
                 response, diagnosis_complete, prompt_type, followup_questions = await generate_response(
                     query=data.patient_data,
                     chat_history=chat_history,
                     patient_data=data.patient_data,
-                    deep_search=deep_search_enabled
+                    deep_search=deep_search_enabled,
+                    user_role_from_db=user_role
                 )
                 logger.info(f"Prompt type used: {prompt_type}")
                 # Ensure followup_questions is always a list
@@ -386,6 +389,15 @@ async def diagnose_stream(data: DiagnosisInput, current_user: User = Depends(get
                     except Exception as cleanup_error:
                         logger.warning(f"Could not clean up empty session after error: {cleanup_error}")
 
+        user_role = None
+        if current_user:
+            try:
+                # Access the attribute while the session is still active
+                user_role = current_user.medical_professional_type
+            except Exception as e:
+                logger.warning(f"Could not get user role: {e}, defaulting to None")
+                user_role = None
+        
         # Container to store the AI message ID after it's saved
         ai_message_id_container = {"value": None}
         
@@ -399,7 +411,8 @@ async def diagnose_stream(data: DiagnosisInput, current_user: User = Depends(get
                     query=data.patient_data,
                     chat_history=chat_history,
                     patient_data=data.patient_data,
-                    deep_search=deep_search_enabled
+                    deep_search=deep_search_enabled,
+                    user_role_from_db=user_role
                 ):
                     # Check for error markers from the generator
                     if chunk and chunk.startswith("[STREAM_ERROR]:"):
@@ -461,18 +474,29 @@ async def diagnose_stream(data: DiagnosisInput, current_user: User = Depends(get
                     logger.warning(f"Skipping AI message save - user message was not saved successfully")
                 
                 # Generate follow-up questions if we have valid content
-                if not stream_error and ai_response_content and len(ai_response_content.strip()) > 10:
+                followup_already_sent = "[FOLLOWUP_QUESTIONS]:" in full_response
+                if not stream_error and not followup_already_sent and ai_response_content and len(ai_response_content.strip()) > 10:
                     followup_questions = []
                     try:
                         from healthnavi.services.conversational_service import generate_followup_questions_sync
                         followup_questions = generate_followup_questions_sync(data.patient_data, ai_response_content)
+                        logger.info(f"Generated {len(followup_questions)} follow-up questions")
                     except Exception as e:
-                        logger.warning(f"Could not generate follow-up questions: {e}")
+                        logger.warning(f"Could not generate follow-up questions: {e}", exc_info=True)
                     
                     if followup_questions:
                         import json
                         followup_json = json.dumps(followup_questions)
                         yield f"\n\n[FOLLOWUP_QUESTIONS]:{followup_json}"
+                        logger.info(f"✅ Sent {len(followup_questions)} follow-up questions to frontend")
+                    else:
+                        logger.warning("⚠️ Follow-up question generation returned empty list")
+                elif followup_already_sent:
+                    logger.info("ℹ️ Follow-up questions already sent in stream, skipping duplicate generation")
+                elif stream_error:
+                    logger.warning("⚠️ Skipping follow-up question generation due to stream error")
+                elif not ai_response_content or len(ai_response_content.strip()) <= 10:
+                    logger.debug(f"Skipping follow-up question generation - content too short ({len(ai_response_content.strip()) if ai_response_content else 0} chars)")
                 
                 # Send message_id at the end if available (before stream ends)
                 if ai_message_id_container["value"]:

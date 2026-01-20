@@ -95,7 +95,7 @@ class ChatSessionResponse(BaseModel):
 
 class ChatMessageCreate(BaseModel):
     """Schema for creating a new chat message."""
-    content: str = Field(..., min_length=1, max_length=10000, description="Message content")
+    content: str = Field(..., min_length=1, max_length=50000, description="Message content (increased to support comprehensive medical responses)")
     message_type: str = Field(..., description="Type of message: 'user', 'assistant', or 'system'")
     patient_data: Optional[str] = Field(None, max_length=10000, description="Patient data associated with the message")
     diagnosis_complete: Optional[bool] = Field(default=False, description="Whether diagnosis is complete")
