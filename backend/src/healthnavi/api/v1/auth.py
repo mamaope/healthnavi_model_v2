@@ -348,8 +348,8 @@ def register(user: UserCreate, request: Request, db: Session = Depends(get_db)):
             # Log device type for admin statistics
             try:
                 AdminService(db).log_device_activity(new_user.id, get_device_type(request), "login")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Could not log device activity on register: {e}", exc_info=True)
             
             return create_success_response(
                 data=user_data,
@@ -387,7 +387,7 @@ def register(user: UserCreate, request: Request, db: Session = Depends(get_db)):
         500: {"description": "Internal server error"}
     }
 )
-def login_for_access_token(login_data: LoginRequest, db: Session = Depends(get_db)):
+def login_for_access_token(login_data: LoginRequest, request: Request, db: Session = Depends(get_db)):
     """
     Login and get access token.
     
@@ -483,8 +483,8 @@ def login_for_access_token(login_data: LoginRequest, db: Session = Depends(get_d
             # Log device type for admin statistics
             try:
                 AdminService(db).log_device_activity(user.id, get_device_type(request), "login")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Could not log device activity on login: {e}", exc_info=True)
             
             return create_success_response(
                 data=response_data,
@@ -1784,8 +1784,8 @@ def google_sign_in_mobile(
                 # Log device type for admin statistics (mobile typically sends X-Device-Type: phone/tablet)
                 try:
                     AdminService(db).log_device_activity(user.id, get_device_type(request), "login")
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Could not log device activity on google_sign_in_mobile: {e}", exc_info=True)
                 
                 return create_success_response(
                     data=response_data,

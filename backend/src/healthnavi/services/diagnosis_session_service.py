@@ -51,7 +51,7 @@ class DiagnosisSessionService:
                     from healthnavi.services.admin_service import AdminService
                     AdminService(self.db).log_device_activity(user.id, device_type, "session_create")
                 except Exception as e:
-                    logger.debug(f"Could not log device activity: {e}")
+                    logger.warning(f"Could not log device activity: {e}", exc_info=True)
             
             logger.info(f"Created new diagnosis session {new_session.id} for user {user.id}")
             

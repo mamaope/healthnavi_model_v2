@@ -72,7 +72,12 @@ async def diagnosis_health():
 
 
 @router.post("/diagnose", response_model=StandardResponse)
-async def diagnose(data: DiagnosisInput, current_user: User = Depends(get_current_user_safe_v2), db: Session = Depends(get_db)):
+async def diagnose(
+    data: DiagnosisInput,
+    request: Request,
+    current_user: User = Depends(get_current_user_safe_v2),
+    db: Session = Depends(get_db),
+):
     """
     Generate AI-powered diagnosis based on patient data.
     Now allows unauthenticated access for demo purposes.
