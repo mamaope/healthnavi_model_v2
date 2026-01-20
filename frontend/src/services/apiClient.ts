@@ -23,8 +23,18 @@ const defaultHeaders: HeadersInit = {
   Accept: 'application/json',
 }
 
+/** Detect device type for X-Device-Type header (phone, tablet, laptop). */
+function getDeviceType(): string {
+  if (typeof navigator === 'undefined') return 'laptop'
+  const ua = navigator.userAgent
+  if (/iPad|Android(?!.*Mobile)|Tablet|Kindle|Silk|PlayBook|webOS/i.test(ua)) return 'tablet'
+  if (/Mobile|Android|iPhone|iPod|webOS|BlackBerry|IEMobile|Opera Mini|MiuiBrowser/i.test(ua)) return 'phone'
+  return 'laptop'
+}
+
 function buildHeaders(token: string | null, skipAuthHeader = false) {
   const headers = new Headers(defaultHeaders)
+  headers.set('X-Device-Type', getDeviceType())
   if (token && !skipAuthHeader) {
     headers.set('Authorization', `Bearer ${token}`)
   }
@@ -121,6 +131,7 @@ async function apiFetch<TResponse>(
   if (options.headers === null) {
     // FormData case - don't set Content-Type, let browser handle it
     headers = new Headers()
+    headers.set('X-Device-Type', getDeviceType())
     if (token && !options.skipAuthHeader) {
       headers.set('Authorization', `Bearer ${token}`)
     }
@@ -424,6 +435,7 @@ export const chatApi = {
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
       'Accept': 'text/plain',
+      'X-Device-Type': getDeviceType(),
     }
     if (token) {
       headers['Authorization'] = `Bearer ${token}`
@@ -564,6 +576,13 @@ export const adminApi = {
   getPmfMetrics(days: number = 30) {
     return apiFetch<{ success: boolean; data: any }>(
       `/admin/metrics/pmf?days=${days}`,
+      'GET',
+    )
+  },
+  getDeviceStatistics(days: number = 30) {
+    const d = Math.max(1, Math.min(365, typeof days === 'number' && !isNaN(days) ? Math.floor(days) : 30))
+    return apiFetch<{ success: boolean; data: { by_type: Record<string, number>; total: number } }>(
+      `/admin/metrics/devices?days=${d}`,
       'GET',
     )
   },

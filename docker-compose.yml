@@ -13,6 +13,7 @@ services:
       - ./logs:/backend/logs
       - ./regal-autonomy-454806-d1-edf68610c57a.json:/backend/regal-autonomy-454806-d1-edf68610c57a.json  # commented for local dev
 
+    # startup.sh: waits for db, runs 'alembic upgrade head', seeds admin, then uvicorn
     command: sh -c "python3 /backend/scripts/fix_line_endings.py /backend/scripts/startup.sh && chmod +x /backend/scripts/startup.sh && bash /backend/scripts/startup.sh"
     restart: unless-stopped
     depends_on:
