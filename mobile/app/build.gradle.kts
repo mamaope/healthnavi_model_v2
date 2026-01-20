@@ -18,8 +18,7 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // API_BASE_URL: set in gradle.properties (API_BASE_URL=http://YOUR_IP:8050/api/v2/) or -PAPI_BASE_URL=...
-        // For emulator: leave empty to use 10.0.2.2:8050. For physical device: use your computer's LAN IP.
+        // API_BASE_URL: leave empty to use https://empirico.ai/api/v2/. For local backend: set in gradle.properties or -PAPI_BASE_URL=http://10.0.2.2:8050/api/v2/ (emulator) or http://YOUR_IP:8050/api/v2/ (device).
         val apiBase = project.findProperty("API_BASE_URL")?.toString()?.trim()?.takeIf { it.isNotEmpty() }
             ?: (project.rootProject.file("local.properties").takeIf { it.exists() }?.let { f ->
                 Properties().apply { load(f.inputStream()) }.getProperty("api.base.url", "")?.trim()?.takeIf { it.isNotEmpty() }

@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 data class AuthUiState(
     val isLoading: Boolean = false,
     val isAuthenticated: Boolean = false,
+    val isInitialized: Boolean = false,
     val currentUser: User? = null,
     val errorMessage: String? = null,
     val forgotPasswordSuccess: Boolean = false,
@@ -34,18 +35,22 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
     
     init {
-        // Initialize repository with saved auth data
+        // Initialize repository with saved auth data (restore token to AuthTokenProvider)
         viewModelScope.launch {
             authRepository.initialize()
+            _uiState.value = _uiState.value.copy(
+                isInitialized = true,
+                isAuthenticated = _uiState.value.currentUser != null
+            )
         }
         
-        // Observe user state changes
+        // Observe user state changes (isAuthenticated only true when initialized and user present)
         viewModelScope.launch {
             try {
                 authRepository.currentUser.collect { user ->
                     _uiState.value = _uiState.value.copy(
-                        isAuthenticated = user != null,
-                        currentUser = user
+                        currentUser = user,
+                        isAuthenticated = _uiState.value.isInitialized && (user != null)
                     )
                 }
             } catch (e: Exception) {

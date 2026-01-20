@@ -29,8 +29,9 @@ The app follows MVVM (Model-View-ViewModel) architecture:
 ## Setup
 
 1. **Configure API URL** (required for **physical devices**; emulator can use the default):
-   - **Android Emulator**: Leave unset. The app uses `http://10.0.2.2:8050/api/v2/` (10.0.2.2 = host machine).
-   - **Physical Device**: `10.0.2.2` does **not** work on a real device and causes connection timeouts. Set your computer's LAN IP using one of:
+   - **Default**: The app uses `https://empirico.ai/api/v2/` (production). No config needed.
+   - **Android Emulator (local backend)**: Set `API_BASE_URL=http://10.0.2.2:8050/api/v2/`.
+   - **Physical Device (local backend)**: Use your PC's LAN IP, e.g. `API_BASE_URL=http://192.168.1.XXX:8050/api/v2/`. Options:
      - **gradle.properties** (project root):  
        `API_BASE_URL=http://192.168.1.XXX:8050/api/v2/`  
        (replace `192.168.1.XXX` with your machine’s IP; ensure the trailing `/`.)

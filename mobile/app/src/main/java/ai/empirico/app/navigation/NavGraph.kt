@@ -1,8 +1,6 @@
 package ai.empirico.app.navigation
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -10,6 +8,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ai.empirico.app.ui.screen.ChatScreen
+import ai.empirico.app.ui.screen.LoadingScreen
 import ai.empirico.app.ui.screen.LoginScreen
 import ai.empirico.app.ui.screen.RegisterScreen
 import ai.empirico.app.ui.screen.SessionsScreen
@@ -26,6 +25,7 @@ import ai.empirico.app.ui.viewmodel.AuthViewModel
 import ai.empirico.app.ui.viewmodel.ChatViewModel
 
 sealed class Screen(val route: String) {
+    object Loading : Screen("loading")
     object Login : Screen("login")
     object Register : Screen("register")
     object ForgotPassword : Screen("forgot_password")
@@ -50,17 +50,31 @@ fun NavGraph(
     navController: NavHostController
 ) {
     val authViewModel: AuthViewModel = viewModel()
-    val uiState by authViewModel.uiState.collectAsState()
-    val isAuthenticated = uiState.isAuthenticated
-    
+
     // Create a shared ChatViewModel at the NavGraph level
     // This ensures the same instance is used across Chat and Sessions screens
     val chatViewModel: ChatViewModel = viewModel()
     
     NavHost(
         navController = navController,
-        startDestination = if (isAuthenticated) Screen.Chat.route else Screen.Login.route
+        startDestination = Screen.Loading.route
     ) {
+        composable(Screen.Loading.route) {
+            LoadingScreen(
+                authViewModel = authViewModel,
+                onNavigateToLogin = {
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(Screen.Loading.route) { inclusive = true }
+                    }
+                },
+                onNavigateToChat = {
+                    navController.navigate(Screen.Chat.route) {
+                        popUpTo(Screen.Loading.route) { inclusive = true }
+                    }
+                }
+            )
+        }
+
         composable(Screen.Login.route) {
             LoginScreen(
                 onLoginSuccess = {
