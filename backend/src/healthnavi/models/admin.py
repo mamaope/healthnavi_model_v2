@@ -201,6 +201,26 @@ class Alert(Base):
         return f"<Alert(id={self.id}, type='{self.alert_type}', severity='{self.severity}', is_read={self.is_read})>"
 
 
+class DeviceActivityLog(Base):
+    """
+    Logs device type (phone, tablet, laptop) per activity for admin statistics.
+    Written on login and session create.
+    """
+    __tablename__ = "device_activity_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    device_type = Column(String(20), nullable=False, index=True)  # phone, tablet, laptop, unknown
+    activity = Column(String(50), nullable=False, index=True)  # login, session_create
+    created_at = Column(String, nullable=True)
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+
+    def __repr__(self):
+        return f"<DeviceActivityLog(id={self.id}, device_type='{self.device_type}', activity='{self.activity}')>"
+
+
 class SurveyConfig(Base):
     """
     Configuration for survey visibility and metadata.

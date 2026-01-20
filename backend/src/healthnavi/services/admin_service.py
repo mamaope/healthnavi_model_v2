@@ -12,7 +12,7 @@ from sqlalchemy.sql import label
 
 from healthnavi.models.user import User
 from healthnavi.models.diagnosis_session import DiagnosisSession, ChatMessage, MessageFeedback
-from healthnavi.models.admin import SafetyEvent, Survey, Alert, AuditLog, SafetyEventSeverity, SafetyEventStatus, SurveyType
+from healthnavi.models.admin import SafetyEvent, Survey, Alert, AuditLog, SafetyEventSeverity, SafetyEventStatus, SurveyType, DeviceActivityLog
 
 logger = logging.getLogger(__name__)
 
@@ -464,6 +464,56 @@ class AdminService:
             logger.error(f"Error getting survey statistics: {e}")
             raise
     
+    def get_device_statistics(self, days: int = 30) -> Dict[str, Any]:
+        """Get device type statistics (phone, tablet, laptop) for the admin dashboard."""
+        try:
+            period_start = (datetime.utcnow() - timedelta(days=days)).isoformat()
+            rows = self.db.query(
+                DeviceActivityLog.device_type,
+                func.count(DeviceActivityLog.id).label("cnt")
+            ).filter(
+                text("device_activity_log.created_at >= :period_start").bindparams(period_start=period_start)
+            ).group_by(DeviceActivityLog.device_type).all()
+
+            by_type = {"phone": 0, "tablet": 0, "laptop": 0, "unknown": 0}
+            for device_type, cnt in rows:
+                key = (device_type or "unknown").lower()
+                if key not in by_type:
+                    by_type[key] = 0
+                by_type[key] += int(cnt) if cnt else 0
+
+            total = sum(by_type.values())
+            return {"by_type": by_type, "total": total}
+        except Exception as e:
+            logger.warning(f"Error getting device statistics: {e}")
+            return {"by_type": {"phone": 0, "tablet": 0, "laptop": 0, "unknown": 0}, "total": 0}
+
+    def log_device_activity(
+        self,
+        user_id: Optional[int],
+        device_type: str,
+        activity: str,
+    ) -> None:
+        """Log a device activity (login, session_create) for statistics. Fails silently."""
+        try:
+            normalized = (device_type or "").strip().lower()
+            if normalized not in ("phone", "tablet", "laptop"):
+                normalized = "unknown"
+            entry = DeviceActivityLog(
+                user_id=user_id,
+                device_type=normalized,
+                activity=activity,
+                created_at=datetime.utcnow().isoformat(),
+            )
+            self.db.add(entry)
+            self.db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to log device activity: {e}")
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
+
     def get_all_metrics(self, days: int = 30) -> Dict[str, Any]:
         """Get all dashboard metrics."""
         return {
@@ -472,6 +522,7 @@ class AdminService:
             "safety": self.get_safety_metrics(days),
             "pmf": self.get_pmf_metrics(days),
             "surveys": self.get_survey_statistics(days),
+            "devices": self.get_device_statistics(days),
             "period_days": days,
             "generated_at": datetime.utcnow().isoformat()
         }

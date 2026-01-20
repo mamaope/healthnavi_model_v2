@@ -29,6 +29,8 @@ from healthnavi.services.data_deletion_service import (
     cancel_data_deletion,
     get_deletion_status,
 )
+from healthnavi.core.device_utils import get_device_type
+from healthnavi.services.admin_service import AdminService
 
 # Import email service with error handling
 try:
@@ -343,6 +345,12 @@ def register(user: UserCreate, request: Request, db: Session = Depends(get_db)):
             else:
                 message = "User registered successfully. Please contact support for email verification."
             
+            # Log device type for admin statistics
+            try:
+                AdminService(db).log_device_activity(new_user.id, get_device_type(request), "login")
+            except Exception:
+                pass
+            
             return create_success_response(
                 data=user_data,
                 status_code=201,
@@ -471,6 +479,12 @@ def login_for_access_token(login_data: LoginRequest, db: Session = Depends(get_d
                 "token_type": "bearer",
                 "user": user_profile
             }
+            
+            # Log device type for admin statistics
+            try:
+                AdminService(db).log_device_activity(user.id, get_device_type(request), "login")
+            except Exception:
+                pass
             
             return create_success_response(
                 data=response_data,
@@ -1607,6 +1621,12 @@ async def google_callback(
                 redirect_url = f"{frontend_url}/auth/google/success?token={jwt_token}"
                 logger.info(f"OAuth success - User ID: {user.id}, Email: {user.email}, Redirecting to: {redirect_url}")
                 
+                # Log device type for admin statistics
+                try:
+                    AdminService(db).log_device_activity(user.id, get_device_type(request), "login")
+                except Exception:
+                    pass
+                
                 response = RedirectResponse(url=redirect_url, status_code=302)  # Use 302 instead of 307
                 response.delete_cookie(key="oauth_state")
                 
@@ -1628,6 +1648,7 @@ async def google_callback(
 @router.post("/google/mobile", response_model=StandardResponse)
 def google_sign_in_mobile(
     request_data: GoogleSignInMobileRequest,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """
@@ -1759,6 +1780,12 @@ def google_sign_in_mobile(
                     "token_type": "bearer",
                     "user": user_profile
                 }
+                
+                # Log device type for admin statistics (mobile typically sends X-Device-Type: phone/tablet)
+                try:
+                    AdminService(db).log_device_activity(user.id, get_device_type(request), "login")
+                except Exception:
+                    pass
                 
                 return create_success_response(
                     data=response_data,

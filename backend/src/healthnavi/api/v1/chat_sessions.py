@@ -6,7 +6,7 @@ This module provides endpoints for managing diagnosis chat sessions and messages
 
 import logging
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from healthnavi.core.database import get_db
@@ -19,6 +19,7 @@ from healthnavi.schemas import (
 )
 from healthnavi.services.diagnosis_session_service import DiagnosisSessionService
 from healthnavi.api.v1.auth import require_user_role
+from healthnavi.core.device_utils import get_device_type
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -27,6 +28,7 @@ router = APIRouter()
 @router.post("/sessions", response_model=StandardResponse, status_code=201)
 async def create_chat_session(
     session_data: ChatSessionCreate,
+    request: Request,
     current_user: User = Depends(require_user_role),
     db: Session = Depends(get_db)
 ):
@@ -34,7 +36,9 @@ async def create_chat_session(
     with ResponseTimer() as timer:
         try:
             service = DiagnosisSessionService(db)
-            session = service.create_session(current_user, session_data)
+            session = service.create_session(
+                current_user, session_data, device_type=get_device_type(request)
+            )
             
             return create_success_response(
                 data=session,

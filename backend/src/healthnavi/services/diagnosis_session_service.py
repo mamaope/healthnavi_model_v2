@@ -27,8 +27,10 @@ class DiagnosisSessionService:
     def __init__(self, db: Session):
         self.db = db
     
-    def create_session(self, user: User, session_data: ChatSessionCreate) -> ChatSessionResponse:
-        """Create a new diagnosis session."""
+    def create_session(
+        self, user: User, session_data: ChatSessionCreate, device_type: Optional[str] = None
+    ) -> ChatSessionResponse:
+        """Create a new diagnosis session. Optionally log device_type for admin statistics."""
         try:
             # Create new session
             new_session = DiagnosisSession(
@@ -43,6 +45,13 @@ class DiagnosisSessionService:
             self.db.add(new_session)
             self.db.commit()
             self.db.refresh(new_session)
+            
+            if device_type:
+                try:
+                    from healthnavi.services.admin_service import AdminService
+                    AdminService(self.db).log_device_activity(user.id, device_type, "session_create")
+                except Exception as e:
+                    logger.debug(f"Could not log device activity: {e}")
             
             logger.info(f"Created new diagnosis session {new_session.id} for user {user.id}")
             

@@ -5,7 +5,7 @@ Diagnosis router for HealthNavi AI CDSS.
 import logging
 import time
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
@@ -16,6 +16,7 @@ from healthnavi.schemas import DiagnosisInput, DiagnosisResponse, StandardRespon
 from healthnavi.services.conversational_service import generate_response, generate_response_stream
 from healthnavi.services.diagnosis_session_service import DiagnosisSessionService
 from healthnavi.api.v1.auth import get_current_user, require_user_role, require_admin_role, get_current_user_safe_v2
+from healthnavi.core.device_utils import get_device_type
 from healthnavi.models.diagnosis_session import ChatMessage, MessageFeedback
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -151,7 +152,9 @@ async def diagnose(data: DiagnosisInput, current_user: User = Depends(get_curren
                             session_name=f"Diagnosis Session - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
                             patient_summary=data.patient_data[:200] + "..." if len(data.patient_data) > 200 else data.patient_data
                         )
-                        new_session = session_service.create_session(current_user, new_session_data)
+                        new_session = session_service.create_session(
+                            current_user, new_session_data, device_type=get_device_type(request)
+                        )
                         session_id = new_session.id
                         logger.info(f"Created new diagnosis session {session_id} for user {current_user.id}")
                     
@@ -264,7 +267,12 @@ async def diagnose(data: DiagnosisInput, current_user: User = Depends(get_curren
 
 
 @router.post("/diagnose/stream")
-async def diagnose_stream(data: DiagnosisInput, current_user: User = Depends(get_current_user_safe_v2), db: Session = Depends(get_db)):
+async def diagnose_stream(
+    data: DiagnosisInput,
+    request: Request,
+    current_user: User = Depends(get_current_user_safe_v2),
+    db: Session = Depends(get_db),
+):
     """
     Generate AI-powered diagnosis with streaming response.
     Returns a StreamingResponse that sends text chunks as they are generated.
@@ -353,7 +361,9 @@ async def diagnose_stream(data: DiagnosisInput, current_user: User = Depends(get
                         session_name=f"Streaming Session - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
                         patient_summary=data.patient_data[:200] + "..." if len(data.patient_data) > 200 else data.patient_data
                     )
-                    new_session = session_service.create_session(current_user, new_session_data)
+                    new_session = session_service.create_session(
+                        current_user, new_session_data, device_type=get_device_type(request)
+                    )
                     session_id_int = new_session.id
                     logger.info(f"Created new streaming session {session_id_int} for user {current_user.id}")
                     
