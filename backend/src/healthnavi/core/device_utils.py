@@ -4,6 +4,10 @@ Uses X-Device-Type header when provided by clients, otherwise infers from User-A
 """
 import re
 
+DEVICE_PHONE = "phone"
+DEVICE_TABLET = "tablet"
+DEVICE_LAPTOP = "laptop"
+
 # User-Agent patterns (order matters: tablet before phone for Android)
 _UA_TABLET = re.compile(
     r"iPad|Android(?!.*Mobile)|Tablet|Kindle|Silk|PlayBook|webOS",
