@@ -36,6 +36,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import ai.empirico.app.R
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
@@ -415,7 +416,11 @@ fun MessageBubble(
                 else -> androidx.compose.foundation.BorderStroke(1.dp, BorderLight)
             }
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column(
+                modifier = Modifier.padding(
+                    if (!isUser && !isError) 20.dp else 16.dp
+                )
+            ) {
                 val content = message.content ?: ""
                 if (message.author == MessageAuthor.ASSISTANT && !isError) {
 
@@ -749,10 +754,11 @@ fun MessageBubble(
 
                     Text(
                         text = ai.empirico.app.util.MessageFormatter.formatMessage(content),
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            lineHeight = 28.sp // 1.8 line height matching web view
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            lineHeight = 28.sp
                         ),
-                        color = TextPrimary
+                        color = TextPrimary,
+                        textAlign = TextAlign.Start
                     )
                 } else {
                     Text(
@@ -766,20 +772,17 @@ fun MessageBubble(
                         lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
                     )
                 }
-                if (message.author == MessageAuthor.ASSISTANT && message.messageId != null) {
+                if (message.author == MessageAuthor.ASSISTANT && !isError) {
                     Spacer(modifier = Modifier.height(12.dp))
-                    val feedbackState = uiState.feedback[message.messageId]
+                    val mid = message.messageId
+                    val feedbackState = mid?.let { uiState.feedback[it] }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        // Deep search - first
                         FeedbackChip(
                             label = "Deep search",
                             icon = Icons.Filled.Psychology,
                             isActive = false,
-                            onClick = {
-                                viewModel.performDeepSearch(message)
-                            }
+                            onClick = { viewModel.performDeepSearch(message) }
                         )
-                        // Copy - second
                         FeedbackChip(
                             label = "Copy",
                             icon = Icons.Default.ContentCopy,
@@ -788,7 +791,6 @@ fun MessageBubble(
                                 clipboardManager.setText(AnnotatedString(message.content ?: ""))
                             }
                         )
-                        // Share - third
                         FeedbackChip(
                             label = "Share",
                             icon = Icons.Default.Share,
@@ -802,24 +804,20 @@ fun MessageBubble(
                                 context.startActivity(Intent.createChooser(shareIntent, "Share via"))
                             }
                         )
-                        // Useful (Helpful) - fourth
-                        FeedbackChip(
-                            label = "Useful",
-                            icon = Icons.Default.ThumbUp,
-                            isActive = feedbackState == "helpful",
-                            onClick = {
-                                viewModel.openFeedbackDialog(message.messageId!!, "helpful")
-                            }
-                        )
-                        // Not useful - fifth
-                        FeedbackChip(
-                            label = "Not useful",
-                            icon = Icons.Default.ThumbDown,
-                            isActive = feedbackState == "not_helpful",
-                            onClick = {
-                                viewModel.openFeedbackDialog(message.messageId!!, "not_helpful")
-                            }
-                        )
+                        if (mid != null) {
+                            FeedbackChip(
+                                label = "Useful",
+                                icon = Icons.Default.ThumbUp,
+                                isActive = feedbackState == "helpful",
+                                onClick = { viewModel.openFeedbackDialog(mid, "helpful") }
+                            )
+                            FeedbackChip(
+                                label = "Not useful",
+                                icon = Icons.Default.ThumbDown,
+                                isActive = feedbackState == "not_helpful",
+                                onClick = { viewModel.openFeedbackDialog(mid, "not_helpful") }
+                            )
+                        }
                     }
                 }
             }

@@ -14,10 +14,16 @@ import com.google.gson.JsonParser
 import ai.empirico.app.ui.theme.Primary500
 import ai.empirico.app.ui.theme.TextPrimary
 import ai.empirico.app.ui.theme.Gray100
+import ai.empirico.app.ui.theme.CodeBlockBackground
 
 /**
- * Formats AI responses similar to the frontend implementation.
- * Handles markdown formatting, JSON responses, and medical-specific enhancements.
+ * Formats AI responses for readability. Uses:
+ * - WCAG‑aligned spacing: line height ≥1.5× font (handled in ChatScreen), clear
+ *   block separation via fixMarkdownSpacing and parseMarkdown.
+ * - Consistent end-of-paragraph: newline when followed by blank, heading, list,
+ *   blockquote, code, or rule.
+ * - One blank above headings (except first), one blank below; one blank before
+ *   lists and blockquotes, after lists and blockquotes.
  */
 object MessageFormatter {
     
@@ -153,21 +159,17 @@ object MessageFormatter {
      * Formats markdown text with medical-specific enhancements
      */
     private fun formatMarkdown(markdown: String): AnnotatedString {
-        // Decode HTML entities
-        var processed = ai.empirico.app.util.MessageFormatter.decodeHtmlEntities(markdown)
-        
-        // Fix markdown spacing
-        processed = ai.empirico.app.util.MessageFormatter.fixMarkdownSpacing(processed)
-        
-        // Convert **BOLD HEADINGS** to proper headings
-        processed = ai.empirico.app.util.MessageFormatter.convertBoldHeadings(processed)
+        var processed = decodeHtmlEntities(markdown)
+        processed = fixMarkdownSpacing(processed)
+        // Fix emoji on separate line from heading (match frontend)
+        processed = processed.replace(Regex("(##\\s+\\p{So})\\s*\\n\\s*([A-Z])"), "$1 $2")
+        processed = convertBoldHeadings(processed)
         
         // Clean up multiple blank lines
         processed = processed.replace(Regex("\n{3,}"), "\n\n")
         processed = processed.replace(Regex("^\n+"), "")
         
-        // Parse markdown to AnnotatedString
-        return ai.empirico.app.util.MessageFormatter.parseMarkdown(processed)
+        return parseMarkdown(processed)
     }
     
     /**
@@ -186,41 +188,76 @@ object MessageFormatter {
     /**
      * Fixes markdown spacing issues
      */
+    /**
+     * Fixes markdown spacing so headings, paragraphs, lists, and blockquotes
+     * are clearly separated. Aligns with WCAG-style block separation.
+     */
     private fun fixMarkdownSpacing(markdown: String): String {
         var fixed = markdown
         
-        // Strip closing ## from headings
+        // Strip closing ## from headings (## Heading ## -> ## Heading)
         fixed = fixed.replace(Regex("(#{1,6})\\s+([\\s\\S]+?)\\s+\\1\\s*$", RegexOption.MULTILINE), "$1 $2")
         
-        // Add blank lines before headings
+        // Split run‑on: "text## Heading" -> "text\n\n## Heading"
+        fixed = fixed.replace(Regex("([^\\n#])(#{1,6}\\s)"), "$1\n\n$2")
+        
+        // Blank before headings
         fixed = fixed.replace(Regex("([^\\n])\\n(#{1,6}\\s)"), "$1\n\n$2")
         
-        // Add blank lines between consecutive headings
+        // Blank between consecutive headings
         fixed = fixed.replace(Regex("(#{1,6}\\s[^\\n]+)\\n(#{1,6}\\s)"), "$1\n\n$2")
         
-        // Add blank line after heading if followed by content
+        // Blank after heading when followed by content
         fixed = fixed.replace(Regex("(#{1,6}[^\\n]+)\\n([^#\\n])"), "$1\n\n$2")
         
-        // Add blank lines before lists
+        // Blank before numbered and bullet lists
         fixed = fixed.replace(Regex("([^\\n])\\n(\\d+\\.\\s)"), "$1\n\n$2")
+        fixed = fixed.replace(Regex("(#{1,6}[^\\n]+)\\n(\\d+\\.\\s)"), "$1\n\n$2")
         fixed = fixed.replace(Regex("([^\\n])\\n([-*]\\s)"), "$1\n\n$2")
         
+        // Blank after lists (before non‑list content)
+        fixed = fixed.replace(Regex("(\\n(?:\\d+\\.|-|\\*)\\s[^\\n]+)\\n([^\\n\\d\\-\\*#][^\\n]*)"), "$1\n\n$2")
+        
+        // Blank before and after blockquotes
+        fixed = fixed.replace(Regex("([^\\n>])\\n(>\\s)"), "$1\n\n$2")
+        fixed = fixed.replace(Regex("(>\\s[^\\n]+)\\n([^>\\n#][^\\n]*)"), "$1\n\n$2")
+        
         return fixed
+    }
+    
+    /** Icon mapping for headings (matches frontend markdown.ts iconMap) */
+    private val iconMap = mapOf(
+        "question" to "📋", "rationale" to "🧠", "impression" to "💡", "clinical impression" to "💡",
+        "management" to "⚕️", "further management" to "⚕️", "sources" to "📚", "knowledge base" to "📚",
+        "alert" to "🚨", "clinical overview" to "🏥", "differential diagnos" to "🔍",
+        "immediate workup" to "🔬", "workup" to "🔬", "red flags" to "🚩", "treatment" to "💊",
+        "medication" to "💊", "history" to "📊", "examination" to "🔬", "investigation" to "🔬",
+        "assessment" to "📋", "plan" to "📝", "follow-up" to "📅", "prognosis" to "📈",
+    )
+    
+    private fun iconForHeading(lowerText: String): String {
+        for ((key, value) in iconMap) {
+            if (lowerText.contains(key)) return "$value "
+        }
+        return ""
     }
     
     /**
      * Converts **BOLD HEADINGS** to proper markdown headings
      */
     private fun convertBoldHeadings(text: String): String {
+        // Match frontend src/utils/markdown.ts sectionHeadings
         val sectionHeadings = listOf(
             "CLINICAL OVERVIEW",
-            "DIFFERENTIAL DIAGNOSIS",
-            "DIFFERENTIAL DIAGNOSES",
-            "IMMEDIATE WORKUP & INVESTIGATIONS",
-            "MANAGEMENT & RECOMMENDATIONS",
-            "RED FLAGS / DANGER SIGNS",
-            "ADDITIONAL INFORMATION NEEDED",
-            "SOURCES"
+            "Explanation", "Question", "Drug Interactions", "Drug-Drug Interaction",
+            "Rationale", "Impression", "Conclusion", "Management Considerations",
+            "Important Considerations", "Clinical Considerations", "Further Management",
+            "Summary", "Differential Diagnosis", "Management", "References",
+            "Investigations / Workup", "DIFFERENTIAL DIAGNOSES",
+            "IMMEDIATE WORKUP & INVESTIGATIONS", "IMMEDIATE WORKUP &amp; INVESTIGATIONS",
+            "MANAGEMENT & RECOMMENDATIONS", "MANAGEMENT &amp; RECOMMENDATIONS",
+            "RED FLAGS / DANGER SIGNS", "RED FLAGS \\/ DANGER SIGNS",
+            "ADDITIONAL INFORMATION NEEDED", "SOURCES"
         )
         
         var result = text
@@ -243,58 +280,47 @@ object MessageFormatter {
             var i = 0
             var lastWasParagraph = false
             var lastWasBlank = false
-            var isFirstElement = true // Track if this is the first element (no top spacing)
+            var lastWasList = false
+            var isFirstElement = true
             
             while (i < lines.size) {
                 val line = lines[i]
                 
                 when {
-                    // Headings
+                    // Headings — one empty line above (match frontend)
                     line.matches(Regex("^#{1,6}\\s+.+")) -> {
-                        // Add spacing before heading (0.75em = ~1 line) unless it's the first element
-                        if (!isFirstElement) {
-                            if (lastWasParagraph || lastWasBlank) {
-                                appendLine() // Spacing before heading
-                            } else {
-                                // Even if not coming from paragraph/blank, add spacing for consistency
-                                appendLine()
-                            }
-                        }
+                        if (!isFirstElement) appendLine()
                         
                         val level = line.takeWhile { it == '#' }.length
                         val text = line.substringAfter("#").trim()
-                        val (emoji, headingText) = ai.empirico.app.util.MessageFormatter.extractEmoji(
-                            text
-                        )
+                        val (emoji, headingText) = extractEmoji(text)
+                        val prefix = if (emoji.isNotEmpty()) emoji else iconForHeading(headingText.lowercase())
                         
-                        addHeading(emoji + headingText, level)
-                        appendLine()
+                        addHeading(prefix + headingText, level)
                         lastWasParagraph = false
                         lastWasBlank = false
+                        lastWasList = false
                         isFirstElement = false
                         i++
                     }
                     
-                    // Unordered lists
+                    // Unordered lists — blank before if after other block; no line between items (match frontend listitem)
                     line.matches(Regex("^[-*]\\s+.+")) -> {
-                        if (!isFirstElement && (lastWasParagraph || lastWasBlank)) {
-                            appendLine() // Single line break before list
-                        }
+                        if (!isFirstElement && (lastWasParagraph || lastWasBlank || lastWasList)) appendLine()
                         val content = line.substringAfter("- ").substringAfter("* ").trim()
                         append("• ")
                         appendFormattedText(content)
                         appendLine()
                         lastWasParagraph = false
                         lastWasBlank = false
+                        lastWasList = true
                         isFirstElement = false
                         i++
                     }
                     
-                    // Ordered lists
+                    // Ordered lists — blank before if after other block; no line between items (match frontend)
                     line.matches(Regex("^\\d+\\.\\s+.+")) -> {
-                        if (!isFirstElement && (lastWasParagraph || lastWasBlank)) {
-                            appendLine() // Single line break before list
-                        }
+                        if (!isFirstElement && (lastWasParagraph || lastWasBlank || lastWasList)) appendLine()
                         val match = Regex("^(\\d+)\\.\\s+(.+)").find(line)
                         if (match != null) {
                             val number = match.groupValues[1]
@@ -305,35 +331,42 @@ object MessageFormatter {
                         }
                         lastWasParagraph = false
                         lastWasBlank = false
+                        lastWasList = true
                         isFirstElement = false
                         i++
                     }
                     
-                    // Blockquotes
+                    // Blockquotes — blank before/after; icon by content (match frontend blockquote)
                     line.startsWith("> ") -> {
-                        if (!isFirstElement && (lastWasParagraph || lastWasBlank)) {
-                            appendLine() // Single line break before blockquote
-                        }
+                        if (!isFirstElement && (lastWasParagraph || lastWasBlank || lastWasList)) appendLine()
                         val quote = line.substringAfter("> ").trim()
+                        val lower = quote.lowercase()
+                        val icon = when {
+                            lower.contains("note:") || lower.contains("📝") -> "📝"
+                            lower.contains("warning:") || lower.contains("⚠️") -> "⚠️"
+                            lower.contains("tip:") || lower.contains("💡") -> "💡"
+                            lower.contains("important:") || lower.contains("❗") -> "❗"
+                            else -> "💬"
+                        }
                         pushStyle(SpanStyle(
                             fontStyle = FontStyle.Italic,
-                            background = Gray100,
+                            background = Primary500.copy(alpha = 0.07f),
                             color = TextPrimary
                         ))
-                        append("💬 $quote")
+                        append(" $icon $quote ")
                         pop()
+                        appendLine()
                         appendLine()
                         lastWasParagraph = false
                         lastWasBlank = false
+                        lastWasList = false
                         isFirstElement = false
                         i++
                     }
                     
                     // Code blocks (simple detection)
                     line.startsWith("```") -> {
-                        if (!isFirstElement && (lastWasParagraph || lastWasBlank)) {
-                            appendLine() // Single line break before code block
-                        }
+                        if (!isFirstElement && (lastWasParagraph || lastWasBlank || lastWasList)) appendLine()
                         val language = line.substringAfter("```").trim()
                         i++
                         val codeLines = mutableListOf<String>()
@@ -343,73 +376,66 @@ object MessageFormatter {
                         }
                         if (i < lines.size) i++ // Skip closing ```
                         
+                        val padded = codeLines.joinToString("\n") { "  $it" }
                         pushStyle(SpanStyle(
                             fontFamily = FontFamily.Monospace,
-                            background = Gray100,
+                            fontSize = 13.sp,
+                            background = CodeBlockBackground,
                             color = TextPrimary
                         ))
-                        append(codeLines.joinToString("\n"))
+                        append("  $padded")
                         pop()
                         appendLine()
                         lastWasParagraph = false
                         lastWasBlank = false
+                        lastWasList = false
                         isFirstElement = false
                     }
                     
                     // Horizontal rule
                     line.matches(Regex("^[-*_]{3,}$")) -> {
-                        if (!isFirstElement) {
-                            appendLine()
-                        }
-                        append("─".repeat(20))
+                        if (!isFirstElement) appendLine()
+                        pushStyle(SpanStyle(color = TextPrimary.copy(alpha = 0.35f)))
+                        append("─".repeat(24))
+                        pop()
                         appendLine()
                         lastWasParagraph = false
                         lastWasBlank = false
+                        lastWasList = false
                         isFirstElement = false
                         i++
                     }
                     
-                    // Regular paragraph
+                    // Regular paragraph — ensure clean end-of-paragraph and spacing (WCAG-style)
                     else -> {
                         if (line.isNotBlank()) {
-                            // If this starts a new paragraph (after a blank line), add single spacing
-                            if (lastWasBlank && lastWasParagraph) {
-                                appendLine() // Single line break between paragraphs (matches web view spacing)
-                            }
+                            // Blank line above: between paragraphs, after list, or after heading+blank
+                            if ((lastWasBlank && lastWasParagraph) || lastWasList) appendLine()
+                            lastWasList = false
                             
-                            // Append the paragraph line
                             appendFormattedText(line)
                             
-                            // Check what comes next
                             val nextLine = if (i + 1 < lines.size) lines[i + 1] else ""
                             
-                            if (nextLine.isBlank()) {
-                                // Next is blank line - end of paragraph
-                                // Don't add newline here - the blank line itself provides spacing
-                                // We'll add spacing when we process the next paragraph
-                            } else if (nextLine.matches(Regex("^#{1,6}\\s+.+")) ||
-                                      nextLine.matches(Regex("^[-*]\\s+.+")) ||
-                                      nextLine.matches(Regex("^\\d+\\.\\s+.+")) ||
-                                      nextLine.startsWith("> ") ||
-                                      nextLine.startsWith("```") ||
-                                      nextLine.matches(Regex("^[-*_]{3,}$"))) {
-                                // Next is special element - end of paragraph, add one newline
-                                appendLine()
-                            } else {
-                                // Next line is continuation of same paragraph - add space, no newline
-                                append(" ")
+                            when {
+                                nextLine.isBlank() ->
+                                    appendLine() // End of paragraph (or end of document)
+                                nextLine.matches(Regex("^#{1,6}\\s+.+")) ||
+                                    nextLine.matches(Regex("^[-*]\\s+.+")) ||
+                                    nextLine.matches(Regex("^\\d+\\.\\s+.+")) ||
+                                    nextLine.startsWith("> ") ||
+                                    nextLine.startsWith("```") ||
+                                    nextLine.matches(Regex("^[-*_]{3,}$")) ->
+                                    appendLine() // End of paragraph before heading, list, blockquote, code, rule
+                                else ->
+                                    append(" ") // Same paragraph continues
                             }
                             
                             lastWasParagraph = true
                             lastWasBlank = false
                             isFirstElement = false
                         } else {
-                            // Blank line - paragraph separator, don't add anything here
-                            // The spacing will be added when we process the next paragraph
-                            if (lastWasParagraph) {
-                                lastWasBlank = true
-                            }
-                            // Don't append anything for blank lines
+                            if (lastWasParagraph) lastWasBlank = true
                         }
                         i++
                     }
@@ -517,10 +543,11 @@ object MessageFormatter {
                     val content = codeMatch!!.groupValues[1]
                     pushStyle(SpanStyle(
                         fontFamily = FontFamily.Monospace,
-                        background = Gray100,
+                        fontSize = 13.sp,
+                        background = CodeBlockBackground,
                         color = TextPrimary
                     ))
-                    append(content)
+                    append(" $content ")
                     pop()
                 }
                 "link" -> {
@@ -556,17 +583,16 @@ object MessageFormatter {
             else -> 21.sp
         }
         
-        // All headings use primary color (teal) matching web view
+        // Match frontend: var(--primary), margin after heading
         pushStyle(SpanStyle(
             fontSize = fontSize,
-            fontWeight = FontWeight.SemiBold, // 600 weight
-            color = Primary500 // Use theme primary color (teal) instead of blue
+            fontWeight = FontWeight.SemiBold,
+            color = Primary500
         ))
         append(text)
         pop()
-        
-        // Add spacing after heading (matching web view margin-bottom)
         appendLine()
+        appendLine() // Blank line after heading when followed by content (match frontend fixMarkdownSpacing)
     }
 }
 

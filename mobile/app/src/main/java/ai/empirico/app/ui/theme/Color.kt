@@ -37,6 +37,7 @@ val Warning600 = Color(0xFFD97706)
 // Neutral Grays - Cohesive Scale
 val Gray50 = Color(0xFFF9FAFB)    // Lightest background
 val Gray100 = Color(0xFFF3F4F6)    // Light background
+val CodeBlockBackground = Color(0xFFEEF2F6)  // Slightly darker for code blocks
 val Gray200 = Color(0xFFE5E7EB)    // Border light
 val Gray300 = Color(0xFFD1D5DB)    // Border medium
 val Gray400 = Color(0xFF9CA3AF)    // Text muted

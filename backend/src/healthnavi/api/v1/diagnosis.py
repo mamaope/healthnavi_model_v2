@@ -75,12 +75,13 @@ async def diagnosis_health():
 async def diagnose(
     data: DiagnosisInput,
     request: Request,
-    current_user: User = Depends(get_current_user_safe_v2),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
     Generate AI-powered diagnosis based on patient data.
-    Now allows unauthenticated access for demo purposes.
+    Requires authentication so messages are always stored and message_id is
+    returned for feedback (Useful / Not useful).
     """
     with ResponseTimer() as timer:
         try:
@@ -92,9 +93,7 @@ async def diagnose(
                     execution_time=timer.get_execution_time()
                 )
 
-            # Handle both authenticated and unauthenticated users
-            user_info = f"{current_user.username} (role: {current_user.role})" if current_user else "unauthenticated user"
-            logger.info(f"Diagnosis request from: {user_info}")
+            logger.info(f"Diagnosis request from: {current_user.username} (role: {current_user.role})")
             logger.info(f"Patient data length: {len(data.patient_data)} characters")
 
             # Get chat history from session if session_id is provided
@@ -121,7 +120,7 @@ async def diagnose(
             
             try:
                 # Get user's medical professional type for role-based prompts
-                user_role = current_user.medical_professional_type if current_user else None
+                user_role = current_user.medical_professional_type
                 response, diagnosis_complete, prompt_type, followup_questions = await generate_response(
                     query=data.patient_data,
                     chat_history=chat_history,
@@ -149,73 +148,63 @@ async def diagnose(
                     execution_time=timer.get_execution_time()
                 )
 
-            # Store messages in session only for authenticated users
-            # Create session only when saving the first user message (prevents empty sessions)
-            if current_user:  # Only store messages for authenticated users
-                try:
-                    # Create session if it doesn't exist (only when saving first user message)
-                    if not session_id:
-                        from healthnavi.schemas import ChatSessionCreate
-                        new_session_data = ChatSessionCreate(
-                            session_name=f"Diagnosis Session - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
-                            patient_summary=data.patient_data[:200] + "..." if len(data.patient_data) > 200 else data.patient_data
-                        )
-                        new_session = session_service.create_session(
-                            current_user, new_session_data, device_type=get_device_type(request)
-                        )
-                        session_id = new_session.id
-                        logger.info(f"Created new diagnosis session {session_id} for user {current_user.id}")
-                    
-                    # Add user message (this creates the session if needed)
-                    user_message = ChatMessageCreate(
-                        content=data.patient_data,
-                        message_type="user",
-                        patient_data=data.patient_data,
-                        diagnosis_complete=False
+            # Store user and AI messages so message_id is always returned for feedback
+            try:
+                if not session_id:
+                    from healthnavi.schemas import ChatSessionCreate
+                    new_session_data = ChatSessionCreate(
+                        session_name=f"Diagnosis Session - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
+                        patient_summary=data.patient_data[:200] + "..." if len(data.patient_data) > 200 else data.patient_data
                     )
-                    user_msg_response = session_service.add_message(session_id, current_user, user_message)
-                    
-                    # Only save AI message if user message was saved successfully
-                    if user_msg_response:
-                        # Add AI response message
-                        ai_message = ChatMessageCreate(
-                            content=response,
-                            message_type="assistant",
-                            patient_data=data.patient_data,
-                            diagnosis_complete=diagnosis_complete
-                        )
-                        ai_msg_response = session_service.add_message(session_id, current_user, ai_message)
-                        message_id = ai_msg_response.id if ai_msg_response else None
-                        
+                    new_session = session_service.create_session(
+                        current_user, new_session_data, device_type=get_device_type(request)
+                    )
+                    session_id = new_session.id
+                    logger.info(f"Created new diagnosis session {session_id} for user {current_user.id}")
+
+                user_message = ChatMessageCreate(
+                    content=data.patient_data,
+                    message_type="user",
+                    patient_data=data.patient_data,
+                    diagnosis_complete=False
+                )
+                user_msg_response = session_service.add_message(session_id, current_user, user_message)
+
+                if user_msg_response:
+                    ai_message = ChatMessageCreate(
+                        content=response,
+                        message_type="assistant",
+                        patient_data=data.patient_data,
+                        diagnosis_complete=diagnosis_complete
+                    )
+                    ai_msg_response = session_service.add_message(session_id, current_user, ai_message)
+                    if ai_msg_response is not None:
+                        message_id = ai_msg_response.id
                         logger.info(f"Stored messages in session {session_id}, message_id: {message_id}")
                     else:
-                        logger.warning(f"User message not saved, skipping AI message storage")
-                        # Clean up empty session if it was just created
-                        if session_id:
-                            try:
-                                session_service.delete_session(session_id, current_user)
-                                logger.info(f"Cleaned up empty session {session_id}")
-                            except Exception as cleanup_error:
-                                logger.warning(f"Could not clean up empty session {session_id}: {cleanup_error}")
-                    
-                except Exception as e:
-                    logger.warning(f"Could not store messages: {e}")
-                    # Clean up session if it was just created and has no messages
-                    if session_id and current_user:
+                        logger.warning("add_message for AI returned None; message_id will be null and feedback unavailable")
+                else:
+                    logger.warning("User message not saved, skipping AI message storage")
+                    if session_id:
                         try:
-                            # Check if session has any messages
-                            from healthnavi.models.diagnosis_session import ChatMessage
-                            message_count = db.query(func.count(ChatMessage.id)).filter(
-                                ChatMessage.session_id == session_id
-                            ).scalar() or 0
-                            if message_count == 0:
-                                session_service.delete_session(session_id, current_user)
-                                logger.info(f"Cleaned up empty session {session_id} after error")
+                            session_service.delete_session(session_id, current_user)
+                            logger.info(f"Cleaned up empty session {session_id}")
                         except Exception as cleanup_error:
-                            logger.warning(f"Could not clean up empty session after error: {cleanup_error}")
-                    # Continue without storing
-            else:
-                logger.info("Skipping message storage for unauthenticated user")
+                            logger.warning(f"Could not clean up empty session {session_id}: {cleanup_error}")
+
+            except Exception as e:
+                logger.warning(f"Could not store messages: {e}", exc_info=True)
+                if session_id:
+                    try:
+                        from healthnavi.models.diagnosis_session import ChatMessage
+                        message_count = db.query(func.count(ChatMessage.id)).filter(
+                            ChatMessage.session_id == session_id
+                        ).scalar() or 0
+                        if message_count == 0:
+                            session_service.delete_session(session_id, current_user)
+                            logger.info(f"Cleaned up empty session {session_id} after error")
+                    except Exception as cleanup_error:
+                        logger.warning(f"Could not clean up empty session after error: {cleanup_error}")
 
             # Build updated chat history
             updated_chat_history = (
@@ -252,6 +241,7 @@ async def diagnose(
                     followup_questions=[]
                 )
             
+            logger.info(f"Diagnosis response: session_id={session_id}, message_id={message_id}")
             return create_success_response(
                 data=diagnosis_data,
                 status_code=200,
