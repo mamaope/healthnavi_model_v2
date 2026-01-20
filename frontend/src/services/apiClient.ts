@@ -579,11 +579,17 @@ export const adminApi = {
       'GET',
     )
   },
-  getDeviceStatistics(days: number = 30) {
+  getDeviceStatistics(days: number = 30, debug?: boolean) {
     const d = Math.max(1, Math.min(365, typeof days === 'number' && !isNaN(days) ? Math.floor(days) : 30))
-    return apiFetch<{ success: boolean; data: { by_type: Record<string, number>; total: number } }>(
-      `/admin/metrics/devices?days=${d}`,
+    return apiFetch<{ success: boolean; data: { by_type: Record<string, number>; total: number; debug?: { table_exists: boolean; raw_count: number; error?: string } } }>(
+      `/admin/metrics/devices?days=${d}${debug ? '&debug=1' : ''}`,
       'GET',
+    )
+  },
+  seedTestDeviceActivity() {
+    return apiFetch<{ success: boolean; data: { message: string } }>(
+      '/admin/metrics/devices/seed-test',
+      'POST',
     )
   },
   getAlerts(unreadOnly: boolean = false) {

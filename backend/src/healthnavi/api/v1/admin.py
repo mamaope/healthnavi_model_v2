@@ -9,13 +9,14 @@ from datetime import datetime
 from typing import Optional, Union, Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from healthnavi.core.database import get_db
 from healthnavi.core.response_utils import create_success_response, create_error_response, ResponseTimer
 from healthnavi.models.user import User
 from healthnavi.api.v1.auth import require_admin_role, get_password_hash
 from healthnavi.services.admin_service import AdminService
-from healthnavi.models.admin import SafetyEvent, Survey, Alert, AuditLog, SafetyEventStatus, SafetyEventSeverity
+from healthnavi.models.admin import SafetyEvent, Survey, Alert, AuditLog, SafetyEventStatus, SafetyEventSeverity, DeviceActivityLog
 from healthnavi.schemas import StandardResponse
 from pydantic import BaseModel
 
@@ -284,23 +285,13 @@ async def get_pmf_metrics(
 @router.get("/metrics/devices", response_model=StandardResponse)
 async def get_device_metrics(
     days: str = Query("30", description="Number of days for statistics"),
+    debug: Optional[str] = Query(None, description="Set to 1 to include table_exists and raw_count"),
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db)
 ):
     """
     Get device type statistics (phone, tablet, laptop) for the admin dashboard.
-    
-    Example request:
-        GET /api/v2/admin/metrics/devices?days=30
-    
-    Example response (200):
-        {
-            "success": 1,
-            "data": {
-                "by_type": { "phone": 10, "tablet": 2, "laptop": 50, "unknown": 0 },
-                "total": 62
-            }
-        }
+    ?debug=1 adds table_exists and raw_count for troubleshooting.
     """
     with ResponseTimer() as timer:
         try:
@@ -308,6 +299,12 @@ async def get_device_metrics(
             days_int = parse_days_parameter(days, default=30, min_days=1, max_days=365)
             service = AdminService(db)
             data = service.get_device_statistics(days=days_int)
+            if debug == "1":
+                try:
+                    raw = db.execute(text("SELECT count(*) FROM device_activity_log")).scalar()
+                    data = {**data, "debug": {"table_exists": True, "raw_count": raw}}
+                except Exception as e:
+                    data = {**data, "debug": {"table_exists": False, "raw_count": 0, "error": str(e)}}
             return create_success_response(
                 data=data,
                 status_code=200,
@@ -317,6 +314,33 @@ async def get_device_metrics(
             logger.error(f"Error getting device metrics: {e}", exc_info=True)
             return create_error_response(
                 message="Failed to retrieve device metrics",
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
+@router.post("/metrics/devices/seed-test", response_model=StandardResponse)
+async def seed_test_device_activity(
+    current_user: User = Depends(require_admin_role),
+    db: Session = Depends(get_db)
+):
+    """
+    Insert one test row (laptop, login) into device_activity_log.
+    Use this to verify the table exists and inserts work. Then refresh the Device Usage panel.
+    """
+    with ResponseTimer() as timer:
+        try:
+            service = AdminService(db)
+            service.insert_test_device_activity(current_user.id)
+            return create_success_response(
+                data={"message": "Test row inserted. Refresh the Device Usage panel to see it."},
+                status_code=200,
+                execution_time=timer.get_execution_time()
+            )
+        except Exception as e:
+            logger.error(f"Error seeding test device activity: {e}", exc_info=True)
+            return create_error_response(
+                message=f"Failed to insert test row: {e}",
                 status_code=500,
                 execution_time=timer.get_execution_time()
             )

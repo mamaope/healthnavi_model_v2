@@ -12,8 +12,19 @@ export default function DeviceStatisticsPanel({ devices: devicesProp, days = 30 
   const [devices, setDevices] = useState<{ by_type?: Record<string, number>; total?: number } | null>(devicesProp ?? null)
   const [loading, setLoading] = useState(!devicesProp)
   const [error, setError] = useState<string | null>(null)
+  const [seeding, setSeeding] = useState(false)
 
   const daysNum = typeof days === 'number' && !isNaN(days) ? Math.max(1, Math.min(365, Math.floor(days))) : 30
+
+  const runSeedTest = () => {
+    setSeeding(true)
+    setError(null)
+    adminApi.seedTestDeviceActivity()
+      .then(() => adminApi.getDeviceStatistics(daysNum))
+      .then((r) => { if (r.success && r.data) setDevices(r.data) })
+      .catch((e) => setError(e?.message || 'Seed test failed'))
+      .finally(() => setSeeding(false))
+  }
 
   useEffect(() => {
     if (devicesProp != null) {
@@ -49,6 +60,15 @@ export default function DeviceStatisticsPanel({ devices: devicesProp, days = 30 
     <div className="admin-panel">
       <div className="panel-header">
         <h2>Device Usage</h2>
+        <button
+          type="button"
+          className="btn-refresh"
+          onClick={runSeedTest}
+          disabled={seeding}
+          title="Insert a test row to verify the table and pipeline"
+        >
+          {seeding ? 'Inserting…' : 'Insert test row'}
+        </button>
       </div>
       <div className="panel-content">
         <p className="panel-description" style={{ marginTop: 0, marginBottom: '1rem', color: '#6b7280', fontSize: '0.875rem' }}>
@@ -63,7 +83,7 @@ export default function DeviceStatisticsPanel({ devices: devicesProp, days = 30 
         {error && <p style={{ color: '#dc2626', margin: 0 }}>{error}</p>}
         {!loading && !error && total === 0 && (
           <p style={{ color: '#6b7280', margin: 0 }}>
-            No device data for this period. Data is recorded when users log in or start a chat session. Ensure the backend has run the <code>add_device_activity_log</code> migration.
+            No device data yet. Data is recorded when users log in or start a new chat session. Use <strong>Insert test row</strong> above to verify the pipeline, or check backend logs for &quot;Failed to log device activity&quot; if you expect data.
           </p>
         )}
         {!loading && !error && total > 0 && (

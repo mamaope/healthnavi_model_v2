@@ -508,11 +508,22 @@ class AdminService:
             self.db.add(entry)
             self.db.commit()
         except Exception as e:
-            logger.warning(f"Failed to log device activity: {e}")
+            logger.warning(f"Failed to log device activity: {e}", exc_info=True)
             try:
                 self.db.rollback()
             except Exception:
                 pass
+
+    def insert_test_device_activity(self, user_id: int) -> None:
+        """Insert one test row (laptop, login) for admin verification. Raises on failure."""
+        entry = DeviceActivityLog(
+            user_id=user_id,
+            device_type="laptop",
+            activity="login",
+            created_at=datetime.utcnow().isoformat(),
+        )
+        self.db.add(entry)
+        self.db.commit()
 
     def get_all_metrics(self, days: int = 30) -> Dict[str, Any]:
         """Get all dashboard metrics."""
