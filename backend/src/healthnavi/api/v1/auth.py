@@ -24,6 +24,12 @@ from healthnavi.models.user import User
 from healthnavi.schemas import UserCreate, UserResponse, UserUpdate, Token, LoginRequest, StandardResponse, SuccessResponse, EmailVerificationRequest, ResendVerificationRequest, ForgotPasswordRequest, ResetPasswordRequest, GoogleSignInMobileRequest
 from pydantic import BaseModel, Field
 
+from healthnavi.services.data_deletion_service import (
+    request_data_deletion,
+    cancel_data_deletion,
+    get_deletion_status,
+)
+
 # Import email service with error handling
 try:
     from healthnavi.services.email_service import email_service
@@ -936,6 +942,96 @@ def update_user_profile(
                 status_code=500,
                 execution_time=timer.get_execution_time()
             )
+
+
+# --- Data Deletion (Privacy / Right to Erasure) ---
+
+
+@router.post(
+    "/request-data-deletion",
+    response_model=StandardResponse,
+    responses={
+        200: {"description": "Deletion request recorded; data will be removed in 6 months"},
+        400: {"description": "Deletion request already pending"},
+        401: {"description": "Unauthorized"},
+        500: {"description": "Internal server error"},
+    },
+)
+def request_user_data_deletion(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Request permanent deletion of your data for privacy compliance.
+
+    Your data will be **permanently deleted 6 months** after this request.
+    You may cancel the request at any time before then via /cancel-data-deletion.
+    """
+    with ResponseTimer() as timer:
+        ok, msg = request_data_deletion(db, current_user)
+        if not ok:
+            return create_error_response(
+                message=msg,
+                status_code=400,
+                execution_time=timer.get_execution_time(),
+            )
+        return create_success_response(
+            data={"message": msg},
+            status_code=200,
+            execution_time=timer.get_execution_time(),
+        )
+
+
+@router.post(
+    "/cancel-data-deletion",
+    response_model=StandardResponse,
+    responses={
+        200: {"description": "Deletion request cancelled"},
+        400: {"description": "No pending deletion request"},
+        401: {"description": "Unauthorized"},
+        500: {"description": "Internal server error"},
+    },
+)
+def cancel_user_data_deletion(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Cancel a pending data deletion request. Your data will be retained."""
+    with ResponseTimer() as timer:
+        ok, msg = cancel_data_deletion(db, current_user)
+        if not ok:
+            return create_error_response(
+                message=msg,
+                status_code=400,
+                execution_time=timer.get_execution_time(),
+            )
+        return create_success_response(
+            data={"message": msg},
+            status_code=200,
+            execution_time=timer.get_execution_time(),
+        )
+
+
+@router.get(
+    "/deletion-status",
+    response_model=StandardResponse,
+    responses={
+        200: {"description": "Deletion status (pending or not, scheduled date)"},
+        401: {"description": "Unauthorized"},
+        500: {"description": "Internal server error"},
+    },
+)
+def deletion_status(
+    current_user: User = Depends(get_current_user),
+):
+    """Get whether you have a pending data deletion request and when it will be processed."""
+    with ResponseTimer() as timer:
+        data = get_deletion_status(current_user)
+        return create_success_response(
+            data=data,
+            status_code=200,
+            execution_time=timer.get_execution_time(),
+        )
 
 
 class ChangePasswordRequest(BaseModel):

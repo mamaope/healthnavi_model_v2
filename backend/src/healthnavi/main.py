@@ -2,6 +2,7 @@
 Main FastAPI application for HealthNavi AI CDSS.
 """
 
+import asyncio
 import logging
 import sys
 import uuid
@@ -78,10 +79,36 @@ async def lifespan(app: FastAPI):
         logger.info("Application will continue - Transcription will load on first use")
 
     logger.info("Application startup completed successfully")
+
+    # Background job: process pending user data deletions (6 months after request)
+    async def _run_pending_deletions_job():
+        from healthnavi.core.database import SessionLocal
+        from healthnavi.services.data_deletion_service import process_pending_deletions
+        # First run after 60s to let DB be ready; then every 24h
+        await asyncio.sleep(60)
+        while True:
+            try:
+                db = SessionLocal()
+                try:
+                    n = process_pending_deletions(db)
+                    if n:
+                        logger.info(f"Data deletion job: permanently deleted {n} user(s) per deferred privacy requests.")
+                finally:
+                    db.close()
+            except Exception as e:
+                logger.exception(f"Data deletion job error: {e}")
+            await asyncio.sleep(86400)  # 24 hours
+
+    _deletion_task = asyncio.create_task(_run_pending_deletions_job())
     
     yield
     
     # Shutdown
+    _deletion_task.cancel()
+    try:
+        await _deletion_task
+    except asyncio.CancelledError:
+        pass
     logger.info("Shutting down HealthNavi AI CDSS application...")
 
 

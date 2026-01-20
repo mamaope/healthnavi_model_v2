@@ -354,7 +354,7 @@ export function Sidebar({
                     className="sidebar-user-item"
                     onClick={() => {
                       setIsUserMenuOpen(false)
-                      window.alert('Settings page coming soon!')
+                      navigate('/settings')
                     }}
                   >
                     <i className="fas fa-cog" />
@@ -378,7 +378,7 @@ export function Sidebar({
                     className="sidebar-user-item"
                     onClick={() => {
                       setIsUserMenuOpen(false)
-                      window.alert('Settings page coming soon!')
+                      navigate('/settings')
                     }}
                   >
                     <i className="fas fa-cog" />

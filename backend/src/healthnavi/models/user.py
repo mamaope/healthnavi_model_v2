@@ -27,6 +27,7 @@ class User(Base):
     role = Column(String(20), default="user", nullable=False)
     medical_professional_type = Column(String(50), nullable=True)  # Intern Doctor, Senior House Officers, Clinical Officer, Consultant, Student
     survey_reminder_date = Column(String, nullable=True)  # ISO datetime string - last time user was reminded about pending surveys
+    deletion_requested_at = Column(String, nullable=True)  # ISO datetime - when user requested account/data deletion; processed 6 months after
     created_at = Column(String, nullable=True)  # Will store ISO datetime string
     updated_at = Column(String, nullable=True)  # Will store ISO datetime string
     

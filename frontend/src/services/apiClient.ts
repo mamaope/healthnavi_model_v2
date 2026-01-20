@@ -334,6 +334,24 @@ export const authApi = {
       },
     )
   },
+  requestDataDeletion() {
+    return apiFetch<{ success: boolean; data: { message: string } }>(
+      '/auth/request-data-deletion',
+      'POST',
+    )
+  },
+  cancelDataDeletion() {
+    return apiFetch<{ success: boolean; data: { message: string } }>(
+      '/auth/cancel-data-deletion',
+      'POST',
+    )
+  },
+  getDeletionStatus() {
+    return apiFetch<{
+      success: boolean
+      data: { pending: boolean; requested_at: string | null; scheduled_deletion_at: string | null }
+    }>('/auth/deletion-status', 'GET')
+  },
 }
 
 export const sessionsApi = {
