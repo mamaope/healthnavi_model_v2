@@ -753,10 +753,51 @@ async def get_survey_configs(
 ):
     """
     Admin endpoint to get all survey configurations.
+    Creates default configs if none exist.
     """
     with ResponseTimer() as timer:
         try:
             configs = db.query(SurveyConfig).order_by(SurveyConfig.survey_type).all()
+            
+            # If no configs exist, create default ones
+            if not configs:
+                logger.info("No survey configs found, creating default configs")
+                from datetime import datetime
+                now = datetime.utcnow().isoformat()
+                
+                default_configs = [
+                    SurveyConfig(
+                        survey_type="baseline",
+                        is_visible=False,
+                        title="Pre-Pilot Survey",
+                        description="Baseline survey before pilot starts",
+                        created_at=now,
+                        updated_at=now
+                    ),
+                    SurveyConfig(
+                        survey_type="mid",
+                        is_visible=False,
+                        title="Mid-Pilot Survey",
+                        description="Mid-pilot PMF pulse survey",
+                        created_at=now,
+                        updated_at=now
+                    ),
+                    SurveyConfig(
+                        survey_type="final",
+                        is_visible=False,
+                        title="Post-Pilot Survey",
+                        description="PMF decider survey (last week)",
+                        created_at=now,
+                        updated_at=now
+                    )
+                ]
+                
+                for config in default_configs:
+                    db.add(config)
+                db.commit()
+                
+                # Refresh to get the newly created configs
+                configs = db.query(SurveyConfig).order_by(SurveyConfig.survey_type).all()
             
             configs_data = [{
                 "id": config.id,
@@ -775,6 +816,7 @@ async def get_survey_configs(
             )
         except Exception as e:
             logger.error(f"Error getting survey configs: {e}", exc_info=True)
+            db.rollback()
             return create_error_response(
                 message="Failed to retrieve survey configurations",
                 status_code=500,
