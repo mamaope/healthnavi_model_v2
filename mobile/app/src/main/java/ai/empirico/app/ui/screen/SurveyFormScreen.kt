@@ -13,6 +13,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ai.empirico.app.data.remote.SurveyQuestionDto
+import ai.empirico.app.data.remote.SurveyQuestionsData
 import ai.empirico.app.ui.theme.*
 import ai.empirico.app.ui.viewmodel.SurveysViewModel
 
@@ -67,11 +68,19 @@ fun SurveyFormScreen(
                 } else {
                     data.sections.forEach { section ->
                         Text(section.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium, color = TextPrimary, modifier = Modifier.padding(vertical = 8.dp))
-                        section.questions.forEach { q -> SurveyQuestion(q, responses) { id, v -> responses = responses + (id to v) } }
+                        section.questions.forEach { q ->
+                            if (isQuestionVisible(q, responses)) {
+                                SurveyQuestion(q, responses) { id, v -> responses = responses + (id to v) }
+                            }
+                        }
                     }
                     Spacer(Modifier.height(24.dp))
                     Button(
-                        onClick = { viewModel.submitSurvey(surveyType, responses) },
+                        onClick = {
+                            val err = validateSurvey(data, responses)
+                            if (err != null) viewModel.setError(err)
+                            else viewModel.submitSurvey(surveyType, responses)
+                        },
                         enabled = !uiState.isSubmitting,
                         modifier = Modifier.fillMaxWidth().height(48.dp),
                         shape = RoundedCornerShape(12.dp),
@@ -83,6 +92,33 @@ fun SurveyFormScreen(
                 }
             }
         }
+    }
+}
+
+private fun validateSurvey(data: SurveyQuestionsData, responses: Map<String, Any>): String? {
+    for (section in data.sections) {
+        for (q in section.questions) {
+            if (!isQuestionVisible(q, responses) || !q.required) continue
+            val v = responses[q.id]
+            val empty = when (v) {
+                is List<*> -> v.isEmpty()
+                is CharSequence -> v.isBlank()
+                else -> v == null || v.toString().isBlank()
+            }
+            if (empty) return "Please answer: ${q.text}"
+        }
+    }
+    return null
+}
+
+private fun isQuestionVisible(q: SurveyQuestionDto, responses: Map<String, Any>): Boolean {
+    val cond = q.conditional ?: return true
+    val parentId = cond["question"]?.toString() ?: return false
+    val expect = cond["value"]?.toString() ?: return false
+    val parentVal = responses[parentId] ?: return false
+    return when (parentVal) {
+        is List<*> -> parentVal.any { it?.toString() == expect }
+        else -> parentVal.toString() == expect
     }
 }
 

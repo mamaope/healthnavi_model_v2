@@ -98,7 +98,10 @@ export default function SurveyForm() {
   const isQuestionVisible = (question: Question): boolean => {
     if (!question.conditional) return true
     const conditionalValue = responses[question.conditional.question]
-    return conditionalValue === question.conditional.value
+    const expected = question.conditional.value
+    // For multiple_choice, response is an array; show if it contains the value (e.g. "Other")
+    if (Array.isArray(conditionalValue)) return conditionalValue.includes(expected)
+    return conditionalValue === expected
   }
 
   const validateForm = (): boolean => {

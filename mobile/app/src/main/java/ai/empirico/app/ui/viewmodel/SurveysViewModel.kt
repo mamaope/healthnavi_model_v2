@@ -57,6 +57,7 @@ class SurveysViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun clearError() { _uiState.value = _uiState.value.copy(error = null) }
+    fun setError(message: String) { _uiState.value = _uiState.value.copy(error = message) }
     fun clearSubmitSuccess() { _uiState.value = _uiState.value.copy(submitSuccess = false) }
     fun clearSurveyData() { _uiState.value = _uiState.value.copy(surveyData = null) }
 }

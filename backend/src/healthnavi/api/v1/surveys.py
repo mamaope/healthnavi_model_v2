@@ -35,8 +35,15 @@ SURVEY_QUESTIONS = {
                         "id": "Q1",
                         "text": "What is your clinical role?",
                         "type": "single_choice",
-                        "options": ["Medical Officer", "Intern doctor", "Clinical Officer", "Specialist", "Other"],
+                        "options": ["Consultants", "Specialist", "Senior House Officer / Resident", "Medical Officer", "Intern Clinician", "Other Clinician Practitioner", "Clinical / Medical Student", "Other"],
                         "required": True
+                    },
+                    {
+                        "id": "Q1a",
+                        "text": "Please specify your profession",
+                        "type": "text",
+                        "required": True,
+                        "conditional": {"question": "Q1", "value": "Other"}
                     },
                     {
                         "id": "Q2",
@@ -49,8 +56,15 @@ SURVEY_QUESTIONS = {
                         "id": "Q3",
                         "text": "Primary care setting",
                         "type": "single_choice",
-                        "options": ["Primary care clinic", "Telemedicine", "Outpatient hospital", "Inpatient hospital", "Other"],
+                        "options": ["Primary care clinic", "Telemedicine", "Outpatient hospital", "Inpatient hospital", "Pharmacy", "Other"],
                         "required": True
+                    },
+                    {
+                        "id": "Q3a",
+                        "text": "Please specify",
+                        "type": "text",
+                        "required": True,
+                        "conditional": {"question": "Q3", "value": "Other"}
                     }
                 ]
             },
@@ -68,12 +82,12 @@ SURVEY_QUESTIONS = {
                         "id": "Q5",
                         "text": "What tools do you currently use to find clinical information?",
                         "type": "multiple_choice",
-                        "options": ["Google search", "Medical textbooks", "UpToDate or similar", "WhatsApp / peer groups", "Asking a colleague", "National or WHO guidelines (PDFs)"],
+                        "options": ["Google search", "Medical textbooks", "UpToDate or similar", "WhatsApp / peer groups", "Asking a colleague", "National or WHO guidelines (PDFs)", "Other AI tools"],
                         "required": True
                     },
                     {
                         "id": "Q6",
-                        "text": "What frustrates you most about your current approach?",
+                        "text": "What challenges do you face with the current approaches you are using to find clinical information?",
                         "type": "text",
                         "required": True
                     }
@@ -111,8 +125,15 @@ SURVEY_QUESTIONS = {
                         "id": "Q2",
                         "text": "What clinical scenarios did you use it for?",
                         "type": "multiple_choice",
-                        "options": ["Differential diagnosis", "Treatment guidance", "Drug dosing / contraindications", "Identifying red flags", "Patient explanations"],
+                        "options": ["Differential diagnosis", "Treatment guidance", "Drug dosing / contraindications", "Identifying red flags", "Patient Cases", "Academic Information", "Clinical Research", "Other"],
                         "required": True
+                    },
+                    {
+                        "id": "Q2a",
+                        "text": "Please specify",
+                        "type": "text",
+                        "required": True,
+                        "conditional": {"question": "Q2", "value": "Other"}
                     }
                 ]
             },
@@ -123,8 +144,15 @@ SURVEY_QUESTIONS = {
                         "id": "Q3",
                         "text": "What does this platform most often replace for you?",
                         "type": "single_choice",
-                        "options": ["Google search", "Asking a colleague", "Textbooks", "WhatsApp / peer groups", "It does not replace anything yet"],
+                        "options": ["Google search", "Asking a colleague", "Textbooks", "WhatsApp / peer groups", "It does not replace anything yet", "Other AI Tools", "Other"],
                         "required": True
+                    },
+                    {
+                        "id": "Q3a",
+                        "text": "Please specify",
+                        "type": "text",
+                        "required": True,
+                        "conditional": {"question": "Q3", "value": "Other"}
                     }
                 ]
             },
@@ -202,7 +230,7 @@ SURVEY_QUESTIONS = {
                     },
                     {
                         "id": "Q3",
-                        "text": "What is the biggest limitation today?",
+                        "text": "What are the two biggest challenges you have faced with the Empirico platform?",
                         "type": "text",
                         "required": True
                     }
@@ -215,8 +243,15 @@ SURVEY_QUESTIONS = {
                         "id": "Q4",
                         "text": "When you have a clinical question, what do you reach for first?",
                         "type": "single_choice",
-                        "options": ["This platform", "Google search", "Asking a colleague", "Guidelines / textbooks"],
+                        "options": ["Empirico (This Platform)", "Google search", "Asking a colleague", "Guidelines / textbooks", "Other AI Tools", "Other"],
                         "required": True
+                    },
+                    {
+                        "id": "Q4a",
+                        "text": "Please specify",
+                        "type": "text",
+                        "required": True,
+                        "conditional": {"question": "Q4", "value": "Other"}
                     }
                 ]
             },
@@ -239,7 +274,7 @@ SURVEY_QUESTIONS = {
                     },
                     {
                         "id": "Q7",
-                        "text": "What would be a reasonable monthly price? (Optional)",
+                        "text": "What would you be willing to pay for such a platform described in monthly terms? (Optional)",
                         "type": "text",
                         "required": False
                     },
@@ -255,10 +290,10 @@ SURVEY_QUESTIONS = {
                 "title": "SECTION 5: Advocacy",
                 "questions": [
                     {
-                        "id": "Q8",
+                        "id": "Q9",
                         "text": "Who else should definitely be using this platform?",
                         "type": "multiple_choice",
-                        "options": ["Primary care clinicians", "Telemedicine clinicians", "Specialists", "Medical trainees"],
+                        "options": ["Primary care clinicians", "Telemedicine clinicians", "Specialists", "Medical trainees", "General Practitioners"],
                         "required": True
                     }
                 ]
