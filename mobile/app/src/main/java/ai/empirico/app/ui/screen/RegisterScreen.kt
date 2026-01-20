@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -24,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ai.empirico.app.ui.theme.*
 import ai.empirico.app.ui.viewmodel.AuthViewModel
+import android.widget.Toast
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,8 +47,11 @@ fun RegisterScreen(
         label = "contentAlpha"
     )
     
-    LaunchedEffect(uiState.isAuthenticated) {
-        if (uiState.isAuthenticated) {
+    val context = LocalContext.current
+    LaunchedEffect(uiState.registerSuccess) {
+        if (uiState.registerSuccess) {
+            viewModel.clearRegisterSuccess()
+            Toast.makeText(context, "Account created. Please sign in.", Toast.LENGTH_LONG).show()
             onRegisterSuccess()
         }
     }

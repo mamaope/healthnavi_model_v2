@@ -17,6 +17,7 @@ data class AuthUiState(
     val isInitialized: Boolean = false,
     val currentUser: User? = null,
     val errorMessage: String? = null,
+    val registerSuccess: Boolean = false,
     val forgotPasswordSuccess: Boolean = false,
     val resetPasswordSuccess: Boolean = false,
     val profileLoading: Boolean = false,
@@ -83,7 +84,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
             authRepository.register(firstName, lastName, email, password)
                 .onSuccess {
-                    _uiState.value = _uiState.value.copy(isLoading = false)
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        registerSuccess = true
+                    )
                 }
                 .onFailure { e ->
                     _uiState.value = _uiState.value.copy(
@@ -92,6 +96,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
         }
+    }
+
+    fun clearRegisterSuccess() {
+        _uiState.value = _uiState.value.copy(registerSuccess = false)
     }
     
     fun logout() {

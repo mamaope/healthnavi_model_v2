@@ -14,8 +14,8 @@ android {
         applicationId = "ai.empirico.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // API_BASE_URL: leave empty to use https://empirico.ai/api/v2/. For local backend: set in gradle.properties or -PAPI_BASE_URL=http://10.0.2.2:8050/api/v2/ (emulator) or http://YOUR_IP:8050/api/v2/ (device).
