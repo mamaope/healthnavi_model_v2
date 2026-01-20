@@ -553,12 +553,22 @@ async def submit_survey(
             # Create survey record
             from datetime import datetime
             now = datetime.utcnow().isoformat()
-            
-            # Create survey record
-            # SQLEnum with values_callable should now use enum value (lowercase) instead of name (uppercase)
+
+            # Serialize responses; default=str handles datetime/decimal/other edge cases from parsers
+            try:
+                survey_data_json = json.dumps(survey_data.responses, default=str)
+            except (TypeError, ValueError) as je:
+                logger.warning(f"Survey responses not JSON-serializable: {je}", exc_info=True)
+                return create_error_response(
+                    message="Invalid response format",
+                    status_code=400,
+                    execution_time=timer.get_execution_time()
+                )
+
+            # SQLEnum with values_callable should use enum value (lowercase) instead of name (uppercase)
             survey = Survey(
                 user_id=current_user.id,
-                survey_type=survey_type_enum,  # SQLEnum will use the enum value thanks to values_callable
+                survey_type=survey_type_enum,
                 pmf_score=survey_data.pmf_score,
                 very_disappointed=very_disappointed,
                 willingness_to_pay=willingness_to_pay,
@@ -566,19 +576,20 @@ async def submit_survey(
                 time_saved_minutes=time_saved_minutes,
                 usefulness_score=survey_data.usefulness_score,
                 query_relevance=survey_data.query_relevance,
-                survey_data=json.dumps(survey_data.responses),
+                survey_data=survey_data_json,
                 created_at=now,
                 updated_at=now
             )
-            
+
             db.add(survey)
             db.commit()
             db.refresh(survey)
-            
+
+            st = getattr(survey.survey_type, "value", None) or str(survey.survey_type)
             return create_success_response(
                 data={
                     "survey_id": survey.id,
-                    "survey_type": survey.survey_type.value,
+                    "survey_type": st,
                     "message": "Survey submitted successfully"
                 },
                 status_code=201,
@@ -587,10 +598,14 @@ async def submit_survey(
         except Exception as e:
             logger.error(f"Error submitting survey: {e}", exc_info=True)
             db.rollback()
+            from healthnavi.core.config import get_config
+            cfg = get_config()
+            details = {"error": str(e)} if getattr(cfg.application, "debug", False) else None
             return create_error_response(
                 message="Failed to submit survey",
                 status_code=500,
-                execution_time=timer.get_execution_time()
+                execution_time=timer.get_execution_time(),
+                additional_details=details
             )
 
 
