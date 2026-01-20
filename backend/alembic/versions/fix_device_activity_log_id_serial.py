@@ -11,7 +11,7 @@ Create Date: 2025-01-20
 from alembic import op
 
 
-revision = 'fix_device_activity_log_id_serial'
+revision = 'fix_device_activity_log_id'
 down_revision = 'add_device_activity_log'
 branch_labels = None
 depends_on = None
