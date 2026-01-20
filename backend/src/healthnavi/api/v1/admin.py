@@ -281,6 +281,47 @@ async def get_pmf_metrics(
             )
 
 
+@router.get("/metrics/devices", response_model=StandardResponse)
+async def get_device_metrics(
+    days: str = Query("30", description="Number of days for statistics"),
+    current_user: User = Depends(require_admin_role),
+    db: Session = Depends(get_db)
+):
+    """
+    Get device type statistics (phone, tablet, laptop) for the admin dashboard.
+    
+    Example request:
+        GET /api/v2/admin/metrics/devices?days=30
+    
+    Example response (200):
+        {
+            "success": 1,
+            "data": {
+                "by_type": { "phone": 10, "tablet": 2, "laptop": 50, "unknown": 0 },
+                "total": 62
+            }
+        }
+    """
+    with ResponseTimer() as timer:
+        try:
+            from healthnavi.core.query_utils import parse_days_parameter
+            days_int = parse_days_parameter(days, default=30, min_days=1, max_days=365)
+            service = AdminService(db)
+            data = service.get_device_statistics(days=days_int)
+            return create_success_response(
+                data=data,
+                status_code=200,
+                execution_time=timer.get_execution_time()
+            )
+        except Exception as e:
+            logger.error(f"Error getting device metrics: {e}", exc_info=True)
+            return create_error_response(
+                message="Failed to retrieve device metrics",
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
 @router.get("/alerts", response_model=StandardResponse)
 async def get_alerts(
     unread_only: bool = Query(False, description="Return only unread alerts"),
