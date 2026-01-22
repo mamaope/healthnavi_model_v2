@@ -2,6 +2,8 @@ package ai.empirico.app.ui.screen
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -27,6 +29,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -104,20 +107,23 @@ fun ChatScreen(
             )
         },
         bottomBar = {
-            InputArea(
-                messageText = messageText,
-                onMessageChange = { messageText = it },
-                isSending = uiState.isSending,
-                isDeepSearch = uiState.deepSearchEnabled,
-                onToggleDeepSearch = { chatViewModel.toggleDeepSearch() },
-                onSend = {
-                    if (messageText.isNotBlank()) {
-                        chatViewModel.sendMessage(messageText.trim())
-                        messageText = ""
-                    }
-                },
-                errorMessage = uiState.errorMessage
-            )
+            // Only show input bar when there are messages
+            if (uiState.messages.isNotEmpty() || uiState.isLoading) {
+                InputArea(
+                    messageText = messageText,
+                    onMessageChange = { messageText = it },
+                    isSending = uiState.isSending,
+                    isDeepSearch = uiState.deepSearchEnabled,
+                    onToggleDeepSearch = { chatViewModel.toggleDeepSearch() },
+                    onSend = {
+                        if (messageText.isNotBlank()) {
+                            chatViewModel.sendMessage(messageText.trim())
+                            messageText = ""
+                        }
+                    },
+                    errorMessage = uiState.errorMessage
+                )
+            }
         }
     ) { paddingValues ->
         Box(
@@ -127,9 +133,23 @@ fun ChatScreen(
                 .background(BackgroundLight)
     ) {
         if (uiState.messages.isEmpty() && !uiState.isLoading) {
-                EmptyChatState(onPromptSelected = {
-                    chatViewModel.sendMessage(it)
-                })
+                EmptyChatState(
+                    messageText = messageText,
+                    onMessageChange = { messageText = it },
+                    isSending = uiState.isSending,
+                    isDeepSearch = uiState.deepSearchEnabled,
+                    onToggleDeepSearch = { chatViewModel.toggleDeepSearch() },
+                    onSend = {
+                        if (messageText.isNotBlank()) {
+                            chatViewModel.sendMessage(messageText.trim())
+                            messageText = ""
+                        }
+                    },
+                    onPromptSelected = {
+                        chatViewModel.sendMessage(it)
+                    },
+                    errorMessage = uiState.errorMessage
+                )
         } else {
             LazyColumn(
                     modifier = Modifier.fillMaxSize(),
@@ -184,45 +204,207 @@ fun ChatScreen(
 }
 
 @Composable
-private fun EmptyChatState(onPromptSelected: (String) -> Unit) {
+private fun EmptyChatState(
+    messageText: String,
+    onMessageChange: (String) -> Unit,
+    isSending: Boolean,
+    isDeepSearch: Boolean,
+    onToggleDeepSearch: () -> Unit,
+    onSend: () -> Unit,
+    onPromptSelected: (String) -> Unit,
+    errorMessage: String?
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(32.dp),
+            .padding(horizontal = 16.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            "Start a Conversation",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = TextPrimary
+        // Logo
+        Image(
+            painter = painterResource(id = R.drawable.logo),
+            contentDescription = "Empirico Logo",
+            modifier = Modifier
+                .fillMaxWidth(0.85f)
+                .padding(bottom = 48.dp)
         )
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = "Ask questions or share information to get helpful responses.",
-            style = MaterialTheme.typography.bodyLarge,
-            color = TextSecondary,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(32.dp))
+        
+        // Chat Input Interface (Centered)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = SurfaceLight
+            ),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (isDeepSearch) Primary500 else BorderLight
+            )
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    onClick = onToggleDeepSearch,
+                    modifier = Modifier.size(44.dp),
+                    shape = CircleShape,
+                    color = if (isDeepSearch) Primary500.copy(alpha = 0.1f) else Gray100,
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isDeepSearch) Primary500 else BorderLight
+                    )
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Filled.Psychology,
+                            contentDescription = if (isDeepSearch) "Deep search enabled" else "Deep search disabled",
+                            tint = if (isDeepSearch) Primary500 else TextTertiary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+                
+                androidx.compose.material3.TextField(
+                    value = messageText,
+                    onValueChange = onMessageChange,
+                    modifier = Modifier.weight(1f),
+                    placeholder = {
+                        Text(
+                            "Ask me a medical question ...",
+                            color = TextTertiary,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    },
+                    colors = androidx.compose.material3.TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        disabledContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent
+                    ),
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    maxLines = 5,
+                    enabled = !isSending
+                )
+                
+                IconButton(
+                    onClick = onSend,
+                    enabled = messageText.isNotBlank() && !isSending,
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    if (isSending) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = Primary500
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Send,
+                            contentDescription = "Send",
+                            tint = if (messageText.isNotBlank()) Primary500 else TextTertiary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+            }
+        }
+        
+        // Error Message
+        AnimatedVisibility(
+            visible = !errorMessage.isNullOrEmpty(),
+            enter = fadeIn() + slideInVertically(),
+            exit = fadeOut() + slideOutVertically()
+        ) {
+            errorMessage?.let {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Error500.copy(alpha = 0.1f)
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        Error500.copy(alpha = 0.3f)
+                    )
+                ) {
+                    Text(
+                        text = it,
+                        color = Error600,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        // Privacy Notice / Disclaimer
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Info,
+                contentDescription = null,
+                tint = TextSecondary,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Please do not include patient identifying information.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary,
+                textAlign = TextAlign.Center
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(48.dp))
+        
+        // Examples
         SamplePromptChips(onPromptSelected = onPromptSelected)
     }
 }
 
 @Composable
 private fun SamplePromptChips(onPromptSelected: (String) -> Unit) {
-    val prompts = listOf(
-        "Patient with fever, tachycardia, and chest pain",
-        "Interpret lab panel showing elevated AST/ALT",
-        "Differential for acute onset shortness of breath",
-        "Management steps for suspected sepsis"
+    // Match web app examples with dropdowns
+    val sampleSections = listOf(
+        "Drug Dosing & Interactions" to listOf(
+            "Calculate the dose for ceftriaxone for a 60kg adult with severe pneumonia",
+            "What happens when green leafy vegetables are taken in large amounts while on warfarin?"
+        ),
+        "Clinical Guidelines" to listOf(
+            "What are the ADA (American Diabetes Association) recommendations for initiating insulin therapy in type 2 diabetes?",
+            "According to WHO malaria guidelines, how should malaria in pregnancy be treated?"
+        ),
+        "Treatment Options" to listOf(
+            "What are the treatment options for severe malnutrition in children under 5?",
+            "What is the first-line antihypertensive medication for stage 1 hypertension?"
+        )
     )
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        prompts.forEach { prompt ->
+    var expandedSection by remember { mutableStateOf<String?>(null) }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        sampleSections.forEach { (title, prompts) ->
+            val isExpanded = expandedSection == title
+            
             Card(
-                onClick = { onPromptSelected(prompt) },
+                onClick = { expandedSection = if (isExpanded) null else title },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(
@@ -233,12 +415,64 @@ private fun SamplePromptChips(onPromptSelected: (String) -> Unit) {
                     BorderLight
                 )
             ) {
-                Text(
-                    prompt,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextPrimary,
-                    modifier = Modifier.padding(16.dp)
-                )
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextPrimary
+                        )
+                        Text(
+                            text = if (isExpanded) "−" else "+",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TextSecondary
+                        )
+                    }
+                    
+                    AnimatedVisibility(
+                        visible = isExpanded,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            prompts.forEach { prompt ->
+                                Card(
+                                    onClick = { 
+                                        onPromptSelected(prompt)
+                                        expandedSection = null
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = BackgroundLight
+                                    ),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        BorderLight
+                                    )
+                                ) {
+                                    Text(
+                                        prompt,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = TextPrimary,
+                                        modifier = Modifier.padding(12.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
