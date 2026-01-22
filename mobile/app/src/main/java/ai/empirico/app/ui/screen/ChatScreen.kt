@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -85,6 +86,14 @@ fun ChatScreen(
                     )
                 },
                 actions = {
+                    IconButton(
+                        onClick = {
+                            chatViewModel.startNewChat()
+                            chatViewModel.createSession()
+                        }
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "New Session", tint = Primary500)
+                    }
                     IconButton(onClick = onNavigateToSessions) {
                         Icon(Icons.Default.List, contentDescription = "Sessions", tint = Primary500)
                     }
