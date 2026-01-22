@@ -4,6 +4,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBars
@@ -833,14 +834,15 @@ private fun FeedbackChip(
     onClick: () -> Unit
 ) {
     Surface(
-        onClick = onClick,
         shape = RoundedCornerShape(16.dp),
         color = if (isActive) Primary500 else SurfaceLight,
         border = androidx.compose.foundation.BorderStroke(
             width = if (isActive) 2.dp else 1.dp,
             color = if (isActive) Primary500 else BorderLight
         ),
-        modifier = Modifier.size(40.dp),
+        modifier = Modifier
+            .size(40.dp)
+            .clickable(onClick = onClick),
         shadowElevation = if (isActive) 4.dp else 0.dp
     ) {
         Box(
