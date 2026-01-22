@@ -155,7 +155,7 @@ fun ChatScreen(
                         }
                     },
                     onPromptSelected = {
-                        chatViewModel.sendMessage(it)
+                        messageText = it
                     },
                     errorMessage = uiState.errorMessage
                 )
@@ -220,7 +220,7 @@ private fun EmptyChatState(
     isDeepSearch: Boolean,
     onToggleDeepSearch: () -> Unit,
     onSend: () -> Unit,
-    onPromptSelected: (String) -> Unit,
+    onPromptSelected: (String) -> Unit, // Now populates the input instead of submitting
     errorMessage: String?
 ) {
     Column(
