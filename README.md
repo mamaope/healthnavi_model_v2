@@ -1,10 +1,10 @@
-# Empirico - AI-Powered Clinical Decision Support System
+# Empirico - AI-Powered Medical Knowledge Base
 
 <div align="center">
 
 ![Empirico Logo](https://via.placeholder.com/200x60?text=Empirico)
 
-**Empirico** is a secure, HIPAA/GDPR/ISO 13485 compliant AI-powered Clinical Decision Support System (CDSS) that uses Retrieval-Augmented Generation (RAG) to assist healthcare professionals with evidence-based medical decision-making.
+**Empirico** is a secure, HIPAA/GDPR/ISO 13485 compliant AI-powered medical knowledge base that uses Retrieval-Augmented Generation (RAG) to provide healthcare professionals with evidence-based medical information and guidance.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
@@ -36,11 +36,11 @@
 
 ## 🎯 Overview
 
-**Empirico** is a comprehensive clinical decision support platform designed to help healthcare professionals make informed medical decisions through AI-powered assistance. The system combines advanced language models with a curated medical knowledge base to provide evidence-based guidance, drug information, clinical guidelines, and treatment recommendations.
+**Empirico** is a comprehensive medical knowledge base platform designed to help healthcare professionals access evidence-based medical information through AI-powered assistance. The system combines advanced language models with a curated medical knowledge base to provide evidence-based guidance, drug information, clinical guidelines, and treatment recommendations.
 
 ### What Empirico Does
 
-- **Clinical Decision Support**: Provides AI-powered assistance for diagnosis, treatment planning, and clinical queries
+- **Medical Information Access**: Provides AI-powered access to evidence-based medical information, treatment planning, and clinical queries
 - **Drug Information**: Access comprehensive drug dosing, interactions, and prescribing information
 - **Clinical Guidelines**: References to WHO, ADA, and other authoritative medical guidelines
 - **Evidence-Based Answers**: Uses RAG (Retrieval-Augmented Generation) to ground responses in medical literature
@@ -60,8 +60,8 @@
 - **User Roles**: Support for healthcare professionals, administrators, and super admins
 - **Account Management**: Profile management, account closure, and data deletion requests
 
-### 💬 AI-Powered Clinical Chat
-- **Interactive Chat Interface**: Real-time conversation with AI clinical assistant
+### 💬 AI-Powered Medical Information Chat
+- **Interactive Chat Interface**: Real-time conversation with AI medical information assistant
 - **Deep Search Mode**: Enhanced search capabilities for comprehensive responses
 - **Session Management**: Create and manage multiple conversation sessions
 - **Message History**: Complete conversation history with search capabilities
@@ -342,7 +342,7 @@ Development: http://localhost:8050/api/v2/
 - `POST /auth/refresh` - Refresh access token
 
 #### Clinical Chat
-- `POST /diagnosis/diagnose` - Generate AI diagnosis/response
+- `POST /diagnosis/diagnose` - Generate AI medical information response
 - `POST /diagnosis/diagnose/stream` - Streamed AI responses
 - `POST /diagnosis/feedback` - Submit message feedback
 - `GET /chat/sessions` - List chat sessions
@@ -572,7 +572,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## ⚠️ Important Disclaimers
 
-**Medical Software Disclaimer**: Empirico is a clinical decision support tool designed to assist healthcare professionals. It is not intended to replace clinical judgment or serve as a substitute for professional medical advice, diagnosis, or treatment. Always verify information and consult with qualified healthcare professionals for medical decisions.
+**Medical Information Base Disclaimer**: Empirico is a medical information base designed to provide healthcare professionals with evidence-based medical information. It is not intended to replace clinical judgment or serve as a substitute for professional medical advice, diagnosis, or treatment. Always verify information and consult with qualified healthcare professionals for medical decisions.
 
 **Regulatory Compliance**: Users are responsible for ensuring compliance with all applicable healthcare regulations, including HIPAA, GDPR, and local medical device regulations in their jurisdiction.
 
