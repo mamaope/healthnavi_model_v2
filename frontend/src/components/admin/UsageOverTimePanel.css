@@ -1,0 +1,28 @@
+.usage-over-time-panel {
+  grid-column: 1 / -1;
+}
+
+.usage-over-time-panel h2 {
+  margin: 0 0 1rem 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.usage-chart-container {
+  min-height: 320px;
+  background: var(--panel-bg, #fafafa);
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.usage-over-time-panel .loading-text,
+.usage-over-time-panel .empty-text {
+  color: var(--text-muted, #666);
+  font-size: 0.9rem;
+}
+
+.usage-over-time-panel .error-text {
+  color: #dc2626;
+  font-size: 0.9rem;
+}

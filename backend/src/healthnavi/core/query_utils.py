@@ -2,10 +2,41 @@
 Utility functions for common query parameter parsing and validation.
 """
 
+from datetime import datetime, timedelta
 from typing import Optional, Tuple
+
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def parse_date_range(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    max_days: int = 365,
+) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Parse and validate start_date and end_date (YYYY-MM-DD).
+    Returns (period_start_iso, period_end_iso) for start of start_date and end of end_date.
+    If either is invalid or range exceeds max_days, returns (None, None).
+    """
+    if not start_date or not end_date:
+        return None, None
+    try:
+        start = datetime.strptime(start_date.strip()[:10], "%Y-%m-%d")
+        end = datetime.strptime(end_date.strip()[:10], "%Y-%m-%d")
+    except (ValueError, TypeError):
+        logger.warning(f"Invalid date range: start_date={start_date!r}, end_date={end_date!r}")
+        return None, None
+    if start > end:
+        logger.warning("start_date after end_date, swapping")
+        start, end = end, start
+    if (end - start).days > max_days:
+        logger.warning(f"Date range exceeds {max_days} days, clamping")
+        end = start + timedelta(days=max_days)
+    period_start = start.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    period_end = (end + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    return period_start, period_end
 
 
 def parse_days_parameter(days: str, default: int = 30, min_days: int = 1, max_days: int = 365) -> int:

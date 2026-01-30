@@ -28,8 +28,84 @@
 
 .admin-header-actions {
   display: flex;
-  gap: 1rem;
+  flex-wrap: wrap;
+  gap: 0.75rem;
   align-items: center;
+}
+
+.filter-mode-label,
+.date-label,
+.user-filter-label {
+  font-size: 0.85rem;
+  color: #555;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.date-input {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.user-filter-label {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.user-multi-select {
+  min-width: 140px;
+  max-height: 80px;
+  padding: 0.25rem;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.btn-clear-users {
+  margin-top: 0.25rem;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.8rem;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  background: #f5f5f5;
+  cursor: pointer;
+}
+
+.btn-clear-users:hover {
+  background: #e5e5e5;
+}
+
+.btn-export,
+.btn-export-json {
+  padding: 0.5rem 1rem;
+  border: 1px solid #0ea5e9;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  background: #0ea5e9;
+  color: white;
+  cursor: pointer;
+}
+
+.btn-export:hover:not(:disabled),
+.btn-export-json:hover:not(:disabled) {
+  background: #0284c7;
+}
+
+.btn-export:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-export-json {
+  background: #6b7280;
+  border-color: #6b7280;
+}
+
+.btn-export-json:hover:not(:disabled) {
+  background: #4b5563;
 }
 
 .period-selector {

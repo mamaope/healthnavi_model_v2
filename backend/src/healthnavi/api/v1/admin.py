@@ -24,53 +24,52 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _parse_user_ids(user_ids: Optional[str]) -> Optional[list]:
+    """Parse comma-separated user IDs from query param."""
+    if not user_ids or not user_ids.strip():
+        return None
+    try:
+        ids = [int(x.strip()) for x in user_ids.split(",") if x.strip()]
+        return ids if ids else None
+    except ValueError:
+        return None
+
+
 @router.get("/metrics", response_model=StandardResponse)
 async def get_admin_metrics(
-    days: str = Query("30", description="Number of days to analyze"),
+    days: str = Query("30", description="Number of days to analyze (used if start_date/end_date not provided)"),
+    start_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD for exact range"),
+    end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD for exact range"),
+    user_ids: Optional[str] = Query(None, description="Comma-separated user IDs to filter by"),
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db)
 ):
     """
-    Get all admin dashboard metrics.
+    Get all admin dashboard metrics. Filter by exact date range (start_date, end_date) and/or by users (user_ids).
     
     Example request:
         GET /api/v2/admin/metrics?days=30
-    
-    Example response (200):
-        {
-            "success": 1,
-            "data": {
-                "usage": {...},
-                "clinical_value": {...},
-                "ai_responses": {...}
-            },
-            "metadata": {
-                "statusCode": 200,
-                "executionTime": 0.123
-            }
-        }
-    
-    Error codes:
-        - 401: Unauthorized (not authenticated)
-        - 403: Forbidden (not admin)
-        - 500: Internal server error
+        GET /api/v2/admin/metrics?start_date=2025-01-01&end_date=2025-01-24
+        GET /api/v2/admin/metrics?start_date=2025-01-01&end_date=2025-01-24&user_ids=1,2,3
     """
     with ResponseTimer() as timer:
         try:
-            # Use utility function for days parsing
-            from healthnavi.core.query_utils import parse_days_parameter
+            from healthnavi.core.query_utils import parse_days_parameter, parse_date_range
             days_int = parse_days_parameter(days, default=30, min_days=1, max_days=365)
-            
+            period_start, period_end = parse_date_range(start_date, end_date)
+            user_ids_list = _parse_user_ids(user_ids)
             service = AdminService(db)
-            metrics = service.get_all_metrics(days=days_int)
-            
-            # Log admin access
+            metrics = service.get_all_metrics(
+                days=days_int,
+                period_start=period_start,
+                period_end=period_end,
+                user_ids=user_ids_list,
+            )
             service.log_audit_event(
                 user_id=current_user.id,
                 action="admin_metrics_viewed",
-                description=f"Viewed admin metrics for {days_int} days"
+                description=f"Viewed admin metrics (days={days_int}, start_date={start_date}, end_date={end_date}, user_ids={user_ids})"
             )
-            
             return create_success_response(
                 data=metrics,
                 status_code=200,
@@ -80,6 +79,123 @@ async def get_admin_metrics(
             logger.error(f"Error getting admin metrics: {e}", exc_info=True)
             return create_error_response(
                 message="Failed to retrieve admin metrics",
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
+@router.get("/feedback", response_model=StandardResponse)
+async def get_feedback_list(
+    start_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    user_ids: Optional[str] = Query(None, description="Comma-separated user IDs"),
+    feedback_type: Optional[str] = Query(None, description="helpful or not_helpful"),
+    has_text_only: bool = Query(False, description="Only feedback with text comments"),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(require_admin_role),
+    db: Session = Depends(get_db),
+):
+    """List feedback comments for admin review. Supports date range and user filters."""
+    with ResponseTimer() as timer:
+        try:
+            service = AdminService(db)
+            result = service.get_feedback_list(
+                start_date=start_date,
+                end_date=end_date,
+                user_ids=_parse_user_ids(user_ids),
+                feedback_type=feedback_type,
+                has_text_only=has_text_only,
+                limit=limit,
+                offset=offset,
+            )
+            return create_success_response(
+                data=result,
+                status_code=200,
+                execution_time=timer.get_execution_time()
+            )
+        except Exception as e:
+            logger.error(f"Error getting feedback list: {e}", exc_info=True)
+            return create_error_response(
+                message="Failed to retrieve feedback",
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
+@router.get("/export/report")
+async def export_report(
+    start_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    user_ids: Optional[str] = Query(None, description="Comma-separated user IDs"),
+    format: str = Query("json", description="json or csv"),
+    current_user: User = Depends(require_admin_role),
+    db: Session = Depends(get_db),
+):
+    """Export admin report based on current filters. Returns JSON or CSV download."""
+    with ResponseTimer() as timer:
+        try:
+            service = AdminService(db)
+            result = service.get_export_report(
+                start_date=start_date,
+                end_date=end_date,
+                user_ids=_parse_user_ids(user_ids),
+                format=format.strip().lower() or "json",
+            )
+            if format.strip().lower() == "csv" and "content" in result:
+                from fastapi.responses import Response
+                return Response(
+                    content=result["content"],
+                    media_type="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename={result['filename']}"},
+                )
+            return create_success_response(
+                data=result.get("report", result),
+                status_code=200,
+                execution_time=timer.get_execution_time()
+            )
+        except Exception as e:
+            logger.error(f"Error exporting report: {e}", exc_info=True)
+            return create_error_response(
+                message="Failed to export report",
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
+@router.get("/metrics/usage-over-time", response_model=StandardResponse)
+async def get_usage_over_time(
+    days: str = Query("30", description="Number of days (used if start_date/end_date not provided)"),
+    start_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    user_ids: Optional[str] = Query(None, description="Comma-separated user IDs"),
+    granularity: str = Query("day", description="day or week"),
+    current_user: User = Depends(require_admin_role),
+    db: Session = Depends(get_db),
+):
+    """Get usage time-series for charts: per-day active_users, sessions, messages."""
+    with ResponseTimer() as timer:
+        try:
+            from healthnavi.core.query_utils import parse_days_parameter, parse_date_range
+            days_int = parse_days_parameter(days, default=30, min_days=1, max_days=365)
+            period_start, period_end = parse_date_range(start_date, end_date)
+            service = AdminService(db)
+            result = service.get_usage_over_time(
+                days=days_int,
+                period_start=period_start,
+                period_end=period_end,
+                user_ids=_parse_user_ids(user_ids),
+                granularity=granularity,
+            )
+            return create_success_response(
+                data=result,
+                status_code=200,
+                execution_time=timer.get_execution_time()
+            )
+        except Exception as e:
+            logger.error(f"Error getting usage over time: {e}", exc_info=True)
+            return create_error_response(
+                message="Failed to retrieve usage over time",
                 status_code=500,
                 execution_time=timer.get_execution_time()
             )
@@ -695,82 +811,25 @@ class PasswordChangeRequest(BaseModel):
 @router.get("/users/statistics", response_model=StandardResponse)
 async def get_user_statistics(
     days: str = Query("30", description="Number of days for statistics"),
+    start_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    user_ids: Optional[str] = Query(None, description="Comma-separated user IDs"),
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db)
 ):
-    """Get user statistics by type and activity."""
+    """Get user statistics by type and activity. Supports date range and user filter."""
     with ResponseTimer() as timer:
         try:
-            # Parse days parameter - handle None, empty string, or actual string values
-            days_str = days if days is not None and days != "" else "30"
-            logger.info(f"Received days parameter: {repr(days_str)} (type: {type(days_str)})")
-            
-            try:
-                days_int = int(days_str)
-                logger.info(f"Parsed days_int: {days_int}")
-            except (ValueError, TypeError) as parse_error:
-                logger.warning(f"Failed to parse days parameter '{days_str}': {parse_error}, defaulting to 30")
-                days_int = 30
-            
-            # Clamp to valid range
-            if days_int < 1 or days_int > 365:
-                logger.warning(f"Days parameter {days_int} out of range, clamping to 30")
-                days_int = 30
-            
+            from healthnavi.core.query_utils import parse_days_parameter, parse_date_range
+            days_int = parse_days_parameter(days, default=30, min_days=1, max_days=365)
+            period_start, period_end = parse_date_range(start_date, end_date)
             service = AdminService(db)
-            stats = service.get_user_statistics(days=days_int)
-            logger.info(f"Successfully retrieved user statistics for {days_int} days")
-            
-            return create_success_response(
-                data=stats,
-                status_code=200,
-                execution_time=timer.get_execution_time()
+            stats = service.get_user_statistics(
+                days=days_int,
+                period_start=period_start,
+                period_end=period_end,
+                user_ids=_parse_user_ids(user_ids),
             )
-        except ValueError as ve:
-            logger.error(f"ValueError in get_user_statistics: {ve}", exc_info=True)
-            return create_error_response(
-                message=f"Invalid parameter: {str(ve)}",
-                status_code=400,
-                execution_time=timer.get_execution_time()
-            )
-        except Exception as e:
-            logger.error(f"Error getting user statistics: {e}", exc_info=True)
-            return create_error_response(
-                message="Failed to retrieve user statistics",
-                status_code=500,
-                execution_time=timer.get_execution_time()
-            )
-
-
-@router.get("/users/statistics", response_model=StandardResponse)
-async def get_user_statistics(
-    days: str = Query("30", description="Number of days for statistics"),
-    current_user: User = Depends(require_admin_role),
-    db: Session = Depends(get_db)
-):
-    """Get user statistics by type and activity."""
-    with ResponseTimer() as timer:
-        try:
-            # Parse days parameter - handle None, empty string, or actual string values
-            days_str = days if days is not None and days != "" else "30"
-            logger.info(f"Received days parameter: {repr(days_str)} (type: {type(days_str)})")
-            
-            try:
-                days_int = int(days_str)
-                logger.info(f"Parsed days_int: {days_int}")
-            except (ValueError, TypeError) as parse_error:
-                logger.warning(f"Failed to parse days parameter '{days_str}': {parse_error}, defaulting to 30")
-                days_int = 30
-            
-            # Clamp to valid range
-            if days_int < 1 or days_int > 365:
-                logger.warning(f"Days parameter {days_int} out of range, clamping to 30")
-                days_int = 30
-            
-            service = AdminService(db)
-            stats = service.get_user_statistics(days=days_int)
-            logger.info(f"Successfully retrieved user statistics for {days_int} days")
-            
             return create_success_response(
                 data=stats,
                 status_code=200,

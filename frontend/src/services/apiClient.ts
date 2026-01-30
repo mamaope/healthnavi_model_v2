@@ -536,22 +536,81 @@ export const chatApi = {
   },
 }
 
+export type AdminMetricsParams = {
+  days?: number
+  startDate?: string  // YYYY-MM-DD
+  endDate?: string    // YYYY-MM-DD
+  userIds?: number[]
+}
+
 export const adminApi = {
-  getMetrics(days: number = 30) {
-    // Ensure days is a valid number, default to 30 if invalid
+  getMetrics(params: number | AdminMetricsParams = 30) {
+    const isObj = typeof params === 'object' && params !== null
+    const days = isObj ? (params as AdminMetricsParams).days ?? 30 : (params as number)
     let daysParam = 30
     if (typeof days === 'number' && !isNaN(days) && days > 0) {
       daysParam = Math.floor(days)
-    } else if (typeof days === 'string') {
-      const parsed = parseInt(days, 10)
-      if (!isNaN(parsed) && parsed > 0) {
-        daysParam = parsed
-      }
     }
-    // Clamp to valid range
     daysParam = Math.max(1, Math.min(365, daysParam))
+    const search = new URLSearchParams({ days: String(daysParam) })
+    if (isObj) {
+      const p = params as AdminMetricsParams
+      if (p.startDate) search.set('start_date', p.startDate)
+      if (p.endDate) search.set('end_date', p.endDate)
+      if (p.userIds?.length) search.set('user_ids', p.userIds.join(','))
+    }
     return apiFetch<{ success: boolean; data: any }>(
-      `/admin/metrics?days=${daysParam}`,
+      `/admin/metrics?${search.toString()}`,
+      'GET',
+    )
+  },
+  getFeedbackList(params: { startDate?: string; endDate?: string; userIds?: number[]; feedbackType?: string; hasTextOnly?: boolean; limit?: number; offset?: number } = {}) {
+    const search = new URLSearchParams()
+    if (params.startDate) search.set('start_date', params.startDate)
+    if (params.endDate) search.set('end_date', params.endDate)
+    if (params.userIds?.length) search.set('user_ids', params.userIds.join(','))
+    if (params.feedbackType) search.set('feedback_type', params.feedbackType)
+    if (params.hasTextOnly) search.set('has_text_only', 'true')
+    search.set('limit', String(params.limit ?? 100))
+    search.set('offset', String(params.offset ?? 0))
+    return apiFetch<{ success: boolean; data: { items: any[]; total: number; limit: number; offset: number } }>(
+      `/admin/feedback?${search.toString()}`,
+      'GET',
+    )
+  },
+  exportReport(params: { startDate?: string; endDate?: string; userIds?: number[]; format?: 'json' | 'csv' } = {}) {
+    const search = new URLSearchParams({ format: params.format ?? 'json' })
+    if (params.startDate) search.set('start_date', params.startDate)
+    if (params.endDate) search.set('end_date', params.endDate)
+    if (params.userIds?.length) search.set('user_ids', params.userIds.join(','))
+    const path = `/admin/export/report?${search.toString()}`
+    if ((params.format ?? 'json') === 'csv') {
+      const token = typeof window !== 'undefined' ? window.localStorage.getItem(STORAGE_KEYS.accessToken) : null
+      return fetch(`${API_URL}${path}`, { credentials: 'include', headers: { Accept: 'text/csv', ...(token ? { Authorization: `Bearer ${token}` } : {}) } }).then(async (res) => {
+        if (!res.ok) throw new Error(await res.text())
+        const blob = await res.blob()
+        const disposition = res.headers.get('Content-Disposition')
+        const filename = disposition?.match(/filename=(.+)/)?.[1]?.replace(/"/g, '') ?? 'admin_report.csv'
+        const a = document.createElement('a')
+        a.href = URL.createObjectURL(blob)
+        a.download = filename
+        a.click()
+        URL.revokeObjectURL(a.href)
+        return { success: true, data: { downloaded: filename } }
+      })
+    }
+    return apiFetch<{ success: boolean; data: any }>(path, 'GET')
+  },
+  getUsageOverTime(params: AdminMetricsParams & { granularity?: string } = {}) {
+    const search = new URLSearchParams()
+    const days = (params as any).days ?? 30
+    search.set('days', String(Math.max(1, Math.min(365, days))))
+    if (params.startDate) search.set('start_date', params.startDate)
+    if (params.endDate) search.set('end_date', params.endDate)
+    if (params.userIds?.length) search.set('user_ids', params.userIds.join(','))
+    if ((params as any).granularity) search.set('granularity', (params as any).granularity)
+    return apiFetch<{ success: boolean; data: { series: { date: string; active_users: number; sessions: number; messages: number }[] } }>(
+      `/admin/metrics/usage-over-time?${search.toString()}`,
       'GET',
     )
   },

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '../providers/AuthProvider'
 import { adminApi } from '../services/apiClient'
 import { useNavigate } from 'react-router-dom'
@@ -10,7 +10,11 @@ import AIResponseStatisticsPanel from '../components/admin/AIResponseStatisticsP
 import SurveyManagementPanel from '../components/admin/SurveyManagementPanel'
 import SurveyStatisticsPanel from '../components/admin/SurveyStatisticsPanel'
 import DeviceStatisticsPanel from '../components/admin/DeviceStatisticsPanel'
+import FeedbackCommentsPanel from '../components/admin/FeedbackCommentsPanel'
+import UsageOverTimePanel from '../components/admin/UsageOverTimePanel'
 import './AdminDashboard.css'
+
+type FilterMode = 'preset' | 'custom'
 
 export default function AdminDashboard() {
   const { user, isAuthenticated, initializing } = useAuth()
@@ -19,42 +23,43 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [days, setDays] = useState(30)
+  const [filterMode, setFilterMode] = useState<FilterMode>('preset')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [userList, setUserList] = useState<{ id: number; email: string; full_name?: string }[]>([])
+  const [selectedUserIds, setSelectedUserIds] = useState<number[]>([])
+  const [exporting, setExporting] = useState(false)
 
-  useEffect(() => {
-    // Wait for auth to initialize before checking
-    if (initializing) {
-      return
-    }
+  const metricsParams = {
+    days: filterMode === 'preset' ? days : undefined,
+    startDate: filterMode === 'custom' && startDate ? startDate : undefined,
+    endDate: filterMode === 'custom' && endDate ? endDate : undefined,
+    userIds: selectedUserIds.length > 0 ? selectedUserIds : undefined,
+  }
 
-    // Check if user is admin
-    if (!isAuthenticated) {
-      navigate('/')
-      return
-    }
+  const effectiveDays =
+    filterMode === 'custom' && startDate && endDate
+      ? Math.max(1, Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (24 * 60 * 60 * 1000)))
+      : days
 
-    if (user && !['admin', 'super_admin'].includes(user.role)) {
-      navigate('/')
-      return
-    }
+  const feedbackDateRange =
+    filterMode === 'custom' && startDate && endDate
+      ? { startDate, endDate }
+      : (() => {
+          const end = new Date()
+          const start = new Date()
+          start.setDate(start.getDate() - effectiveDays)
+          return {
+            startDate: start.toISOString().slice(0, 10),
+            endDate: end.toISOString().slice(0, 10),
+          }
+        })()
 
-    // Only load data if user is authenticated and has admin role
-    if (isAuthenticated && user && ['admin', 'super_admin'].includes(user.role)) {
-      loadMetrics()
-      
-      // Auto-refresh every 5 minutes
-      const interval = setInterval(() => {
-        loadMetrics()
-      }, 5 * 60 * 1000)
-
-      return () => clearInterval(interval)
-    }
-  }, [isAuthenticated, user, initializing, days, navigate])
-
-  const loadMetrics = async () => {
+  const loadMetrics = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
-      const response = await adminApi.getMetrics(days)
+      const response = await adminApi.getMetrics(metricsParams)
       if (response.success) {
         setMetrics(response.data)
       } else {
@@ -64,6 +69,61 @@ export default function AdminDashboard() {
       setError(err.message || 'Failed to load metrics')
     } finally {
       setLoading(false)
+    }
+  }, [filterMode, days, startDate, endDate, selectedUserIds.join(',')])
+
+  useEffect(() => {
+    if (initializing) return
+    if (!isAuthenticated || !user || !['admin', 'super_admin'].includes(user.role)) {
+      navigate('/')
+      return
+    }
+    if (isAuthenticated && user && ['admin', 'super_admin'].includes(user.role)) {
+      loadMetrics()
+      const interval = setInterval(loadMetrics, 5 * 60 * 1000)
+      return () => clearInterval(interval)
+    }
+  }, [isAuthenticated, user, initializing, loadMetrics, navigate])
+
+  useEffect(() => {
+    if (!isAuthenticated || !user || !['admin', 'super_admin'].includes(user.role)) return
+    adminApi.getUsers(200, 0).then((res) => {
+      if (res.success && res.data?.users) {
+        setUserList(res.data.users.map((u: any) => ({ id: u.id, email: u.email, full_name: u.full_name })))
+      }
+    })
+  }, [isAuthenticated, user])
+
+  const handleExport = async (format: 'json' | 'csv') => {
+    setExporting(true)
+    try {
+      if (format === 'csv') {
+        await adminApi.exportReport({
+          startDate: metricsParams.startDate,
+          endDate: metricsParams.endDate,
+          userIds: metricsParams.userIds,
+          format: 'csv',
+        })
+      } else {
+        const res = await adminApi.exportReport({
+          startDate: metricsParams.startDate,
+          endDate: metricsParams.endDate,
+          userIds: metricsParams.userIds,
+          format: 'json',
+        })
+        if (res.success && res.data) {
+          const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' })
+          const a = document.createElement('a')
+          a.href = URL.createObjectURL(blob)
+          a.download = `admin_report_${new Date().toISOString().slice(0, 10)}.json`
+          a.click()
+          URL.revokeObjectURL(a.href)
+        }
+      }
+    } catch (e: any) {
+      setError(e.message || 'Export failed')
+    } finally {
+      setExporting(false)
     }
   }
 
@@ -91,16 +151,91 @@ export default function AdminDashboard() {
         <div className="admin-header-content">
           <h1>Admin Dashboard</h1>
           <div className="admin-header-actions">
-            <select 
-              value={days} 
-              onChange={(e) => setDays(Number(e.target.value))}
+            <span className="filter-mode-label">Period:</span>
+            <select
+              value={filterMode}
+              onChange={(e) => setFilterMode(e.target.value as FilterMode)}
               className="period-selector"
             >
-              <option value={7}>Last 7 days</option>
-              <option value={30}>Last 30 days</option>
-              <option value={90}>Last 90 days</option>
-              <option value={365}>Last year</option>
+              <option value="preset">Preset</option>
+              <option value="custom">Custom range</option>
             </select>
+            {filterMode === 'preset' && (
+              <select
+                value={days}
+                onChange={(e) => setDays(Number(e.target.value))}
+                className="period-selector"
+              >
+                <option value={7}>Last 7 days</option>
+                <option value={30}>Last 30 days</option>
+                <option value={90}>Last 90 days</option>
+                <option value={365}>Last year</option>
+              </select>
+            )}
+            {filterMode === 'custom' && (
+              <>
+                <label className="date-label">
+                  From
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="date-input"
+                  />
+                </label>
+                <label className="date-label">
+                  To
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="date-input"
+                  />
+                </label>
+              </>
+            )}
+            <label className="user-filter-label">
+              Users (optional)
+              <select
+                multiple
+                value={selectedUserIds.map(String)}
+                onChange={(e) => {
+                  const opts = Array.from(e.target.selectedOptions, (o) => Number(o.value))
+                  setSelectedUserIds(opts)
+                }}
+                className="user-multi-select"
+                title="Hold Ctrl/Cmd to select multiple; empty = all users"
+              >
+                {userList.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.full_name || u.email}
+                  </option>
+                ))}
+              </select>
+              {selectedUserIds.length > 0 && (
+                <button type="button" className="btn-clear-users" onClick={() => setSelectedUserIds([])}>
+                  Clear
+                </button>
+              )}
+            </label>
+            <button
+              type="button"
+              onClick={() => handleExport('csv')}
+              disabled={exporting}
+              className="btn-export"
+              title="Export report as CSV"
+            >
+              {exporting ? 'Exporting…' : 'Export CSV'}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleExport('json')}
+              disabled={exporting}
+              className="btn-export btn-export-json"
+              title="Export report as JSON"
+            >
+              Export JSON
+            </button>
             <button onClick={() => navigate('/')} className="btn-back">
               Back to Chat
             </button>
@@ -124,13 +259,15 @@ export default function AdminDashboard() {
 
       {metrics && (
         <div className="admin-panels">
-          <UserTypeBreakdownPanel days={days} />
-          <DeviceStatisticsPanel devices={metrics.devices} days={days} />
-          <UsagePanel metrics={metrics.usage} days={days} />
-          <SessionManagementPanel days={days} />
-          <AIResponseStatisticsPanel days={days} />
-          <UserManagementPanel days={days} />
-          <SurveyStatisticsPanel days={days} />
+          <UsageOverTimePanel filters={{ startDate: metricsParams.startDate, endDate: metricsParams.endDate, userIds: metricsParams.userIds }} days={effectiveDays} />
+          <UserTypeBreakdownPanel days={effectiveDays} />
+          <DeviceStatisticsPanel devices={metrics.devices} days={effectiveDays} />
+          <UsagePanel metrics={metrics.usage} days={effectiveDays} />
+          <SessionManagementPanel days={effectiveDays} />
+          <AIResponseStatisticsPanel days={effectiveDays} />
+          <UserManagementPanel days={effectiveDays} />
+          <SurveyStatisticsPanel days={effectiveDays} />
+          <FeedbackCommentsPanel filters={{ startDate: feedbackDateRange.startDate, endDate: feedbackDateRange.endDate, userIds: metricsParams.userIds }} />
           <SurveyManagementPanel />
         </div>
       )}
