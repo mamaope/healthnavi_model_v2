@@ -75,13 +75,13 @@ async def diagnosis_health():
 async def diagnose(
     data: DiagnosisInput,
     request: Request,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_safe_v2),
     db: Session = Depends(get_db),
 ):
     """
     Generate AI-powered diagnosis based on patient data.
-    Requires authentication so messages are always stored and message_id is
-    returned for feedback (Useful / Not useful).
+    Supports both authenticated users (messages stored, message_id for feedback) and
+    guest users (no storage, no message_id).
     """
     with ResponseTimer() as timer:
         try:
@@ -93,10 +93,11 @@ async def diagnose(
                     execution_time=timer.get_execution_time()
                 )
 
-            logger.info(f"Diagnosis request from: {current_user.username} (role: {current_user.role})")
+            user_info = f"{current_user.username} (role: {current_user.role})" if current_user else "unauthenticated (guest)"
+            logger.info(f"Diagnosis request from: {user_info}")
             logger.info(f"Patient data length: {len(data.patient_data)} characters")
 
-            # Get chat history from session if session_id is provided
+            # Get chat history from session if session_id is provided (authenticated only)
             chat_history = data.chat_history or ""
             session_id = data.session_id
             message_id = None
@@ -104,7 +105,7 @@ async def diagnose(
             # Initialize session service
             session_service = DiagnosisSessionService(db)
             
-            if session_id:
+            if session_id and current_user:
                 try:
                     chat_history = session_service.get_chat_history(session_id, current_user)
                 except Exception as e:
@@ -119,8 +120,8 @@ async def diagnose(
             logger.info(f"Search mode: {'DEEP SEARCH' if deep_search_enabled else 'QUICK SEARCH'}")
             
             try:
-                # Get user's medical professional type for role-based prompts
-                user_role = current_user.medical_professional_type
+                # Get user's medical professional type for role-based prompts (default for guest)
+                user_role = current_user.medical_professional_type if current_user else None
                 response, diagnosis_complete, prompt_type, followup_questions = await generate_response(
                     query=data.patient_data,
                     chat_history=chat_history,
@@ -148,63 +149,64 @@ async def diagnose(
                     execution_time=timer.get_execution_time()
                 )
 
-            # Store user and AI messages so message_id is always returned for feedback
-            try:
-                if not session_id:
-                    from healthnavi.schemas import ChatSessionCreate
-                    new_session_data = ChatSessionCreate(
-                        session_name=f"Diagnosis Session - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
-                        patient_summary=data.patient_data[:200] + "..." if len(data.patient_data) > 200 else data.patient_data
-                    )
-                    new_session = session_service.create_session(
-                        current_user, new_session_data, device_type=get_device_type(request)
-                    )
-                    session_id = new_session.id
-                    logger.info(f"Created new diagnosis session {session_id} for user {current_user.id}")
+            # Store user and AI messages only when authenticated (so message_id is returned for feedback)
+            if current_user:
+                try:
+                    if not session_id:
+                        from healthnavi.schemas import ChatSessionCreate
+                        new_session_data = ChatSessionCreate(
+                            session_name=f"Diagnosis Session - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
+                            patient_summary=data.patient_data[:200] + "..." if len(data.patient_data) > 200 else data.patient_data
+                        )
+                        new_session = session_service.create_session(
+                            current_user, new_session_data, device_type=get_device_type(request)
+                        )
+                        session_id = new_session.id
+                        logger.info(f"Created new diagnosis session {session_id} for user {current_user.id}")
 
-                user_message = ChatMessageCreate(
-                    content=data.patient_data,
-                    message_type="user",
-                    patient_data=data.patient_data,
-                    diagnosis_complete=False
-                )
-                user_msg_response = session_service.add_message(session_id, current_user, user_message)
-
-                if user_msg_response:
-                    ai_message = ChatMessageCreate(
-                        content=response,
-                        message_type="assistant",
+                    user_message = ChatMessageCreate(
+                        content=data.patient_data,
+                        message_type="user",
                         patient_data=data.patient_data,
-                        diagnosis_complete=diagnosis_complete
+                        diagnosis_complete=False
                     )
-                    ai_msg_response = session_service.add_message(session_id, current_user, ai_message)
-                    if ai_msg_response is not None:
-                        message_id = ai_msg_response.id
-                        logger.info(f"Stored messages in session {session_id}, message_id: {message_id}")
+                    user_msg_response = session_service.add_message(session_id, current_user, user_message)
+
+                    if user_msg_response:
+                        ai_message = ChatMessageCreate(
+                            content=response,
+                            message_type="assistant",
+                            patient_data=data.patient_data,
+                            diagnosis_complete=diagnosis_complete
+                        )
+                        ai_msg_response = session_service.add_message(session_id, current_user, ai_message)
+                        if ai_msg_response is not None:
+                            message_id = ai_msg_response.id
+                            logger.info(f"Stored messages in session {session_id}, message_id: {message_id}")
+                        else:
+                            logger.warning("add_message for AI returned None; message_id will be null and feedback unavailable")
                     else:
-                        logger.warning("add_message for AI returned None; message_id will be null and feedback unavailable")
-                else:
-                    logger.warning("User message not saved, skipping AI message storage")
+                        logger.warning("User message not saved, skipping AI message storage")
+                        if session_id:
+                            try:
+                                session_service.delete_session(session_id, current_user)
+                                logger.info(f"Cleaned up empty session {session_id}")
+                            except Exception as cleanup_error:
+                                logger.warning(f"Could not clean up empty session {session_id}: {cleanup_error}")
+
+                except Exception as e:
+                    logger.warning(f"Could not store messages: {e}", exc_info=True)
                     if session_id:
                         try:
-                            session_service.delete_session(session_id, current_user)
-                            logger.info(f"Cleaned up empty session {session_id}")
+                            from healthnavi.models.diagnosis_session import ChatMessage
+                            message_count = db.query(func.count(ChatMessage.id)).filter(
+                                ChatMessage.session_id == session_id
+                            ).scalar() or 0
+                            if message_count == 0:
+                                session_service.delete_session(session_id, current_user)
+                                logger.info(f"Cleaned up empty session {session_id} after error")
                         except Exception as cleanup_error:
-                            logger.warning(f"Could not clean up empty session {session_id}: {cleanup_error}")
-
-            except Exception as e:
-                logger.warning(f"Could not store messages: {e}", exc_info=True)
-                if session_id:
-                    try:
-                        from healthnavi.models.diagnosis_session import ChatMessage
-                        message_count = db.query(func.count(ChatMessage.id)).filter(
-                            ChatMessage.session_id == session_id
-                        ).scalar() or 0
-                        if message_count == 0:
-                            session_service.delete_session(session_id, current_user)
-                            logger.info(f"Cleaned up empty session {session_id} after error")
-                    except Exception as cleanup_error:
-                        logger.warning(f"Could not clean up empty session after error: {cleanup_error}")
+                            logger.warning(f"Could not clean up empty session after error: {cleanup_error}")
 
             # Build updated chat history
             updated_chat_history = (

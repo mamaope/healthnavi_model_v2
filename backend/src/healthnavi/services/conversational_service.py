@@ -20,7 +20,7 @@ from healthnavi.core.constants import (
     QUICK_SEARCH_PROMPT, DEEP_SEARCH_PROMPT,
     QUICK_SEARCH_MAX_OUTPUT_TOKENS, DEEP_SEARCH_MAX_OUTPUT_TOKENS,
     CHARS_PER_TOKEN, MAX_CONTEXT_WINDOW, ROLE_INSTRUCTIONS,
-    BOLDING_RULES, EXAM_HANDLING
+    BOLDING_RULES, EXAM_HANDLING, GLOBAL_CONDUCT_RULES
 )
 
 logging.basicConfig(
@@ -307,7 +307,8 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
             context=optimized_context,
             role_instruction=role_text,
             bolding_rules=BOLDING_RULES,
-            exam_handling=EXAM_HANDLING
+            exam_handling=EXAM_HANDLING,
+            global_conduct_rules=GLOBAL_CONDUCT_RULES
         )
         user_context_block = f"""
             ### USER QUESTION:
@@ -544,7 +545,8 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
             context=optimized_context,
             role_instruction=role_text,
             bolding_rules=BOLDING_RULES,
-            exam_handling=EXAM_HANDLING
+            exam_handling=EXAM_HANDLING,
+            global_conduct_rules=GLOBAL_CONDUCT_RULES
         )
         user_context_block = f"""
             ### USER QUESTION:
