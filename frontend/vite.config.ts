@@ -1,8 +1,13 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react-swc'
+import http from 'http'
 
 const proxyTarget =
   process.env.VITE_PROXY_TARGET ?? 'http://localhost:8050'
+
+// Fresh connection per request so backend hostname (e.g. api:8050) is re-resolved
+// each time; avoids ECONNREFUSED when the backend container restarts and gets a new IP.
+const proxyAgent = new http.Agent({ keepAlive: false })
 
 const isProduction = process.env.NODE_ENV === 'production'
 // Disable HMR in production or if explicitly disabled
@@ -38,6 +43,7 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
         timeout: 600000, // 10 minutes for transcription
+        agent: proxyAgent,
       },
     },
     watch: {
