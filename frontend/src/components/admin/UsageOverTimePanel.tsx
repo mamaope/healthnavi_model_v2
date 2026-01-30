@@ -14,7 +14,7 @@ import type { AdminMetricsParams } from '../../services/apiClient'
 import './UsageOverTimePanel.css'
 
 type UsageOverTimePanelProps = {
-  filters: { startDate?: string; endDate?: string; userIds?: number[] }
+  filters: { startDate?: string; endDate?: string; userIds?: number[]; excludeUserIds?: number[] }
   days: number
 }
 
@@ -30,6 +30,7 @@ export default function UsageOverTimePanel({ filters, days }: UsageOverTimePanel
       startDate: filters.startDate,
       endDate: filters.endDate,
       userIds: filters.userIds,
+      excludeUserIds: filters.excludeUserIds,
     }
     setLoading(true)
     setError(null)
@@ -42,7 +43,7 @@ export default function UsageOverTimePanel({ filters, days }: UsageOverTimePanel
       .catch((e) => !cancelled && setError(e.message || 'Failed to load usage over time'))
       .finally(() => !cancelled && setLoading(false))
     return () => { cancelled = true }
-  }, [days, filters.startDate, filters.endDate, filters.userIds?.join(',')])
+  }, [days, filters.startDate, filters.endDate, filters.userIds?.join(','), filters.excludeUserIds?.join(',')])
 
   if (loading) {
     return (

@@ -541,6 +541,7 @@ export type AdminMetricsParams = {
   startDate?: string  // YYYY-MM-DD
   endDate?: string    // YYYY-MM-DD
   userIds?: number[]
+  excludeUserIds?: number[]
 }
 
 export const adminApi = {
@@ -558,17 +559,19 @@ export const adminApi = {
       if (p.startDate) search.set('start_date', p.startDate)
       if (p.endDate) search.set('end_date', p.endDate)
       if (p.userIds?.length) search.set('user_ids', p.userIds.join(','))
+      if (p.excludeUserIds?.length) search.set('exclude_user_ids', p.excludeUserIds.join(','))
     }
     return apiFetch<{ success: boolean; data: any }>(
       `/admin/metrics?${search.toString()}`,
       'GET',
     )
   },
-  getFeedbackList(params: { startDate?: string; endDate?: string; userIds?: number[]; feedbackType?: string; hasTextOnly?: boolean; limit?: number; offset?: number } = {}) {
+  getFeedbackList(params: { startDate?: string; endDate?: string; userIds?: number[]; excludeUserIds?: number[]; feedbackType?: string; hasTextOnly?: boolean; limit?: number; offset?: number } = {}) {
     const search = new URLSearchParams()
     if (params.startDate) search.set('start_date', params.startDate)
     if (params.endDate) search.set('end_date', params.endDate)
     if (params.userIds?.length) search.set('user_ids', params.userIds.join(','))
+    if (params.excludeUserIds?.length) search.set('exclude_user_ids', params.excludeUserIds.join(','))
     if (params.feedbackType) search.set('feedback_type', params.feedbackType)
     if (params.hasTextOnly) search.set('has_text_only', 'true')
     search.set('limit', String(params.limit ?? 100))
@@ -578,11 +581,12 @@ export const adminApi = {
       'GET',
     )
   },
-  exportReport(params: { startDate?: string; endDate?: string; userIds?: number[]; format?: 'json' | 'csv' } = {}) {
+  exportReport(params: { startDate?: string; endDate?: string; userIds?: number[]; excludeUserIds?: number[]; format?: 'json' | 'csv' } = {}) {
     const search = new URLSearchParams({ format: params.format ?? 'json' })
     if (params.startDate) search.set('start_date', params.startDate)
     if (params.endDate) search.set('end_date', params.endDate)
     if (params.userIds?.length) search.set('user_ids', params.userIds.join(','))
+    if (params.excludeUserIds?.length) search.set('exclude_user_ids', params.excludeUserIds.join(','))
     const path = `/admin/export/report?${search.toString()}`
     if ((params.format ?? 'json') === 'csv') {
       const token = typeof window !== 'undefined' ? window.localStorage.getItem(STORAGE_KEYS.accessToken) : null
@@ -608,6 +612,7 @@ export const adminApi = {
     if (params.startDate) search.set('start_date', params.startDate)
     if (params.endDate) search.set('end_date', params.endDate)
     if (params.userIds?.length) search.set('user_ids', params.userIds.join(','))
+    if (params.excludeUserIds?.length) search.set('exclude_user_ids', params.excludeUserIds.join(','))
     if ((params as any).granularity) search.set('granularity', (params as any).granularity)
     return apiFetch<{ success: boolean; data: { series: { date: string; active_users: number; sessions: number; messages: number }[] } }>(
       `/admin/metrics/usage-over-time?${search.toString()}`,

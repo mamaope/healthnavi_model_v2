@@ -28,6 +28,7 @@ export default function AdminDashboard() {
   const [endDate, setEndDate] = useState('')
   const [userList, setUserList] = useState<{ id: number; email: string; full_name?: string }[]>([])
   const [selectedUserIds, setSelectedUserIds] = useState<number[]>([])
+  const [excludedUserIds, setExcludedUserIds] = useState<number[]>([])
   const [exporting, setExporting] = useState(false)
 
   const metricsParams = {
@@ -35,6 +36,7 @@ export default function AdminDashboard() {
     startDate: filterMode === 'custom' && startDate ? startDate : undefined,
     endDate: filterMode === 'custom' && endDate ? endDate : undefined,
     userIds: selectedUserIds.length > 0 ? selectedUserIds : undefined,
+    excludeUserIds: excludedUserIds.length > 0 ? excludedUserIds : undefined,
   }
 
   const effectiveDays =
@@ -70,7 +72,7 @@ export default function AdminDashboard() {
     } finally {
       setLoading(false)
     }
-  }, [filterMode, days, startDate, endDate, selectedUserIds.join(',')])
+  }, [filterMode, days, startDate, endDate, selectedUserIds.join(','), excludedUserIds.join(',')])
 
   useEffect(() => {
     if (initializing) return
@@ -102,6 +104,7 @@ export default function AdminDashboard() {
           startDate: metricsParams.startDate,
           endDate: metricsParams.endDate,
           userIds: metricsParams.userIds,
+          excludeUserIds: metricsParams.excludeUserIds,
           format: 'csv',
         })
       } else {
@@ -109,6 +112,7 @@ export default function AdminDashboard() {
           startDate: metricsParams.startDate,
           endDate: metricsParams.endDate,
           userIds: metricsParams.userIds,
+          excludeUserIds: metricsParams.excludeUserIds,
           format: 'json',
         })
         if (res.success && res.data) {
@@ -195,7 +199,7 @@ export default function AdminDashboard() {
               </>
             )}
             <label className="user-filter-label">
-              Users (optional)
+              Include users (optional)
               <select
                 multiple
                 value={selectedUserIds.map(String)}
@@ -214,6 +218,30 @@ export default function AdminDashboard() {
               </select>
               {selectedUserIds.length > 0 && (
                 <button type="button" className="btn-clear-users" onClick={() => setSelectedUserIds([])}>
+                  Clear
+                </button>
+              )}
+            </label>
+            <label className="user-filter-label">
+              Exclude users
+              <select
+                multiple
+                value={excludedUserIds.map(String)}
+                onChange={(e) => {
+                  const opts = Array.from(e.target.selectedOptions, (o) => Number(o.value))
+                  setExcludedUserIds(opts)
+                }}
+                className="user-multi-select"
+                title="Hold Ctrl/Cmd to select multiple; these users are removed from all statistics"
+              >
+                {userList.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.full_name || u.email}
+                  </option>
+                ))}
+              </select>
+              {excludedUserIds.length > 0 && (
+                <button type="button" className="btn-clear-users" onClick={() => setExcludedUserIds([])}>
                   Clear
                 </button>
               )}
@@ -259,7 +287,7 @@ export default function AdminDashboard() {
 
       {metrics && (
         <div className="admin-panels">
-          <UsageOverTimePanel filters={{ startDate: metricsParams.startDate, endDate: metricsParams.endDate, userIds: metricsParams.userIds }} days={effectiveDays} />
+          <UsageOverTimePanel filters={{ startDate: metricsParams.startDate, endDate: metricsParams.endDate, userIds: metricsParams.userIds, excludeUserIds: metricsParams.excludeUserIds }} days={effectiveDays} />
           <UserTypeBreakdownPanel days={effectiveDays} />
           <DeviceStatisticsPanel devices={metrics.devices} days={effectiveDays} />
           <UsagePanel metrics={metrics.usage} days={effectiveDays} />
@@ -267,7 +295,7 @@ export default function AdminDashboard() {
           <AIResponseStatisticsPanel days={effectiveDays} />
           <UserManagementPanel days={effectiveDays} />
           <SurveyStatisticsPanel days={effectiveDays} />
-          <FeedbackCommentsPanel filters={{ startDate: feedbackDateRange.startDate, endDate: feedbackDateRange.endDate, userIds: metricsParams.userIds }} />
+          <FeedbackCommentsPanel filters={{ startDate: feedbackDateRange.startDate, endDate: feedbackDateRange.endDate, userIds: metricsParams.userIds, excludeUserIds: metricsParams.excludeUserIds }} />
           <SurveyManagementPanel />
         </div>
       )}

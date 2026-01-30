@@ -3,7 +3,7 @@ import { adminApi } from '../../services/apiClient'
 import './FeedbackCommentsPanel.css'
 
 type FeedbackCommentsPanelProps = {
-  filters: { startDate?: string; endDate?: string; userIds?: number[] }
+  filters: { startDate?: string; endDate?: string; userIds?: number[]; excludeUserIds?: number[] }
 }
 
 export default function FeedbackCommentsPanel({ filters }: FeedbackCommentsPanelProps) {
@@ -23,6 +23,7 @@ export default function FeedbackCommentsPanel({ filters }: FeedbackCommentsPanel
         startDate: filters.startDate,
         endDate: filters.endDate,
         userIds: filters.userIds,
+        excludeUserIds: filters.excludeUserIds,
         feedbackType: feedbackType || undefined,
         hasTextOnly,
         limit,
@@ -35,7 +36,7 @@ export default function FeedbackCommentsPanel({ filters }: FeedbackCommentsPanel
       })
       .finally(() => setLoading(false))
     return () => { cancelled = true }
-  }, [filters.startDate, filters.endDate, filters.userIds?.join(','), feedbackType, hasTextOnly, page])
+  }, [filters.startDate, filters.endDate, filters.userIds?.join(','), filters.excludeUserIds?.join(','), feedbackType, hasTextOnly, page])
 
   const totalPages = Math.ceil(total / limit)
 

@@ -40,17 +40,13 @@ async def get_admin_metrics(
     days: str = Query("30", description="Number of days to analyze (used if start_date/end_date not provided)"),
     start_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD for exact range"),
     end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD for exact range"),
-    user_ids: Optional[str] = Query(None, description="Comma-separated user IDs to filter by"),
+    user_ids: Optional[str] = Query(None, description="Comma-separated user IDs to include (optional)"),
+    exclude_user_ids: Optional[str] = Query(None, description="Comma-separated user IDs to exclude from statistics"),
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db)
 ):
     """
-    Get all admin dashboard metrics. Filter by exact date range (start_date, end_date) and/or by users (user_ids).
-    
-    Example request:
-        GET /api/v2/admin/metrics?days=30
-        GET /api/v2/admin/metrics?start_date=2025-01-01&end_date=2025-01-24
-        GET /api/v2/admin/metrics?start_date=2025-01-01&end_date=2025-01-24&user_ids=1,2,3
+    Get all admin dashboard metrics. Filter by date range and optionally include only certain users or exclude users.
     """
     with ResponseTimer() as timer:
         try:
@@ -58,12 +54,14 @@ async def get_admin_metrics(
             days_int = parse_days_parameter(days, default=30, min_days=1, max_days=365)
             period_start, period_end = parse_date_range(start_date, end_date)
             user_ids_list = _parse_user_ids(user_ids)
+            excluded_list = _parse_user_ids(exclude_user_ids)
             service = AdminService(db)
             metrics = service.get_all_metrics(
                 days=days_int,
                 period_start=period_start,
                 period_end=period_end,
                 user_ids=user_ids_list,
+                exclude_user_ids=excluded_list,
             )
             service.log_audit_event(
                 user_id=current_user.id,
@@ -88,7 +86,8 @@ async def get_admin_metrics(
 async def get_feedback_list(
     start_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
     end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
-    user_ids: Optional[str] = Query(None, description="Comma-separated user IDs"),
+    user_ids: Optional[str] = Query(None, description="Comma-separated user IDs to include"),
+    exclude_user_ids: Optional[str] = Query(None, description="Comma-separated user IDs to exclude"),
     feedback_type: Optional[str] = Query(None, description="helpful or not_helpful"),
     has_text_only: bool = Query(False, description="Only feedback with text comments"),
     limit: int = Query(100, ge=1, le=500),
@@ -104,6 +103,7 @@ async def get_feedback_list(
                 start_date=start_date,
                 end_date=end_date,
                 user_ids=_parse_user_ids(user_ids),
+                exclude_user_ids=_parse_user_ids(exclude_user_ids),
                 feedback_type=feedback_type,
                 has_text_only=has_text_only,
                 limit=limit,
@@ -127,7 +127,8 @@ async def get_feedback_list(
 async def export_report(
     start_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
     end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
-    user_ids: Optional[str] = Query(None, description="Comma-separated user IDs"),
+    user_ids: Optional[str] = Query(None, description="Comma-separated user IDs to include"),
+    exclude_user_ids: Optional[str] = Query(None, description="Comma-separated user IDs to exclude"),
     format: str = Query("json", description="json or csv"),
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db),
@@ -140,6 +141,7 @@ async def export_report(
                 start_date=start_date,
                 end_date=end_date,
                 user_ids=_parse_user_ids(user_ids),
+                exclude_user_ids=_parse_user_ids(exclude_user_ids),
                 format=format.strip().lower() or "json",
             )
             if format.strip().lower() == "csv" and "content" in result:
@@ -168,7 +170,8 @@ async def get_usage_over_time(
     days: str = Query("30", description="Number of days (used if start_date/end_date not provided)"),
     start_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
     end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
-    user_ids: Optional[str] = Query(None, description="Comma-separated user IDs"),
+    user_ids: Optional[str] = Query(None, description="Comma-separated user IDs to include"),
+    exclude_user_ids: Optional[str] = Query(None, description="Comma-separated user IDs to exclude"),
     granularity: str = Query("day", description="day or week"),
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db),
@@ -185,6 +188,7 @@ async def get_usage_over_time(
                 period_start=period_start,
                 period_end=period_end,
                 user_ids=_parse_user_ids(user_ids),
+                exclude_user_ids=_parse_user_ids(exclude_user_ids),
                 granularity=granularity,
             )
             return create_success_response(
@@ -813,11 +817,12 @@ async def get_user_statistics(
     days: str = Query("30", description="Number of days for statistics"),
     start_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
     end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
-    user_ids: Optional[str] = Query(None, description="Comma-separated user IDs"),
+    user_ids: Optional[str] = Query(None, description="Comma-separated user IDs to include"),
+    exclude_user_ids: Optional[str] = Query(None, description="Comma-separated user IDs to exclude"),
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db)
 ):
-    """Get user statistics by type and activity. Supports date range and user filter."""
+    """Get user statistics by type and activity. Supports date range and include/exclude user filters."""
     with ResponseTimer() as timer:
         try:
             from healthnavi.core.query_utils import parse_days_parameter, parse_date_range
@@ -829,6 +834,7 @@ async def get_user_statistics(
                 period_start=period_start,
                 period_end=period_end,
                 user_ids=_parse_user_ids(user_ids),
+                exclude_user_ids=_parse_user_ids(exclude_user_ids),
             )
             return create_success_response(
                 data=stats,

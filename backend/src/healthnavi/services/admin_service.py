@@ -16,6 +16,44 @@ from healthnavi.models.admin import SafetyEvent, Survey, Alert, AuditLog, Safety
 
 logger = logging.getLogger(__name__)
 
+# Human-readable names and how each metric is calculated (for export reports)
+METRIC_META = {
+    "usage.daily_active_users": ("Daily active users", "Number of unique users who had at least one chat session today."),
+    "usage.weekly_active_users": ("Weekly active users", "Number of unique users who had at least one chat session in the last 7 days."),
+    "usage.activated_users": ("Activated users", "Number of users who have ever started at least one chat session."),
+    "usage.total_users": ("Total users", "Total number of user accounts in the system."),
+    "usage.activation_rate": ("Activation rate (%)", "Percentage of all users who have started at least one session (activated users ÷ total users × 100)."),
+    "usage.queries_per_clinician": ("Average queries per user", "Average number of user messages (queries) per user in the period."),
+    "usage.sessions_per_user": ("Average sessions per user", "Average number of chat sessions per user in the period."),
+    "usage.retention_week1_to_week3": ("Retention rate (%)", "Of users active in week 1 (7–14 days ago), the percentage who were also active in week 3 (last 7 days)."),
+    "usage.week1_users": ("Week 1 users", "Number of unique users active in the window 7–14 days ago."),
+    "usage.week3_active_users": ("Week 3 active users", "Of Week 1 users, how many were also active in the last 7 days."),
+    "clinical_value.helpful_feedback_percentage": ("Helpful feedback (%)", "Percentage of all feedback that was marked as helpful."),
+    "clinical_value.total_feedback": ("Total feedback count", "Total number of feedback submissions in the period."),
+    "clinical_value.helpful_feedback": ("Helpful feedback count", "Number of feedback submissions marked as helpful."),
+    "clinical_value.not_helpful_feedback": ("Not helpful feedback count", "Number of feedback submissions marked as not helpful."),
+    "clinical_value.avg_usefulness_score": ("Average usefulness score", "Average rating (1–5) given by users when submitting feedback."),
+    "clinical_value.relevant_queries_percentage": ("Relevant queries (%)", "From surveys: percentage of queries users said were relevant to their work."),
+    "clinical_value.avg_time_saved_minutes": ("Average time saved (minutes)", "From surveys: average minutes saved per session reported by users."),
+    "safety.total_queries": ("Total user queries", "Total number of user messages in the period."),
+    "safety.total_flags": ("Safety flags", "Number of safety events or flags raised in the period."),
+    "safety.flags_per_100_queries": ("Flags per 100 queries", "Safety flags per 100 user queries (rate)."),
+    "safety.open_safety_events": ("Open safety events", "Number of safety events currently in open status."),
+    "safety.critical_incidents": ("Critical incidents", "Number of safety events marked as critical."),
+    "safety.citations_percentage": ("Responses with citations (%)", "Percentage of AI responses that included guideline citations."),
+    "safety.red_flag_accuracy_percentage": ("Red-flag accuracy (%)", "Of red-flag queries, percentage that were correctly flagged."),
+    "pmf.heavy_users": ("Heavy users", "Users with more than 20 queries in the last 7 days."),
+    "pmf.total_pmf_responses": ("PMF survey responses", "Number of Product-Market Fit survey responses in the period."),
+    "pmf.very_disappointed_percentage": ("Very disappointed (%)", "Percentage of PMF respondents who said they would be very disappointed without the product."),
+    "pmf.avg_pmf_score": ("Average PMF score", "Average score from PMF surveys."),
+    "surveys.overall.total_completed": ("Surveys completed (overall)", "Total survey submissions in the period across all survey types."),
+    "surveys.overall.total_unique_users_completed": ("Unique users who completed surveys", "Number of distinct users who submitted at least one survey in the period."),
+    "surveys.overall.total_users": ("Total users (for survey stats)", "Total number of users in the system (used as denominator for completion rate)."),
+    "surveys.overall.overall_completion_percentage": ("Survey completion rate (%)", "Percentage of total users who completed at least one survey."),
+    "devices.total": ("Device log entries", "Total device activity log entries (e.g. logins, session creates) in the period."),
+    "devices.by_type": ("Device breakdown", "Counts by device type (phone, tablet, laptop)."),
+}
+
 
 class AdminService:
     """Service for admin dashboard metrics and analytics."""
@@ -53,6 +91,7 @@ class AdminService:
         period_start: Optional[str] = None,
         period_end: Optional[str] = None,
         user_ids: Optional[List[int]] = None,
+        exclude_user_ids: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
         """Get usage panel metrics. Use period_start/period_end for exact date range, or days."""
         try:
@@ -68,6 +107,8 @@ class AdminService:
             )
             if user_ids:
                 dau_subquery = dau_subquery.filter(DiagnosisSession.user_id.in_(user_ids))
+            if exclude_user_ids:
+                dau_subquery = dau_subquery.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
             dau_subquery = dau_subquery.distinct().subquery()
             dau = self.db.query(func.count(dau_subquery.c.user_id)).scalar() or 0
             
@@ -77,21 +118,28 @@ class AdminService:
             )
             if user_ids:
                 wau_subquery = wau_subquery.filter(DiagnosisSession.user_id.in_(user_ids))
+            if exclude_user_ids:
+                wau_subquery = wau_subquery.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
             wau_subquery = wau_subquery.distinct().subquery()
             wau = self.db.query(func.count(wau_subquery.c.user_id)).scalar() or 0
             
             # Activated users (users with at least one session)
-            activated_user_ids = self.db.query(DiagnosisSession.user_id).distinct().all()
-            activated_user_ids_list = [row[0] for row in activated_user_ids if row[0] is not None]
+            activated_q = self.db.query(DiagnosisSession.user_id).distinct()
+            if exclude_user_ids:
+                activated_q = activated_q.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
+            activated_user_ids_list = [row[0] for row in activated_q.all() if row[0] is not None]
             if activated_user_ids_list:
                 activated_users = self.db.query(func.count(User.id)).filter(
                     User.id.in_(activated_user_ids_list)
                 ).scalar() or 0
             else:
                 activated_users = 0
-            
+
             # Total users (all users on the system, not just active)
-            total_users = self.db.query(func.count(User.id)).scalar() or 0
+            total_users_q = self.db.query(func.count(User.id))
+            if exclude_user_ids:
+                total_users_q = total_users_q.filter(User.id.notin_(exclude_user_ids))
+            total_users = total_users_q.scalar() or 0
             
             # Queries per clinician (average messages per user)
             # Use subquery to count messages per user, then average
@@ -108,6 +156,8 @@ class AdminService:
             )
             if user_ids:
                 user_message_counts = user_message_counts.filter(DiagnosisSession.user_id.in_(user_ids))
+            if exclude_user_ids:
+                user_message_counts = user_message_counts.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
             user_message_counts = user_message_counts.group_by(DiagnosisSession.user_id).subquery()
             
             queries_per_clinician_result = self.db.query(
@@ -125,6 +175,8 @@ class AdminService:
             )
             if user_ids:
                 user_session_counts = user_session_counts.filter(DiagnosisSession.user_id.in_(user_ids))
+            if exclude_user_ids:
+                user_session_counts = user_session_counts.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
             user_session_counts = user_session_counts.group_by(DiagnosisSession.user_id).subquery()
             
             sessions_per_user_result = self.db.query(
@@ -142,8 +194,12 @@ class AdminService:
                     DiagnosisSession.created_at >= week1_start,
                     DiagnosisSession.created_at < week1_end
                 )
-            ).distinct()
-            week1_user_ids = [row[0] for row in week1_user_ids_query.all() if row[0] is not None]
+            )
+            if user_ids:
+                week1_user_ids_query = week1_user_ids_query.filter(DiagnosisSession.user_id.in_(user_ids))
+            if exclude_user_ids:
+                week1_user_ids_query = week1_user_ids_query.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
+            week1_user_ids = [row[0] for row in week1_user_ids_query.distinct().all() if row[0] is not None]
             week1_count = len(week1_user_ids)
             
             # Users from week 1 who were also active in week 3 (0-7 days ago)
@@ -183,6 +239,7 @@ class AdminService:
         period_start: Optional[str] = None,
         period_end: Optional[str] = None,
         user_ids: Optional[List[int]] = None,
+        exclude_user_ids: Optional[List[int]] = None,
         granularity: str = "day",
     ) -> Dict[str, Any]:
         """Get usage time-series: per-day (or per-week) active_users, sessions, messages."""
@@ -199,6 +256,8 @@ class AdminService:
             )
             if user_ids:
                 sessions_q = sessions_q.filter(DiagnosisSession.user_id.in_(user_ids))
+            if exclude_user_ids:
+                sessions_q = sessions_q.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
             sessions_rows = sessions_q.all()
             # Bucket by date (YYYY-MM-DD)
             day_sessions = {}
@@ -223,6 +282,8 @@ class AdminService:
             )
             if user_ids:
                 messages_q = messages_q.filter(DiagnosisSession.user_id.in_(user_ids))
+            if exclude_user_ids:
+                messages_q = messages_q.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
             messages_rows = messages_q.all()
             day_messages = {}
             for (created_at,) in messages_rows:
@@ -260,59 +321,69 @@ class AdminService:
         period_start: Optional[str] = None,
         period_end: Optional[str] = None,
         user_ids: Optional[List[int]] = None,
+        exclude_user_ids: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
         """Get clinical value panel metrics."""
         try:
             period_start, period_end = self._resolve_period(days, period_start, period_end)
-            
-            # Total feedback - use text() for string date comparison
-            total_feedback = self.db.query(func.count(MessageFeedback.id)).filter(
-                text("message_feedback.created_at >= :period_start AND message_feedback.created_at < :period_end").bindparams(period_start=period_start, period_end=period_end)
-            ).scalar() or 0
-            
-            # Helpful feedback - use text() for string date comparison
-            helpful_feedback = self.db.query(func.count(MessageFeedback.id)).filter(
-                and_(
-                    MessageFeedback.feedback_type == 'helpful',
+
+            def _fb_query():
+                q = self.db.query(MessageFeedback).filter(
                     text("message_feedback.created_at >= :period_start AND message_feedback.created_at < :period_end").bindparams(period_start=period_start, period_end=period_end)
                 )
-            ).scalar() or 0
+                if user_ids:
+                    q = q.filter(MessageFeedback.user_id.in_(user_ids))
+                if exclude_user_ids:
+                    q = q.filter(MessageFeedback.user_id.notin_(exclude_user_ids))
+                return q
+
+            # Total feedback - use text() for string date comparison
+            total_feedback = _fb_query().count()
+            
+            # Helpful feedback - use text() for string date comparison
+            helpful_feedback = _fb_query().filter(MessageFeedback.feedback_type == 'helpful').count()
             
             helpful_percentage = (helpful_feedback / total_feedback * 100) if total_feedback > 0 else 0.0
             
             # Average usefulness score (rating) - use text() for string date comparison
-            avg_rating_result = self.db.query(func.avg(MessageFeedback.rating)).filter(
-                and_(
-                    MessageFeedback.rating.isnot(None),
-                    text("message_feedback.created_at >= :period_start AND message_feedback.created_at < :period_end").bindparams(period_start=period_start, period_end=period_end)
-                )
-            ).scalar()
+            avg_rating_q = self.db.query(func.avg(MessageFeedback.rating)).filter(
+                MessageFeedback.rating.isnot(None),
+                text("message_feedback.created_at >= :period_start AND message_feedback.created_at < :period_end").bindparams(period_start=period_start, period_end=period_end)
+            )
+            if user_ids:
+                avg_rating_q = avg_rating_q.filter(MessageFeedback.user_id.in_(user_ids))
+            if exclude_user_ids:
+                avg_rating_q = avg_rating_q.filter(MessageFeedback.user_id.notin_(exclude_user_ids))
+            avg_rating_result = avg_rating_q.scalar()
             avg_rating = float(avg_rating_result) if avg_rating_result is not None else 0.0
             
+            def _survey_query(*extra_filters):
+                q = self.db.query(Survey).filter(
+                    text("surveys.created_at >= :period_start AND surveys.created_at < :period_end").bindparams(period_start=period_start, period_end=period_end)
+                )
+                if user_ids:
+                    q = q.filter(Survey.user_id.in_(user_ids))
+                if exclude_user_ids:
+                    q = q.filter(Survey.user_id.notin_(exclude_user_ids))
+                for f in extra_filters:
+                    q = q.filter(f)
+                return q
+
             # Relevant queries (from surveys) - use text() for string date comparison
-            relevant_queries = self.db.query(func.count(Survey.id)).filter(
-                and_(
-                    Survey.query_relevance == True,
-                    text("surveys.created_at >= :period_start AND surveys.created_at < :period_end").bindparams(period_start=period_start, period_end=period_end)
-                )
-            ).scalar() or 0
-            
-            total_survey_queries = self.db.query(func.count(Survey.id)).filter(
-                and_(
-                    Survey.query_relevance.isnot(None),
-                    text("surveys.created_at >= :period_start AND surveys.created_at < :period_end").bindparams(period_start=period_start, period_end=period_end)
-                )
-            ).scalar() or 0
-            
+            relevant_queries = _survey_query(Survey.query_relevance == True).count()
+            total_survey_queries = _survey_query(Survey.query_relevance.isnot(None)).count()
             relevant_percentage = (relevant_queries / total_survey_queries * 100) if total_survey_queries > 0 else 0.0
             
             # Average time saved (from surveys) - use text() for string date comparison
-            avg_time_saved_result = self.db.query(func.avg(Survey.time_saved_minutes)).filter(
-                and_(
-                    Survey.time_saved_minutes.isnot(None),
-                    text("surveys.created_at >= :period_start AND surveys.created_at < :period_end").bindparams(period_start=period_start, period_end=period_end)
-                )
-            ).scalar()
+            avg_time_saved_q = self.db.query(func.avg(Survey.time_saved_minutes)).filter(
+                Survey.time_saved_minutes.isnot(None),
+                text("surveys.created_at >= :period_start AND surveys.created_at < :period_end").bindparams(period_start=period_start, period_end=period_end)
+            )
+            if user_ids:
+                avg_time_saved_q = avg_time_saved_q.filter(Survey.user_id.in_(user_ids))
+            if exclude_user_ids:
+                avg_time_saved_q = avg_time_saved_q.filter(Survey.user_id.notin_(exclude_user_ids))
+            avg_time_saved_result = avg_time_saved_q.scalar()
             avg_time_saved = float(avg_time_saved_result) if avg_time_saved_result is not None else 0.0
             
             return {
@@ -336,6 +407,7 @@ class AdminService:
         period_start: Optional[str] = None,
         period_end: Optional[str] = None,
         user_ids: Optional[List[int]] = None,
+        exclude_user_ids: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
         """Get safety panel metrics."""
         try:
@@ -343,12 +415,17 @@ class AdminService:
             last_24h = (datetime.utcnow() - timedelta(hours=24)).isoformat()
             
             # Total queries in period - use text() for string date comparison
-            total_queries = self.db.query(func.count(ChatMessage.id)).filter(
-                and_(
-                    ChatMessage.message_type == 'user',
-                    text("chat_messages.created_at >= :period_start AND chat_messages.created_at < :period_end").bindparams(period_start=period_start, period_end=period_end)
-                )
-            ).scalar() or 0
+            total_queries_q = self.db.query(func.count(ChatMessage.id)).join(
+                DiagnosisSession, DiagnosisSession.id == ChatMessage.session_id
+            ).filter(
+                ChatMessage.message_type == 'user',
+                text("chat_messages.created_at >= :period_start AND chat_messages.created_at < :period_end").bindparams(period_start=period_start, period_end=period_end)
+            )
+            if user_ids:
+                total_queries_q = total_queries_q.filter(DiagnosisSession.user_id.in_(user_ids))
+            if exclude_user_ids:
+                total_queries_q = total_queries_q.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
+            total_queries = total_queries_q.scalar() or 0
             
             # Total queries in last 24h - use text() for string date comparison
             queries_24h = self.db.query(func.count(ChatMessage.id)).filter(
@@ -359,9 +436,12 @@ class AdminService:
             ).scalar() or 0
             
             # Safety flags/events - use text() for string date comparison
-            total_flags = self.db.query(func.count(SafetyEvent.id)).filter(
+            total_flags_q = self.db.query(func.count(SafetyEvent.id)).filter(
                 text("safety_events.created_at >= :period_start AND safety_events.created_at < :period_end").bindparams(period_start=period_start, period_end=period_end)
-            ).scalar() or 0
+            )
+            if exclude_user_ids:
+                total_flags_q = total_flags_q.filter(SafetyEvent.user_id.notin_(exclude_user_ids))
+            total_flags = total_flags_q.scalar() or 0
             
             flags_per_100_queries = (total_flags / total_queries * 100) if total_queries > 0 else 0.0
             
@@ -446,6 +526,7 @@ class AdminService:
         period_start: Optional[str] = None,
         period_end: Optional[str] = None,
         user_ids: Optional[List[int]] = None,
+        exclude_user_ids: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
         """Get Product-Market Fit panel metrics."""
         try:
@@ -455,8 +536,7 @@ class AdminService:
             two_weeks_ago = (datetime.utcnow() - timedelta(days=14)).isoformat()
             
             # Heavy users (>20 queries/week)
-            # Count messages per user in the last week
-            user_message_counts = self.db.query(
+            user_message_counts_q = self.db.query(
                 DiagnosisSession.user_id,
                 func.count(ChatMessage.id).label('message_count')
             ).join(
@@ -464,7 +544,12 @@ class AdminService:
             ).filter(
                 ChatMessage.message_type == 'user',
                 DiagnosisSession.created_at >= week_start
-            ).group_by(DiagnosisSession.user_id).having(
+            )
+            if user_ids:
+                user_message_counts_q = user_message_counts_q.filter(DiagnosisSession.user_id.in_(user_ids))
+            if exclude_user_ids:
+                user_message_counts_q = user_message_counts_q.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
+            user_message_counts = user_message_counts_q.group_by(DiagnosisSession.user_id).having(
                 func.count(ChatMessage.id) > 20
             ).subquery()
             
@@ -473,21 +558,31 @@ class AdminService:
             heavy_users = self.db.query(func.count(heavy_users_subquery.c.user_id)).scalar() or 0
             
             # Users active in week 3
-            week3_subquery = self.db.query(DiagnosisSession.user_id).filter(
+            week3_q = self.db.query(DiagnosisSession.user_id).filter(
                 and_(
                     DiagnosisSession.created_at >= three_weeks_ago,
                     DiagnosisSession.created_at < two_weeks_ago
                 )
-            ).distinct().subquery()
+            )
+            if user_ids:
+                week3_q = week3_q.filter(DiagnosisSession.user_id.in_(user_ids))
+            if exclude_user_ids:
+                week3_q = week3_q.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
+            week3_subquery = week3_q.distinct().subquery()
             week3_active = self.db.query(func.count(week3_subquery.c.user_id)).scalar() or 0
             
             # PMF survey responses - use text comparison to handle enum case issues
-            pmf_surveys = self.db.query(Survey).filter(
+            pmf_surveys_q = self.db.query(Survey).filter(
                 and_(
                     text("LOWER(surveys.survey_type::text) = LOWER(:survey_type)").bindparams(survey_type=SurveyType.PMF.value),
                     text("surveys.created_at >= :period_start AND surveys.created_at < :period_end").bindparams(period_start=period_start, period_end=period_end)
                 )
-            ).all()
+            )
+            if user_ids:
+                pmf_surveys_q = pmf_surveys_q.filter(Survey.user_id.in_(user_ids))
+            if exclude_user_ids:
+                pmf_surveys_q = pmf_surveys_q.filter(Survey.user_id.notin_(exclude_user_ids))
+            pmf_surveys = pmf_surveys_q.all()
             
             total_pmf_responses = len(pmf_surveys)
             very_disappointed_count = sum(1 for s in pmf_surveys if s.very_disappointed == True)
@@ -539,32 +634,44 @@ class AdminService:
         period_start: Optional[str] = None,
         period_end: Optional[str] = None,
         user_ids: Optional[List[int]] = None,
+        exclude_user_ids: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
         """Get survey completion statistics."""
         try:
             period_start, period_end = self._resolve_period(days, period_start, period_end)
             
             # Get total users
-            total_users = self.db.query(func.count(User.id)).scalar() or 0
+            total_users_q = self.db.query(func.count(User.id))
+            if exclude_user_ids:
+                total_users_q = total_users_q.filter(User.id.notin_(exclude_user_ids))
+            total_users = total_users_q.scalar() or 0
             
             # Get survey statistics by type
             survey_stats = {}
             for survey_type in [SurveyType.BASELINE, SurveyType.MID, SurveyType.FINAL]:
-                # Count completed surveys - use text comparison to handle enum case issues
-                completed_count = self.db.query(func.count(Survey.id)).filter(
+                completed_q = self.db.query(func.count(Survey.id)).filter(
                     and_(
                         text("LOWER(surveys.survey_type::text) = LOWER(:survey_type)").bindparams(survey_type=survey_type.value),
                         text("surveys.created_at >= :period_start AND surveys.created_at < :period_end").bindparams(period_start=period_start, period_end=period_end)
                     )
-                ).scalar() or 0
-                
-                # Count unique users who completed this survey - use text comparison to handle enum case issues
-                unique_users = self.db.query(func.count(func.distinct(Survey.user_id))).filter(
+                )
+                if user_ids:
+                    completed_q = completed_q.filter(Survey.user_id.in_(user_ids))
+                if exclude_user_ids:
+                    completed_q = completed_q.filter(Survey.user_id.notin_(exclude_user_ids))
+                completed_count = completed_q.scalar() or 0
+
+                unique_q = self.db.query(func.count(func.distinct(Survey.user_id))).filter(
                     and_(
                         text("LOWER(surveys.survey_type::text) = LOWER(:survey_type)").bindparams(survey_type=survey_type.value),
                         text("surveys.created_at >= :period_start AND surveys.created_at < :period_end").bindparams(period_start=period_start, period_end=period_end)
                     )
-                ).scalar() or 0
+                )
+                if user_ids:
+                    unique_q = unique_q.filter(Survey.user_id.in_(user_ids))
+                if exclude_user_ids:
+                    unique_q = unique_q.filter(Survey.user_id.notin_(exclude_user_ids))
+                unique_users = unique_q.scalar() or 0
                 
                 # Calculate pending (users who haven't completed)
                 pending_count = max(0, total_users - unique_users)
@@ -582,9 +689,14 @@ class AdminService:
             
             # Overall statistics
             total_completed = sum(stats["completed"] for stats in survey_stats.values())
-            total_unique_users = self.db.query(func.count(func.distinct(Survey.user_id))).filter(
+            total_unique_q = self.db.query(func.count(func.distinct(Survey.user_id))).filter(
                 text("surveys.created_at >= :period_start AND surveys.created_at < :period_end").bindparams(period_start=period_start, period_end=period_end)
-            ).scalar() or 0
+            )
+            if user_ids:
+                total_unique_q = total_unique_q.filter(Survey.user_id.in_(user_ids))
+            if exclude_user_ids:
+                total_unique_q = total_unique_q.filter(Survey.user_id.notin_(exclude_user_ids))
+            total_unique_users = total_unique_q.scalar() or 0
             
             return {
                 "by_type": survey_stats,
@@ -605,6 +717,7 @@ class AdminService:
         period_start: Optional[str] = None,
         period_end: Optional[str] = None,
         user_ids: Optional[List[int]] = None,
+        exclude_user_ids: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
         """Get device type statistics (phone, tablet, laptop) for the admin dashboard."""
         try:
@@ -617,6 +730,8 @@ class AdminService:
             )
             if user_ids:
                 device_q = device_q.filter(DeviceActivityLog.user_id.in_(user_ids))
+            if exclude_user_ids:
+                device_q = device_q.filter(DeviceActivityLog.user_id.notin_(exclude_user_ids))
             rows = device_q.group_by(DeviceActivityLog.device_type).all()
 
             by_type = {"phone": 0, "tablet": 0, "laptop": 0, "unknown": 0}
@@ -675,20 +790,22 @@ class AdminService:
         period_start: Optional[str] = None,
         period_end: Optional[str] = None,
         user_ids: Optional[List[int]] = None,
+        exclude_user_ids: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
         """Get all dashboard metrics. Use period_start/period_end for exact date range, or days."""
         period_start_resolved, period_end_resolved = self._resolve_period(days, period_start, period_end)
         return {
-            "usage": self.get_usage_metrics(days=days, period_start=period_start, period_end=period_end, user_ids=user_ids),
-            "clinical_value": self.get_clinical_value_metrics(days=days, period_start=period_start, period_end=period_end, user_ids=user_ids),
-            "safety": self.get_safety_metrics(days=days, period_start=period_start, period_end=period_end, user_ids=user_ids),
-            "pmf": self.get_pmf_metrics(days=days, period_start=period_start, period_end=period_end, user_ids=user_ids),
-            "surveys": self.get_survey_statistics(days=days, period_start=period_start, period_end=period_end, user_ids=user_ids),
-            "devices": self.get_device_statistics(days=days, period_start=period_start, period_end=period_end, user_ids=user_ids),
+            "usage": self.get_usage_metrics(days=days, period_start=period_start, period_end=period_end, user_ids=user_ids, exclude_user_ids=exclude_user_ids),
+            "clinical_value": self.get_clinical_value_metrics(days=days, period_start=period_start, period_end=period_end, user_ids=user_ids, exclude_user_ids=exclude_user_ids),
+            "safety": self.get_safety_metrics(days=days, period_start=period_start, period_end=period_end, user_ids=user_ids, exclude_user_ids=exclude_user_ids),
+            "pmf": self.get_pmf_metrics(days=days, period_start=period_start, period_end=period_end, user_ids=user_ids, exclude_user_ids=exclude_user_ids),
+            "surveys": self.get_survey_statistics(days=days, period_start=period_start, period_end=period_end, user_ids=user_ids, exclude_user_ids=exclude_user_ids),
+            "devices": self.get_device_statistics(days=days, period_start=period_start, period_end=period_end, user_ids=user_ids, exclude_user_ids=exclude_user_ids),
             "period_days": days,
             "period_start": period_start_resolved,
             "period_end": period_end_resolved,
             "user_ids_filter": user_ids,
+            "exclude_user_ids_filter": exclude_user_ids,
             "generated_at": datetime.utcnow().isoformat(),
         }
 
@@ -697,6 +814,7 @@ class AdminService:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         user_ids: Optional[List[int]] = None,
+        exclude_user_ids: Optional[List[int]] = None,
         feedback_type: Optional[str] = None,
         has_text_only: bool = False,
         limit: int = 100,
@@ -715,6 +833,8 @@ class AdminService:
         )
         if user_ids:
             query = query.filter(MessageFeedback.user_id.in_(user_ids))
+        if exclude_user_ids:
+            query = query.filter(MessageFeedback.user_id.notin_(exclude_user_ids))
         if feedback_type and feedback_type.lower() in ("helpful", "not_helpful"):
             query = query.filter(MessageFeedback.feedback_type == feedback_type.lower())
         if has_text_only:
@@ -737,15 +857,49 @@ class AdminService:
             })
         return {"items": items, "total": total, "limit": limit, "offset": offset}
 
+    def _metrics_to_rows(self, metrics_dict: Dict[str, Any]) -> List[tuple]:
+        """Flatten metrics into (metric_name, value, description) using METRIC_META."""
+        rows = []
+        skip_keys = ("period_days", "period_start", "period_end", "user_ids_filter", "exclude_user_ids_filter", "generated_at")
+        for section in ["usage", "clinical_value", "safety", "pmf", "surveys", "devices"]:
+            data = metrics_dict.get(section)
+            if not isinstance(data, dict):
+                continue
+            for key, val in data.items():
+                if section == "surveys" and key == "by_type":
+                    continue
+                if section == "surveys" and key == "overall":
+                    for ok, ov in (val or {}).items():
+                        meta_key = f"surveys.overall.{ok}"
+                        name, desc = METRIC_META.get(meta_key, (ok.replace("_", " ").title(), "See dashboard for definition."))
+                        rows.append((name, ov, desc))
+                    continue
+                if section == "devices" and key == "by_type":
+                    for device, count in (val or {}).items():
+                        rows.append((f"Device: {device}", count, "Number of device activity log entries for this device type."))
+                    continue
+                meta_key = f"{section}.{key}"
+                name, desc = METRIC_META.get(meta_key, (key.replace("_", " ").title(), "See dashboard for definition."))
+                if isinstance(val, dict):
+                    val = str(val)
+                rows.append((name, val, desc))
+        return rows
+
     def get_export_report(
         self,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         user_ids: Optional[List[int]] = None,
+        exclude_user_ids: Optional[List[int]] = None,
         format: str = "json",
     ) -> Dict[str, Any]:
-        """Build report data for export based on filters. format: json or csv (returns dict with 'content' and 'filename')."""
+        """Build report: overall statistics first, then period-selected statistics, with description column; include feedback comments."""
         from healthnavi.core.query_utils import parse_date_range
+        import io
+        import csv as csv_module
+
+        now_iso = datetime.utcnow().isoformat()
+        overall_start = "2000-01-01T00:00:00"
         period_start, period_end = parse_date_range(start_date, end_date)
         days = 30
         if period_start and period_end:
@@ -755,38 +909,78 @@ class AdminService:
                 days = max(1, (end_dt - start_dt).days)
             except Exception:
                 pass
-        metrics = self.get_all_metrics(days=days, period_start=period_start, period_end=period_end, user_ids=user_ids)
-        feedback_data = self.get_feedback_list(
-            start_date=start_date, end_date=end_date, user_ids=user_ids, limit=5000, has_text_only=False
+
+        # Overall (all-time) statistics
+        overall_metrics = self.get_all_metrics(
+            days=365 * 10,
+            period_start=overall_start,
+            period_end=now_iso,
+            user_ids=user_ids,
+            exclude_user_ids=exclude_user_ids,
         )
+        overall_rows = self._metrics_to_rows(
+            {k: v for k, v in overall_metrics.items() if k not in ("period_start", "period_end", "user_ids_filter", "exclude_user_ids_filter", "generated_at")}
+        )
+
+        # Period-selected statistics
+        period_metrics = self.get_all_metrics(
+            days=days,
+            period_start=period_start,
+            period_end=period_end,
+            user_ids=user_ids,
+            exclude_user_ids=exclude_user_ids,
+        )
+        period_rows = self._metrics_to_rows(
+            {k: v for k, v in period_metrics.items() if k not in ("period_start", "period_end", "user_ids_filter", "exclude_user_ids_filter", "generated_at")}
+        )
+
+        # Feedback comments (full list for the period)
+        feedback_data = self.get_feedback_list(
+            start_date=start_date,
+            end_date=end_date,
+            user_ids=user_ids,
+            exclude_user_ids=exclude_user_ids,
+            limit=5000,
+            has_text_only=False,
+        )
+        feedback_items = feedback_data.get("items") or []
+
         report = {
-            "filters": {"start_date": start_date, "end_date": end_date, "user_ids": user_ids},
-            "period": {"period_start": metrics.get("period_start"), "period_end": metrics.get("period_end")},
-            "generated_at": datetime.utcnow().isoformat(),
-            "metrics": {k: v for k, v in metrics.items() if k not in ("period_start", "period_end", "user_ids_filter")},
-            "feedback_count": feedback_data["total"],
-            "feedback_sample": feedback_data["items"][:200],
+            "filters": {"start_date": start_date, "end_date": end_date, "user_ids": user_ids, "exclude_user_ids": exclude_user_ids},
+            "period_selected": {"period_start": period_metrics.get("period_start"), "period_end": period_metrics.get("period_end")},
+            "generated_at": now_iso,
+            "overall_statistics": [{"metric_name": n, "value": v, "description": d} for n, v, d in overall_rows],
+            "period_statistics": [{"metric_name": n, "value": v, "description": d} for n, v, d in period_rows],
+            "feedback_count": feedback_data.get("total", 0),
+            "feedback_comments": feedback_items,
         }
+
         if format == "csv":
-            import io
-            import csv
             buf = io.StringIO()
-            w = csv.writer(buf)
-            w.writerow(["Report", "Generated", report["generated_at"]])
-            w.writerow(["Period", report["period"].get("period_start"), report["period"].get("period_end")])
+            w = csv_module.writer(buf)
+            w.writerow(["Admin Report", "Generated", report["generated_at"]])
+            w.writerow(["Filters", "Start", start_date or "—", "End", end_date or "—", "Excluded users", exclude_user_ids or "—"])
             w.writerow([])
-            w.writerow(["Metric", "Value"])
-            for k in ["usage", "clinical_value", "safety", "pmf", "surveys", "devices"]:
-                v = report["metrics"].get(k)
-                if isinstance(v, dict):
-                    for key, val in v.items():
-                        w.writerow([f"{k}.{key}", val])
+            w.writerow(["OVERALL STATISTICS (all time)"])
+            w.writerow(["Metric name", "Value", "How it was calculated"])
+            for name, value, desc in overall_rows:
+                w.writerow([name, value, desc])
             w.writerow([])
-            w.writerow(["Feedback ID", "User ID", "User Email", "Type", "Rating", "Feedback Text", "Created At"])
-            for row in report["feedback_sample"]:
+            w.writerow(["PERIOD SELECTED STATISTICS", report["period_selected"].get("period_start", ""), "to", report["period_selected"].get("period_end", "")])
+            w.writerow(["Metric name", "Value", "How it was calculated"])
+            for name, value, desc in period_rows:
+                w.writerow([name, value, desc])
+            w.writerow([])
+            w.writerow(["FEEDBACK COMMENTS", f"Total: {report['feedback_count']}"])
+            w.writerow(["Date", "User email", "User name", "Type", "Rating", "Comment"])
+            for row in feedback_items:
                 w.writerow([
-                    row.get("id"), row.get("user_id"), row.get("user_email"), row.get("feedback_type"),
-                    row.get("rating"), (row.get("feedback_text") or "")[:500], row.get("created_at"),
+                    row.get("created_at", ""),
+                    row.get("user_email", ""),
+                    row.get("user_name", ""),
+                    row.get("feedback_type", ""),
+                    row.get("rating", ""),
+                    (row.get("feedback_text") or "").replace("\n", " ")[:1000],
                 ])
             content = buf.getvalue()
             filename = f"admin_report_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
@@ -1019,6 +1213,7 @@ class AdminService:
         period_start: Optional[str] = None,
         period_end: Optional[str] = None,
         user_ids: Optional[List[int]] = None,
+        exclude_user_ids: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
         """Get user statistics by type and activity."""
         try:
@@ -1026,6 +1221,8 @@ class AdminService:
             base_user_query = self.db.query(User)
             if user_ids:
                 base_user_query = base_user_query.filter(User.id.in_(user_ids))
+            if exclude_user_ids:
+                base_user_query = base_user_query.filter(User.id.notin_(exclude_user_ids))
 
             # Total users
             total_users = base_user_query.count()
@@ -1070,6 +1267,8 @@ class AdminService:
             activated_q = self.db.query(DiagnosisSession.user_id).distinct()
             if user_ids:
                 activated_q = activated_q.filter(DiagnosisSession.user_id.in_(user_ids))
+            if exclude_user_ids:
+                activated_q = activated_q.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
             activated_user_ids_list = [row[0] for row in activated_q.all() if row[0] is not None]
             activated_users = len(activated_user_ids_list)
 
@@ -1079,6 +1278,8 @@ class AdminService:
             )
             if user_ids:
                 new_users_q = new_users_q.filter(User.id.in_(user_ids))
+            if exclude_user_ids:
+                new_users_q = new_users_q.filter(User.id.notin_(exclude_user_ids))
             new_users = new_users_q.scalar() or 0
 
             # Users active in period (users with sessions in period)
@@ -1087,6 +1288,8 @@ class AdminService:
             )
             if user_ids:
                 active_in_period_q = active_in_period_q.filter(DiagnosisSession.user_id.in_(user_ids))
+            if exclude_user_ids:
+                active_in_period_q = active_in_period_q.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
             active_in_period = active_in_period_q.scalar() or 0
             
             # Ensure all counts are integers
@@ -1110,6 +1313,7 @@ class AdminService:
         period_start: Optional[str] = None,
         period_end: Optional[str] = None,
         user_ids: Optional[List[int]] = None,
+        exclude_user_ids: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
         """Get session statistics including active sessions and average length."""
         try:
@@ -1122,6 +1326,8 @@ class AdminService:
             )
             if user_ids:
                 total_sessions_q = total_sessions_q.filter(DiagnosisSession.user_id.in_(user_ids))
+            if exclude_user_ids:
+                total_sessions_q = total_sessions_q.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
             total_sessions = total_sessions_q.scalar() or 0
             
             # Active sessions (sessions updated in last 24 hours)
@@ -1141,6 +1347,8 @@ class AdminService:
             )
             if user_ids:
                 session_lengths_q = session_lengths_q.filter(DiagnosisSession.user_id.in_(user_ids))
+            if exclude_user_ids:
+                session_lengths_q = session_lengths_q.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
             session_lengths = session_lengths_q.group_by(DiagnosisSession.id).subquery()
             
             avg_length_result = self.db.query(func.avg(session_lengths.c.message_count)).scalar()
@@ -1157,6 +1365,8 @@ class AdminService:
             )
             if user_ids:
                 sessions_with_duration_q = sessions_with_duration_q.filter(DiagnosisSession.user_id.in_(user_ids))
+            if exclude_user_ids:
+                sessions_with_duration_q = sessions_with_duration_q.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
             sessions_with_duration = sessions_with_duration_q.all()
             
             durations = []
@@ -1189,6 +1399,7 @@ class AdminService:
         period_start: Optional[str] = None,
         period_end: Optional[str] = None,
         user_ids: Optional[List[int]] = None,
+        exclude_user_ids: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
         """Get AI response statistics including feedback and response times."""
         try:
@@ -1203,6 +1414,8 @@ class AdminService:
             )
             if user_ids:
                 total_responses_q = total_responses_q.filter(DiagnosisSession.user_id.in_(user_ids))
+            if exclude_user_ids:
+                total_responses_q = total_responses_q.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
             total_responses = total_responses_q.scalar() or 0
 
             # Responses with feedback - filter by feedback creation date to see recent feedback
@@ -1211,6 +1424,8 @@ class AdminService:
             )
             if user_ids:
                 responses_with_feedback_q = responses_with_feedback_q.filter(MessageFeedback.user_id.in_(user_ids))
+            if exclude_user_ids:
+                responses_with_feedback_q = responses_with_feedback_q.filter(MessageFeedback.user_id.notin_(exclude_user_ids))
             responses_with_feedback = responses_with_feedback_q.scalar() or 0
 
             # Helpful feedback - filter by feedback creation date
@@ -1220,6 +1435,8 @@ class AdminService:
             )
             if user_ids:
                 helpful_count_q = helpful_count_q.filter(MessageFeedback.user_id.in_(user_ids))
+            if exclude_user_ids:
+                helpful_count_q = helpful_count_q.filter(MessageFeedback.user_id.notin_(exclude_user_ids))
             helpful_count = helpful_count_q.scalar() or 0
 
             # Not helpful feedback - filter by feedback creation date
@@ -1229,6 +1446,8 @@ class AdminService:
             )
             if user_ids:
                 not_helpful_count_q = not_helpful_count_q.filter(MessageFeedback.user_id.in_(user_ids))
+            if exclude_user_ids:
+                not_helpful_count_q = not_helpful_count_q.filter(MessageFeedback.user_id.notin_(exclude_user_ids))
             not_helpful_count = not_helpful_count_q.scalar() or 0
 
             # Average rating - filter by feedback creation date
@@ -1238,6 +1457,8 @@ class AdminService:
             )
             if user_ids:
                 avg_rating_q = avg_rating_q.filter(MessageFeedback.user_id.in_(user_ids))
+            if exclude_user_ids:
+                avg_rating_q = avg_rating_q.filter(MessageFeedback.user_id.notin_(exclude_user_ids))
             avg_rating_result = avg_rating_q.scalar()
             avg_rating = float(avg_rating_result) if avg_rating_result is not None else 0.0
             
