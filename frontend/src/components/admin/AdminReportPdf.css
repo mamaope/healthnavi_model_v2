@@ -106,8 +106,35 @@
 .pdf-charts-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1rem;
+  gap: 1.5rem;
   margin-top: 8px;
+  align-items: start;
+}
+
+.pdf-charts-row .pdf-chart-pie {
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+}
+
+.pdf-charts-row .pdf-chart-pie .recharts-responsive-container {
+  flex: 1;
+  min-height: 160px;
+}
+
+.pdf-chart-pie {
+  box-sizing: border-box;
+}
+
+.admin-report-pdf .recharts-legend-wrapper {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+
+.admin-report-pdf .recharts-legend-item {
+  margin-right: 0.5rem;
 }
 
 .pdf-chart-subtitle {

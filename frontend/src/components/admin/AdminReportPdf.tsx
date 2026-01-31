@@ -11,7 +11,7 @@ interface ReportData {
   period_selected: { period_start?: string; period_end?: string }
   feedback_count: number
   feedback_comments: { created_at?: string; user_email?: string; feedback_type?: string; feedback_text?: string }[]
-  filters: { start_date?: string; end_date?: string; exclude_user_ids?: number[] }
+  filters: { start_date?: string; end_date?: string; exclude_user_ids?: number[]; active_users_only?: boolean }
   generated_at: string
 }
 
@@ -102,6 +102,9 @@ export default function AdminReportPdf({
           <h1>HealthNavi Admin Report</h1>
           <p className="pdf-period">{periodLabel}</p>
           <p className="pdf-generated">Generated: {formatDate(reportData.generated_at)}</p>
+          {reportData.filters?.active_users_only && (
+            <p className="pdf-filters">Statistics include only active users (users with at least one session).</p>
+          )}
           {reportData.filters?.exclude_user_ids?.length ? (
             <p className="pdf-filters">Excluded users: {reportData.filters.exclude_user_ids.join(', ')}</p>
           ) : null}
@@ -196,13 +199,13 @@ export default function AdminReportPdf({
           <section className="pdf-section pdf-chart-section">
             <h2>Feedback breakdown</h2>
             <p className="pdf-desc">How users rated AI responses (helpful vs not helpful).</p>
-            <div className="pdf-chart" style={{ width: '100%', height: 180 }}>
-              <ResponsiveContainer width="100%" height={180}>
-                <PieChart>
+            <div className="pdf-chart pdf-chart-pie" style={{ width: '100%', height: 200 }}>
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart margin={{ top: 0, right: 10, bottom: 0, left: 10 }}>
                   <Pie
                     data={feedbackPieData}
                     cx="50%"
-                    cy="50%"
+                    cy="45%"
                     innerRadius={35}
                     outerRadius={65}
                     paddingAngle={2}
@@ -213,7 +216,12 @@ export default function AdminReportPdf({
                       <Cell key={i} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Legend layout="horizontal" align="center" wrapperStyle={{ paddingTop: 8 }} />
+                  <Legend
+                    layout="horizontal"
+                    align="center"
+                    wrapperStyle={{ paddingTop: 8 }}
+                    formatter={(value, entry: any) => `${value}: ${entry?.payload?.value ?? 0}`}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -226,14 +234,14 @@ export default function AdminReportPdf({
             <p className="pdf-desc">Distribution of users by system role and professional type.</p>
             <div className="pdf-charts-row">
               {rolePieData.length > 0 && (
-                <div className="pdf-chart" style={{ width: '100%', height: 180 }}>
+                <div className="pdf-chart pdf-chart-pie" style={{ width: '100%', height: 200 }}>
                   <h3 className="pdf-chart-subtitle">By role</h3>
-                  <ResponsiveContainer width="100%" height={160}>
-                    <PieChart>
+                  <ResponsiveContainer width="100%" height={175}>
+                    <PieChart margin={{ top: 0, right: 10, bottom: 0, left: 10 }}>
                       <Pie
                         data={rolePieData}
                         cx="50%"
-                        cy="50%"
+                        cy="45%"
                         innerRadius={30}
                         outerRadius={60}
                         paddingAngle={2}
@@ -244,20 +252,25 @@ export default function AdminReportPdf({
                           <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                         ))}
                       </Pie>
-                      <Legend layout="horizontal" align="center" wrapperStyle={{ paddingTop: 6 }} />
+                      <Legend
+                        layout="horizontal"
+                        align="center"
+                        wrapperStyle={{ paddingTop: 6 }}
+                        formatter={(value, entry: any) => `${value}: ${entry?.payload?.value ?? 0}`}
+                      />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
               )}
               {typePieData.length > 0 && (
-                <div className="pdf-chart" style={{ width: '100%', height: 180 }}>
+                <div className="pdf-chart pdf-chart-pie" style={{ width: '100%', height: 200 }}>
                   <h3 className="pdf-chart-subtitle">By professional type</h3>
-                  <ResponsiveContainer width="100%" height={160}>
-                    <PieChart>
+                  <ResponsiveContainer width="100%" height={175}>
+                    <PieChart margin={{ top: 0, right: 10, bottom: 0, left: 10 }}>
                       <Pie
                         data={typePieData}
                         cx="50%"
-                        cy="50%"
+                        cy="45%"
                         innerRadius={30}
                         outerRadius={60}
                         paddingAngle={2}
@@ -268,7 +281,12 @@ export default function AdminReportPdf({
                           <Cell key={i} fill={CHART_COLORS[(i + 2) % CHART_COLORS.length]} />
                         ))}
                       </Pie>
-                      <Legend layout="horizontal" align="center" wrapperStyle={{ paddingTop: 6 }} />
+                      <Legend
+                        layout="horizontal"
+                        align="center"
+                        wrapperStyle={{ paddingTop: 6 }}
+                        formatter={(value, entry: any) => `${value}: ${entry?.payload?.value ?? 0}`}
+                      />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -281,13 +299,13 @@ export default function AdminReportPdf({
           <section className="pdf-section pdf-chart-section">
             <h2>Device usage breakdown</h2>
             <p className="pdf-desc">Logins and session starts by device type.</p>
-            <div className="pdf-chart" style={{ width: '100%', height: 200 }}>
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
+            <div className="pdf-chart pdf-chart-pie" style={{ width: '100%', height: 220 }}>
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart margin={{ top: 0, right: 10, bottom: 0, left: 10 }}>
                   <Pie
                     data={devicePieData}
                     cx="50%"
-                    cy="50%"
+                    cy="45%"
                     innerRadius={40}
                     outerRadius={70}
                     paddingAngle={2}
@@ -298,7 +316,12 @@ export default function AdminReportPdf({
                       <Cell key={i} fill={DEVICE_COLORS[entry.type] ?? CHART_COLORS[i % CHART_COLORS.length]} />
                     ))}
                   </Pie>
-                  <Legend layout="horizontal" align="center" wrapperStyle={{ paddingTop: 8 }} />
+                  <Legend
+                    layout="horizontal"
+                    align="center"
+                    wrapperStyle={{ paddingTop: 8 }}
+                    formatter={(value, entry: any) => `${value}: ${entry?.payload?.value ?? 0}`}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             </div>

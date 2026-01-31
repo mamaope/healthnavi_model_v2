@@ -118,6 +118,7 @@ export default function AdminDashboard() {
           endDate: metricsParams.endDate,
           userIds: metricsParams.userIds,
           excludeUserIds: metricsParams.excludeUserIds,
+          activeUsersOnly: true,
           format: 'json',
         }),
         adminApi.getUsageOverTime({
@@ -126,8 +127,16 @@ export default function AdminDashboard() {
           endDate: metricsParams.endDate,
           userIds: metricsParams.userIds,
           excludeUserIds: metricsParams.excludeUserIds,
+          activeUsersOnly: true,
         }),
-        adminApi.getUserStatistics(effectiveDays),
+        adminApi.getUserStatistics({
+          days: effectiveDays,
+          startDate: metricsParams.startDate,
+          endDate: metricsParams.endDate,
+          userIds: metricsParams.userIds,
+          excludeUserIds: metricsParams.excludeUserIds,
+          activeUsersOnly: true,
+        }),
       ])
       const report = reportRes.success ? reportRes.data : null
       const usageOverTime = usageRes.success ? (usageRes.data?.series ?? []) : []

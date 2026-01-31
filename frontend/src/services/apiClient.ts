@@ -581,12 +581,13 @@ export const adminApi = {
       'GET',
     )
   },
-  exportReport(params: { startDate?: string; endDate?: string; userIds?: number[]; excludeUserIds?: number[]; format?: 'json' | 'csv' } = {}) {
+  exportReport(params: { startDate?: string; endDate?: string; userIds?: number[]; excludeUserIds?: number[]; activeUsersOnly?: boolean; format?: 'json' | 'csv' } = {}) {
     const search = new URLSearchParams({ format: params.format ?? 'json' })
     if (params.startDate) search.set('start_date', params.startDate)
     if (params.endDate) search.set('end_date', params.endDate)
     if (params.userIds?.length) search.set('user_ids', params.userIds.join(','))
     if (params.excludeUserIds?.length) search.set('exclude_user_ids', params.excludeUserIds.join(','))
+    if (params.activeUsersOnly) search.set('active_users_only', 'true')
     const path = `/admin/export/report?${search.toString()}`
     if ((params.format ?? 'json') === 'csv') {
       const token = typeof window !== 'undefined' ? window.localStorage.getItem(STORAGE_KEYS.accessToken) : null
@@ -605,7 +606,7 @@ export const adminApi = {
     }
     return apiFetch<{ success: boolean; data: any }>(path, 'GET')
   },
-  getUsageOverTime(params: AdminMetricsParams & { granularity?: string } = {}) {
+  getUsageOverTime(params: AdminMetricsParams & { granularity?: string; activeUsersOnly?: boolean } = {}) {
     const search = new URLSearchParams()
     const days = (params as any).days ?? 30
     search.set('days', String(Math.max(1, Math.min(365, days))))
@@ -613,6 +614,7 @@ export const adminApi = {
     if (params.endDate) search.set('end_date', params.endDate)
     if (params.userIds?.length) search.set('user_ids', params.userIds.join(','))
     if (params.excludeUserIds?.length) search.set('exclude_user_ids', params.excludeUserIds.join(','))
+    if ((params as any).activeUsersOnly) search.set('active_users_only', 'true')
     if ((params as any).granularity) search.set('granularity', (params as any).granularity)
     return apiFetch<{ success: boolean; data: { series: { date: string; active_users: number; sessions: number; messages: number }[] } }>(
       `/admin/metrics/usage-over-time?${search.toString()}`,
@@ -707,23 +709,20 @@ export const adminApi = {
       { body: JSON.stringify({ new_password: newPassword }) },
     )
   },
-  getUserStatistics(days: number = 30) {
-    // Ensure days is a valid number, default to 30 if invalid
-    let daysParam = 30
-    if (typeof days === 'number' && !isNaN(days) && days > 0) {
-      daysParam = Math.floor(days)
-    } else if (typeof days === 'string') {
-      const parsed = parseInt(days, 10)
-      if (!isNaN(parsed) && parsed > 0) {
-        daysParam = parsed
-      }
-    }
-    // Clamp to valid range
-    daysParam = Math.max(1, Math.min(365, daysParam))
-    // Ensure we always send a valid number as a string in the URL
-    const url = `/admin/users/statistics?days=${encodeURIComponent(daysParam)}`
+  getUserStatistics(daysOrParams: number | (AdminMetricsParams & { activeUsersOnly?: boolean }) = 30) {
+    const isObj = typeof daysOrParams === 'object' && daysOrParams !== null
+    const params = isObj ? daysOrParams as AdminMetricsParams & { activeUsersOnly?: boolean } : {}
+    let daysParam = isObj ? (params.days ?? 30) : (daysOrParams as number)
+    if (typeof daysParam !== 'number' || isNaN(daysParam) || daysParam <= 0) daysParam = 30
+    daysParam = Math.max(1, Math.min(365, Math.floor(daysParam)))
+    const search = new URLSearchParams({ days: String(daysParam) })
+    if (params.startDate) search.set('start_date', params.startDate)
+    if (params.endDate) search.set('end_date', params.endDate)
+    if (params.userIds?.length) search.set('user_ids', params.userIds.join(','))
+    if (params.excludeUserIds?.length) search.set('exclude_user_ids', params.excludeUserIds.join(','))
+    if (params.activeUsersOnly) search.set('active_users_only', 'true')
     return apiFetch<{ success: boolean; data: any }>(
-      url,
+      `/admin/users/statistics?${search.toString()}`,
       'GET',
     )
   },

@@ -129,6 +129,7 @@ async def export_report(
     end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
     user_ids: Optional[str] = Query(None, description="Comma-separated user IDs to include"),
     exclude_user_ids: Optional[str] = Query(None, description="Comma-separated user IDs to exclude"),
+    active_users_only: bool = Query(False, description="If true, include only users who have at least one session"),
     format: str = Query("json", description="json or csv"),
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db),
@@ -142,6 +143,7 @@ async def export_report(
                 end_date=end_date,
                 user_ids=_parse_user_ids(user_ids),
                 exclude_user_ids=_parse_user_ids(exclude_user_ids),
+                active_users_only=active_users_only,
                 format=format.strip().lower() or "json",
             )
             if format.strip().lower() == "csv" and "content" in result:
@@ -172,6 +174,7 @@ async def get_usage_over_time(
     end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
     user_ids: Optional[str] = Query(None, description="Comma-separated user IDs to include"),
     exclude_user_ids: Optional[str] = Query(None, description="Comma-separated user IDs to exclude"),
+    active_users_only: bool = Query(False, description="If true, include only users who have at least one session"),
     granularity: str = Query("day", description="day or week"),
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db),
@@ -189,6 +192,7 @@ async def get_usage_over_time(
                 period_end=period_end,
                 user_ids=_parse_user_ids(user_ids),
                 exclude_user_ids=_parse_user_ids(exclude_user_ids),
+                active_users_only=active_users_only,
                 granularity=granularity,
             )
             return create_success_response(
@@ -819,6 +823,7 @@ async def get_user_statistics(
     end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
     user_ids: Optional[str] = Query(None, description="Comma-separated user IDs to include"),
     exclude_user_ids: Optional[str] = Query(None, description="Comma-separated user IDs to exclude"),
+    active_users_only: bool = Query(False, description="If true, include only users who have at least one session"),
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_db)
 ):
@@ -835,6 +840,7 @@ async def get_user_statistics(
                 period_end=period_end,
                 user_ids=_parse_user_ids(user_ids),
                 exclude_user_ids=_parse_user_ids(exclude_user_ids),
+                active_users_only=active_users_only,
             )
             return create_success_response(
                 data=stats,

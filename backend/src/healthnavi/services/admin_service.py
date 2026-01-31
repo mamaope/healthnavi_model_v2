@@ -240,10 +240,15 @@ class AdminService:
         period_end: Optional[str] = None,
         user_ids: Optional[List[int]] = None,
         exclude_user_ids: Optional[List[int]] = None,
+        active_users_only: bool = False,
         granularity: str = "day",
     ) -> Dict[str, Any]:
         """Get usage time-series: per-day (or per-week) active_users, sessions, messages."""
         try:
+            if active_users_only:
+                active_ids = self._get_active_user_ids(user_ids=user_ids, exclude_user_ids=exclude_user_ids)
+                user_ids = active_ids if active_ids else None
+                exclude_user_ids = None
             period_start, period_end = self._resolve_period(days, period_start, period_end)
             # Fetch sessions in range
             sessions_q = self.db.query(
@@ -857,6 +862,19 @@ class AdminService:
             })
         return {"items": items, "total": total, "limit": limit, "offset": offset}
 
+    def _get_active_user_ids(
+        self,
+        user_ids: Optional[List[int]] = None,
+        exclude_user_ids: Optional[List[int]] = None,
+    ) -> List[int]:
+        """Return user IDs that have at least one diagnosis session (active users)."""
+        q = self.db.query(DiagnosisSession.user_id).distinct()
+        if user_ids:
+            q = q.filter(DiagnosisSession.user_id.in_(user_ids))
+        if exclude_user_ids:
+            q = q.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
+        return [row[0] for row in q.all() if row[0] is not None]
+
     def _metrics_to_rows(self, metrics_dict: Dict[str, Any]) -> List[tuple]:
         """Flatten metrics into (metric_name, value, description) using METRIC_META."""
         rows = []
@@ -891,12 +909,21 @@ class AdminService:
         end_date: Optional[str] = None,
         user_ids: Optional[List[int]] = None,
         exclude_user_ids: Optional[List[int]] = None,
+        active_users_only: bool = False,
         format: str = "json",
     ) -> Dict[str, Any]:
-        """Build report: overall statistics first, then period-selected statistics, with description column; include feedback comments."""
+        """Build report: overall statistics first, then period-selected statistics, with description column; include feedback comments.
+        When active_users_only is True, only users who have at least one session are included in statistics."""
         from healthnavi.core.query_utils import parse_date_range
         import io
         import csv as csv_module
+
+        effective_user_ids = user_ids
+        effective_exclude = exclude_user_ids
+        if active_users_only:
+            active_ids = self._get_active_user_ids(user_ids=user_ids, exclude_user_ids=exclude_user_ids)
+            effective_user_ids = active_ids if active_ids else None
+            effective_exclude = None
 
         now_iso = datetime.utcnow().isoformat()
         overall_start = "2000-01-01T00:00:00"
@@ -915,8 +942,8 @@ class AdminService:
             days=365 * 10,
             period_start=overall_start,
             period_end=now_iso,
-            user_ids=user_ids,
-            exclude_user_ids=exclude_user_ids,
+            user_ids=effective_user_ids,
+            exclude_user_ids=effective_exclude,
         )
         overall_rows = self._metrics_to_rows(
             {k: v for k, v in overall_metrics.items() if k not in ("period_start", "period_end", "user_ids_filter", "exclude_user_ids_filter", "generated_at")}
@@ -927,8 +954,8 @@ class AdminService:
             days=days,
             period_start=period_start,
             period_end=period_end,
-            user_ids=user_ids,
-            exclude_user_ids=exclude_user_ids,
+            user_ids=effective_user_ids,
+            exclude_user_ids=effective_exclude,
         )
         period_rows = self._metrics_to_rows(
             {k: v for k, v in period_metrics.items() if k not in ("period_start", "period_end", "user_ids_filter", "exclude_user_ids_filter", "generated_at")}
@@ -938,15 +965,15 @@ class AdminService:
         feedback_data = self.get_feedback_list(
             start_date=start_date,
             end_date=end_date,
-            user_ids=user_ids,
-            exclude_user_ids=exclude_user_ids,
+            user_ids=effective_user_ids,
+            exclude_user_ids=effective_exclude,
             limit=5000,
             has_text_only=False,
         )
         feedback_items = feedback_data.get("items") or []
 
         report = {
-            "filters": {"start_date": start_date, "end_date": end_date, "user_ids": user_ids, "exclude_user_ids": exclude_user_ids},
+            "filters": {"start_date": start_date, "end_date": end_date, "user_ids": user_ids, "exclude_user_ids": exclude_user_ids, "active_users_only": active_users_only},
             "period_selected": {"period_start": period_metrics.get("period_start"), "period_end": period_metrics.get("period_end")},
             "generated_at": now_iso,
             "overall_statistics": [{"metric_name": n, "value": v, "description": d} for n, v, d in overall_rows],
@@ -959,7 +986,7 @@ class AdminService:
             buf = io.StringIO()
             w = csv_module.writer(buf)
             w.writerow(["Admin Report", "Generated", report["generated_at"]])
-            w.writerow(["Filters", "Start", start_date or "—", "End", end_date or "—", "Excluded users", exclude_user_ids or "—"])
+            w.writerow(["Filters", "Start", start_date or "—", "End", end_date or "—", "Excluded users", exclude_user_ids or "—", "Active users only", active_users_only])
             w.writerow([])
             w.writerow(["OVERALL STATISTICS (all time)"])
             w.writerow(["Metric name", "Value", "How it was calculated"])
@@ -1214,9 +1241,14 @@ class AdminService:
         period_end: Optional[str] = None,
         user_ids: Optional[List[int]] = None,
         exclude_user_ids: Optional[List[int]] = None,
+        active_users_only: bool = False,
     ) -> Dict[str, Any]:
         """Get user statistics by type and activity."""
         try:
+            if active_users_only:
+                active_ids = self._get_active_user_ids(user_ids=user_ids, exclude_user_ids=exclude_user_ids)
+                user_ids = active_ids if active_ids else None
+                exclude_user_ids = None
             period_start, period_end = self._resolve_period(days, period_start, period_end)
             base_user_query = self.db.query(User)
             if user_ids:
