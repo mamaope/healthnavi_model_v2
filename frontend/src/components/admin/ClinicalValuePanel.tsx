@@ -1,3 +1,5 @@
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts'
+import MetricCardWithTooltip from './MetricCardWithTooltip'
 import './AdminPanel.css'
 
 interface ClinicalValuePanelProps {
@@ -9,59 +11,84 @@ export default function ClinicalValuePanel({ metrics }: ClinicalValuePanelProps)
 
   const helpfulPercentage = typeof metrics.helpful_feedback_percentage === 'number' ? metrics.helpful_feedback_percentage : 0
   const helpfulColor = helpfulPercentage >= 70 ? '#10b981' : helpfulPercentage >= 50 ? '#f59e0b' : '#ef4444'
+  const helpfulCount = metrics.helpful_feedback ?? 0
+  const notHelpfulCount = metrics.not_helpful_feedback ?? 0
+  const totalFeedback = helpfulCount + notHelpfulCount
+
+  const feedbackPieData = [
+    { name: 'Helpful', value: helpfulCount, color: '#10b981' },
+    { name: 'Not helpful', value: notHelpfulCount, color: '#ef4444' },
+  ].filter((d) => d.value > 0)
 
   return (
-    <div className="admin-panel">
+    <div className="admin-panel clinical-value-panel">
       <div className="panel-header">
-        <h2>Clinical Value Panel</h2>
+        <h2>Clinical value</h2>
       </div>
       <div className="panel-content">
         <div className="metrics-grid">
-          <MetricCard
-            label="Helpful Feedback"
+          <MetricCardWithTooltip
+            label="Helpful feedback"
             value={`${helpfulPercentage.toFixed(1)}%`}
-            subtitle={`${metrics.helpful_feedback || 0} of ${metrics.total_feedback || 0} responses`}
+            subtitle={`${helpfulCount} of ${metrics.total_feedback || 0} responses`}
             icon="👍"
             color={helpfulColor}
+            metricKey="clinical_value.helpful_feedback_percentage"
           />
-          <MetricCard
-            label="Avg Usefulness Score"
+          <MetricCardWithTooltip
+            label="Average usefulness score"
             value={typeof metrics.avg_usefulness_score === 'number' ? metrics.avg_usefulness_score.toFixed(1) : '0.0'}
             subtitle="Out of 5.0"
             icon="⭐"
+            metricKey="clinical_value.avg_usefulness_score"
           />
-          <MetricCard
-            label="Relevant Queries"
+          <MetricCardWithTooltip
+            label="Relevant queries"
             value={typeof metrics.relevant_queries_percentage === 'number' ? `${metrics.relevant_queries_percentage.toFixed(1)}%` : '0.0%'}
             subtitle={`${metrics.relevant_queries || 0} of ${metrics.total_survey_queries || 0} queries`}
             icon="🎯"
+            metricKey="clinical_value.relevant_queries_percentage"
           />
-          <MetricCard
-            label="Avg Time Saved"
+          <MetricCardWithTooltip
+            label="Average time saved"
             value={typeof metrics.avg_time_saved_minutes === 'number' ? `${metrics.avg_time_saved_minutes.toFixed(0)} min` : '0 min'}
-            subtitle="Per query (from surveys)"
+            subtitle="Per session (from surveys)"
             icon="⏱️"
+            metricKey="clinical_value.avg_time_saved_minutes"
           />
         </div>
-      </div>
-    </div>
-  )
-}
-
-function MetricCard({ label, value, subtitle, icon, color }: { 
-  label: string; 
-  value: string | number; 
-  subtitle?: string; 
-  icon?: string;
-  color?: string;
-}) {
-  return (
-    <div className="metric-card" style={color ? { borderTopColor: color } : undefined}>
-      {icon && <div className="metric-icon">{icon}</div>}
-      <div className="metric-content">
-        <div className="metric-label">{label}</div>
-        <div className="metric-value" style={color ? { color } : undefined}>{value}</div>
-        {subtitle && <div className="metric-subtitle">{subtitle}</div>}
+        {feedbackPieData.length > 0 && (
+          <div className="panel-chart">
+            <h3 className="chart-title">Feedback sentiment</h3>
+            <p className="chart-description">How users rated the clinical usefulness of AI responses</p>
+            <ResponsiveContainer width="100%" height={180}>
+              <PieChart>
+                <Pie
+                  data={feedbackPieData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={35}
+                  outerRadius={70}
+                  paddingAngle={2}
+                  dataKey="value"
+                  nameKey="name"
+                >
+                  {feedbackPieData.map((entry, i) => (
+                    <Cell key={i} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value: number) => {
+                    const pct = totalFeedback > 0 ? ((value / totalFeedback) * 100).toFixed(1) : '0'
+                    return [`${value} (${pct}%)`, '']
+                  }}
+                  contentStyle={{ fontSize: 12, borderRadius: 8, backgroundColor: '#ffffff', color: '#1f2937', border: '1px solid #e5e7eb' }}
+                />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
     </div>
   )

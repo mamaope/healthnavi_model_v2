@@ -108,6 +108,15 @@
   background: #4b5563;
 }
 
+.btn-export-pdf {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+.btn-export-pdf:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
 .period-selector {
   padding: 0.5rem 1rem;
   border: 1px solid #d0d0d0;

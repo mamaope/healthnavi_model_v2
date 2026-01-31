@@ -1,3 +1,16 @@
+/* Recharts tooltips - ensure readable contrast (light bg, dark text) */
+.admin-panel .recharts-default-tooltip,
+.admin-panel .recharts-tooltip-wrapper {
+  background-color: #ffffff !important;
+  color: #1f2937 !important;
+  border: 1px solid #e5e7eb !important;
+}
+
+.admin-panel .recharts-default-tooltip .recharts-tooltip-label,
+.admin-panel .recharts-default-tooltip .recharts-tooltip-item {
+  color: #1f2937 !important;
+}
+
 .admin-panel {
   background: white;
   border-radius: 12px;
@@ -43,6 +56,109 @@
 
 .panel-content {
   padding: 1.5rem;
+}
+
+.panel-period {
+  font-size: 0.8rem;
+  color: #6b7280;
+  font-weight: 400;
+}
+
+.panel-description {
+  margin: 0 0 1rem 0;
+  color: #6b7280;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.panel-error {
+  color: #dc2626;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.panel-empty {
+  color: #6b7280;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.panel-chart {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.panel-chart-row {
+  display: flex;
+  gap: 1.5rem;
+  align-items: stretch;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+.panel-chart-row .panel-chart.pie-chart {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.panel-charts-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  margin-top: 1rem;
+  align-items: start;
+}
+
+.panel-charts-row .panel-chart.pie-chart {
+  min-width: 0;
+}
+
+.chart-title {
+  margin: 0 0 0.25rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.chart-description {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+
+.panel-chart.pie-chart {
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+.device-panel,
+.user-type-panel {
+  grid-column: 1 / -1;
+}
+
+.device-panel .panel-chart-row .panel-chart.pie-chart,
+.user-type-panel .panel-charts-row .panel-chart.pie-chart {
+  width: 100%;
+}
+
+.chart-container {
+  overflow: visible;
+}
+
+.device-summary {
+  flex: 0 0 auto;
+  min-width: 180px;
+  max-width: 220px;
+}
+
+.device-list .stat-pct {
+  font-weight: 400;
+  color: #6b7280;
+  font-size: 0.875rem;
 }
 
 .metrics-grid {

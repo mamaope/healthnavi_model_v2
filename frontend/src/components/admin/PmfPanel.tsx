@@ -1,3 +1,5 @@
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts'
+import MetricCardWithTooltip from './MetricCardWithTooltip'
 import './AdminPanel.css'
 
 interface PmfPanelProps {
@@ -10,97 +12,88 @@ export default function PmfPanel({ metrics }: PmfPanelProps) {
   const veryDisappointed = typeof metrics.very_disappointed_percentage === 'number' ? metrics.very_disappointed_percentage : 0
   const pmfColor = veryDisappointed >= 40 ? '#10b981' : veryDisappointed >= 25 ? '#f59e0b' : '#ef4444'
 
+  const replacementBehavior = metrics.replacement_behavior ?? {}
+  const replacementData = Object.entries(replacementBehavior)
+    .filter(([, count]) => (count as number) > 0)
+    .map(([name, value]) => ({ name, value: value as number }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 6)
+
   return (
-    <div className="admin-panel">
+    <div className="admin-panel pmf-panel">
       <div className="panel-header">
-        <h2>Product-Market Fit Panel</h2>
+        <h2>Product-market fit</h2>
       </div>
       <div className="panel-content">
         <div className="metrics-grid">
-          <MetricCard
-            label="Heavy Users"
-            value={metrics.heavy_users || 0}
+          <MetricCardWithTooltip
+            label="Heavy users"
+            value={metrics.heavy_users ?? 0}
             subtitle=">20 queries/week"
             icon="🔥"
+            metricKey="pmf.heavy_users"
           />
-          <MetricCard
-            label="Users Active in Week 3"
-            value={metrics.users_active_week3 || 0}
+          <MetricCardWithTooltip
+            label="Users active (week 3)"
+            value={metrics.users_active_week3 ?? 0}
             icon="📈"
+            description="Users active in the last 7 days (retention indicator)."
           />
-          <MetricCard
-            label="Very Disappointed"
+          <MetricCardWithTooltip
+            label="Very disappointed"
             value={`${veryDisappointed.toFixed(1)}%`}
             subtitle={`${metrics.very_disappointed_count || 0} of ${metrics.total_pmf_responses || 0} responses`}
             icon="😢"
             color={pmfColor}
+            metricKey="pmf.very_disappointed_percentage"
           />
-          <MetricCard
-            label="Avg PMF Score"
+          <MetricCardWithTooltip
+            label="Average PMF score"
             value={typeof metrics.avg_pmf_score === 'number' ? metrics.avg_pmf_score.toFixed(1) : '0.0'}
             subtitle="Out of 10.0"
             icon="📊"
+            metricKey="pmf.avg_pmf_score"
           />
-          <MetricCard
-            label="Avg Willingness to Pay"
+          <MetricCardWithTooltip
+            label="Avg willingness to pay"
             value={typeof metrics.avg_willingness_to_pay === 'number' ? `$${metrics.avg_willingness_to_pay.toFixed(0)}` : '$0'}
             icon="💰"
+            description="Average amount users said they would pay, from PMF surveys."
           />
-          <ReplacementBehaviorCard replacementBehavior={metrics.replacement_behavior} />
         </div>
-      </div>
-    </div>
-  )
-}
-
-function MetricCard({ label, value, subtitle, icon, color }: { 
-  label: string; 
-  value: string | number; 
-  subtitle?: string; 
-  icon?: string;
-  color?: string;
-}) {
-  return (
-    <div className="metric-card" style={color ? { borderTopColor: color } : undefined}>
-      {icon && <div className="metric-icon">{icon}</div>}
-      <div className="metric-content">
-        <div className="metric-label">{label}</div>
-        <div className="metric-value" style={color ? { color } : undefined}>{value}</div>
-        {subtitle && <div className="metric-subtitle">{subtitle}</div>}
-      </div>
-    </div>
-  )
-}
-
-function ReplacementBehaviorCard({ replacementBehavior }: { replacementBehavior: Record<string, number> }) {
-  if (!replacementBehavior || Object.keys(replacementBehavior).length === 0) {
-    return (
-      <div className="metric-card">
-        <div className="metric-icon">🔄</div>
-        <div className="metric-content">
-          <div className="metric-label">Replacement Behavior</div>
-          <div className="metric-value">No data</div>
-        </div>
-      </div>
-    )
-  }
-
-  const total = Object.values(replacementBehavior).reduce((sum, count) => sum + count, 0)
-  const sorted = Object.entries(replacementBehavior).sort((a, b) => b[1] - a[1])
-
-  return (
-    <div className="metric-card metric-card-wide">
-      <div className="metric-icon">🔄</div>
-      <div className="metric-content">
-        <div className="metric-label">Replacement Behavior</div>
-        <div className="replacement-list">
-          {sorted.map(([behavior, count]) => (
-            <div key={behavior} className="replacement-item">
-              <span className="replacement-name">{behavior}</span>
-              <span className="replacement-count">{count} ({(count / total * 100).toFixed(1)}%)</span>
-            </div>
-          ))}
-        </div>
+        {replacementData.length > 0 && (
+          <div className="panel-chart">
+            <h3 className="chart-title">If product disappeared, users would...</h3>
+            <p className="chart-description">Replacement behavior from PMF surveys</p>
+            <ResponsiveContainer width="100%" height={200}>
+              <PieChart>
+                <Pie
+                  data={replacementData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={40}
+                  outerRadius={75}
+                  paddingAngle={2}
+                  dataKey="value"
+                  nameKey="name"
+                >
+                  {replacementData.map((_, i) => (
+                    <Cell key={i} fill={['#0ea5e9', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#6366f1'][i % 6]} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value: number, name: string, props: any) => {
+                    const total = replacementData.reduce((s, d) => s + d.value, 0)
+                    const pct = total > 0 ? ((value / total) * 100).toFixed(1) : '0'
+                    return [`${value} (${pct}%)`, name]
+                  }}
+                  contentStyle={{ fontSize: 12, borderRadius: 8, backgroundColor: '#ffffff', color: '#1f2937', border: '1px solid #e5e7eb' }}
+                />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
     </div>
   )

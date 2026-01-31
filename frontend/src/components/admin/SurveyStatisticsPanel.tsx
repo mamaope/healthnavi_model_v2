@@ -142,23 +142,23 @@ export default function SurveyStatisticsPanel({ days }: { days: number }) {
       </div>
       <div className="panel-content">
         <div className="overall-stats">
-          <div className="overall-stat-card">
+          <div className="overall-stat-card" title="Number of distinct users who submitted at least one survey. Completion rate = this ÷ total users × 100.">
             <div className="overall-stat-value">{stats.overall.total_unique_users_completed}</div>
-            <div className="overall-stat-label">Users Completed Surveys</div>
+            <div className="overall-stat-label">Users who completed surveys</div>
             <div className="overall-stat-subtext">
               {stats.overall.overall_completion_percentage.toFixed(1)}% of {stats.overall.total_users} total users
             </div>
           </div>
-          <div className="overall-stat-card">
+          <div className="overall-stat-card" title="Total number of survey submissions across all survey types (baseline, mid, final).">
             <div className="overall-stat-value">{stats.overall.total_completed}</div>
-            <div className="overall-stat-label">Total Survey Submissions</div>
+            <div className="overall-stat-label">Total survey submissions</div>
           </div>
         </div>
 
         <div className="survey-types-grid">
-          {renderSurveyTypeStats('baseline', 'Pre-Pilot Survey')}
-          {renderSurveyTypeStats('mid', 'Mid-Pilot Survey')}
-          {renderSurveyTypeStats('final', 'Post-Pilot Survey')}
+          {renderSurveyTypeStats('baseline', 'Pre-pilot survey')}
+          {renderSurveyTypeStats('mid', 'Mid-pilot survey')}
+          {renderSurveyTypeStats('final', 'Post-pilot survey')}
         </div>
       </div>
     </div>

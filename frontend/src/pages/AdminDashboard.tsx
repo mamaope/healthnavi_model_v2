@@ -2,8 +2,13 @@ import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '../providers/AuthProvider'
 import { adminApi } from '../services/apiClient'
 import { useNavigate } from 'react-router-dom'
+import AdminReportPdf from '../components/admin/AdminReportPdf'
+import { exportElementToPdf } from '../utils/exportPdf'
 import UsagePanel from '../components/admin/UsagePanel'
 import UserTypeBreakdownPanel from '../components/admin/UserTypeBreakdownPanel'
+import ClinicalValuePanel from '../components/admin/ClinicalValuePanel'
+import SafetyPanel from '../components/admin/SafetyPanel'
+import PmfPanel from '../components/admin/PmfPanel'
 import UserManagementPanel from '../components/admin/UserManagementPanel'
 import SessionManagementPanel from '../components/admin/SessionManagementPanel'
 import AIResponseStatisticsPanel from '../components/admin/AIResponseStatisticsPanel'
@@ -30,6 +35,13 @@ export default function AdminDashboard() {
   const [selectedUserIds, setSelectedUserIds] = useState<number[]>([])
   const [excludedUserIds, setExcludedUserIds] = useState<number[]>([])
   const [exporting, setExporting] = useState(false)
+  const [pdfData, setPdfData] = useState<{
+    report: any
+    usageOverTime: { date: string; active_users: number; sessions: number; messages: number }[]
+    usersByRole: Record<string, number>
+    usersByType: Record<string, number>
+    periodLabel: string
+  } | null>(null)
 
   const metricsParams = {
     days: filterMode === 'preset' ? days : undefined,
@@ -95,6 +107,66 @@ export default function AdminDashboard() {
       }
     })
   }, [isAuthenticated, user])
+
+  const handleExportPdf = useCallback(async () => {
+    setExporting(true)
+    setError(null)
+    try {
+      const [reportRes, usageRes, userStatsRes] = await Promise.all([
+        adminApi.exportReport({
+          startDate: metricsParams.startDate,
+          endDate: metricsParams.endDate,
+          userIds: metricsParams.userIds,
+          excludeUserIds: metricsParams.excludeUserIds,
+          format: 'json',
+        }),
+        adminApi.getUsageOverTime({
+          days: effectiveDays,
+          startDate: metricsParams.startDate,
+          endDate: metricsParams.endDate,
+          userIds: metricsParams.userIds,
+          excludeUserIds: metricsParams.excludeUserIds,
+        }),
+        adminApi.getUserStatistics(effectiveDays),
+      ])
+      const report = reportRes.success ? reportRes.data : null
+      const usageOverTime = usageRes.success ? (usageRes.data?.series ?? []) : []
+      const userStats = userStatsRes.success ? userStatsRes.data : null
+      const usersByRole = (userStats?.users_by_role ?? {}) as Record<string, number>
+      const usersByType = (userStats?.users_by_type ?? {}) as Record<string, number>
+      const periodLabel =
+        filterMode === 'custom' && startDate && endDate
+          ? `${startDate} to ${endDate}`
+          : `Last ${effectiveDays} days`
+      if (!report) throw new Error('Failed to load report data')
+      setPdfData({ report, usageOverTime, usersByRole, usersByType, periodLabel })
+    } catch (e: any) {
+      setError(e?.message || 'Failed to prepare PDF')
+      setExporting(false)
+    }
+  }, [
+    metricsParams.startDate,
+    metricsParams.endDate,
+    metricsParams.userIds,
+    metricsParams.excludeUserIds,
+    effectiveDays,
+    filterMode,
+    startDate,
+    endDate,
+  ])
+
+  useEffect(() => {
+    if (!pdfData) return
+    const timer = setTimeout(() => {
+      const el = document.getElementById('pdf-report-content')
+      if (el) {
+        exportElementToPdf(el, `admin_report_${new Date().toISOString().slice(0, 10)}.pdf`)
+      }
+      setPdfData(null)
+      setExporting(false)
+    }, 1200)
+    return () => clearTimeout(timer)
+  }, [pdfData])
 
   const handleExport = async (format: 'json' | 'csv') => {
     setExporting(true)
@@ -264,6 +336,15 @@ export default function AdminDashboard() {
             >
               Export JSON
             </button>
+            <button
+              type="button"
+              onClick={handleExportPdf}
+              disabled={exporting}
+              className="btn-export btn-export-pdf"
+              title="Export report as PDF with graphs and explanations"
+            >
+              {exporting ? 'Preparing…' : 'Export PDF'}
+            </button>
             <button onClick={() => navigate('/')} className="btn-back">
               Back to Chat
             </button>
@@ -285,12 +366,59 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {pdfData && (
+        <>
+          <div
+            className="pdf-export-overlay"
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 10001,
+              background: 'rgba(255,255,255,0.9)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexDirection: 'column',
+              gap: '1rem',
+            }}
+          >
+            <div className="spinner" />
+            <p>Preparing PDF report…</p>
+          </div>
+          <div
+            className="pdf-export-container"
+            style={{
+              position: 'fixed',
+              left: 0,
+              top: 0,
+              width: '800px',
+              zIndex: 10000,
+              overflow: 'auto',
+              maxHeight: '100vh',
+            }}
+            aria-hidden="true"
+          >
+            <AdminReportPdf
+              reportData={pdfData.report}
+              usageOverTime={pdfData.usageOverTime}
+              devicesByType={metrics?.devices?.by_type}
+              usersByRole={pdfData.usersByRole}
+              usersByType={pdfData.usersByType}
+              periodLabel={pdfData.periodLabel}
+            />
+          </div>
+        </>
+      )}
+
       {metrics && (
         <div className="admin-panels">
           <UsageOverTimePanel filters={{ startDate: metricsParams.startDate, endDate: metricsParams.endDate, userIds: metricsParams.userIds, excludeUserIds: metricsParams.excludeUserIds }} days={effectiveDays} />
           <UserTypeBreakdownPanel days={effectiveDays} />
           <DeviceStatisticsPanel devices={metrics.devices} days={effectiveDays} />
           <UsagePanel metrics={metrics.usage} days={effectiveDays} />
+          <ClinicalValuePanel metrics={metrics.clinical_value} />
+          <SafetyPanel metrics={metrics.safety} />
+          <PmfPanel metrics={metrics.pmf} />
           <SessionManagementPanel days={effectiveDays} />
           <AIResponseStatisticsPanel days={effectiveDays} />
           <UserManagementPanel days={effectiveDays} />

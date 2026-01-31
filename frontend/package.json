@@ -12,6 +12,8 @@
   "dependencies": {
     "@tanstack/react-query": "^5.64.2",
     "dompurify": "^3.1.6",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.0.0",
     "marked": "^12.0.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

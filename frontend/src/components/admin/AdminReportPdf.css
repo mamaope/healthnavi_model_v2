@@ -1,0 +1,130 @@
+/* PDF report layout - optimized for html2canvas capture */
+.admin-report-pdf {
+  background: #ffffff;
+  color: #1f2937;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  padding: 24px;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.pdf-report-inner {
+  background: #fff;
+}
+
+.pdf-header {
+  border-bottom: 2px solid #3b82f6;
+  padding-bottom: 16px;
+  margin-bottom: 24px;
+}
+
+.pdf-header h1 {
+  margin: 0 0 8px 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.pdf-period {
+  margin: 0 0 4px 0;
+  font-size: 1rem;
+  color: #4b5563;
+}
+
+.pdf-generated {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.pdf-filters {
+  margin: 8px 0 0 0;
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.pdf-section {
+  margin-bottom: 28px;
+  page-break-inside: avoid;
+}
+
+.pdf-section h2 {
+  margin: 0 0 8px 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.pdf-desc {
+  margin: 0 0 12px 0;
+  font-size: 0.875rem;
+  color: #6b7280;
+  line-height: 1.4;
+}
+
+.pdf-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.pdf-table th,
+.pdf-table td {
+  border: 1px solid #e5e7eb;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.pdf-table th {
+  background: #f9fafb;
+  font-weight: 600;
+  color: #374151;
+}
+
+.pdf-table td {
+  color: #1f2937;
+}
+
+.pdf-desc-cell {
+  font-size: 0.75rem;
+  color: #6b7280;
+  max-width: 280px;
+}
+
+.pdf-chart-section {
+  padding: 16px 0;
+}
+
+.pdf-chart {
+  background: #fafafa;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 8px;
+}
+
+.pdf-charts-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 8px;
+}
+
+.pdf-chart-subtitle {
+  margin: 0 0 4px 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.pdf-empty {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #9ca3af;
+}
+
+.pdf-more {
+  margin: 8px 0 0 0;
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
