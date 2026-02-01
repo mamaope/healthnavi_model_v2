@@ -93,10 +93,6 @@ async def diagnose(
                     execution_time=timer.get_execution_time()
                 )
 
-            user_info = f"{current_user.username} (role: {current_user.role})" if current_user else "unauthenticated (guest)"
-            logger.info(f"Diagnosis request from: {user_info}")
-            logger.info(f"Patient data length: {len(data.patient_data)} characters")
-
             # Get chat history from session if session_id is provided (authenticated only)
             chat_history = data.chat_history or ""
             session_id = data.session_id
@@ -117,7 +113,6 @@ async def diagnose(
             # Use the real AI service to generate response
             # Explicitly default to False if not provided or None
             deep_search_enabled = data.deep_search if data.deep_search is not None else False
-            logger.info(f"Search mode: {'DEEP SEARCH' if deep_search_enabled else 'QUICK SEARCH'}")
             
             try:
                 # Get user's medical professional type for role-based prompts (default for guest)
@@ -129,7 +124,6 @@ async def diagnose(
                     deep_search=deep_search_enabled,
                     user_role_from_db=user_role
                 )
-                logger.info(f"Prompt type used: {prompt_type}")
                 # Ensure followup_questions is always a list
                 if followup_questions is None:
                     followup_questions = []
@@ -162,7 +156,6 @@ async def diagnose(
                             current_user, new_session_data, device_type=get_device_type(request)
                         )
                         session_id = new_session.id
-                        logger.info(f"Created new diagnosis session {session_id} for user {current_user.id}")
 
                     user_message = ChatMessageCreate(
                         content=data.patient_data,
@@ -182,7 +175,6 @@ async def diagnose(
                         ai_msg_response = session_service.add_message(session_id, current_user, ai_message)
                         if ai_msg_response is not None:
                             message_id = ai_msg_response.id
-                            logger.info(f"Stored messages in session {session_id}, message_id: {message_id}")
                         else:
                             logger.warning("add_message for AI returned None; message_id will be null and feedback unavailable")
                     else:
@@ -190,7 +182,6 @@ async def diagnose(
                         if session_id:
                             try:
                                 session_service.delete_session(session_id, current_user)
-                                logger.info(f"Cleaned up empty session {session_id}")
                             except Exception as cleanup_error:
                                 logger.warning(f"Could not clean up empty session {session_id}: {cleanup_error}")
 
@@ -204,7 +195,6 @@ async def diagnose(
                             ).scalar() or 0
                             if message_count == 0:
                                 session_service.delete_session(session_id, current_user)
-                                logger.info(f"Cleaned up empty session {session_id} after error")
                         except Exception as cleanup_error:
                             logger.warning(f"Could not clean up empty session after error: {cleanup_error}")
 
@@ -215,8 +205,6 @@ async def diagnose(
                 f"Doctor: {data.patient_data}\nAI Assistant: {response}"
             )
 
-            logger.info(f"AI diagnosis completed successfully. Response length: {len(response)} characters")
-            
             if followup_questions is None:
                 followup_questions = []
             
@@ -243,7 +231,6 @@ async def diagnose(
                     followup_questions=[]
                 )
             
-            logger.info(f"Diagnosis response: session_id={session_id}, message_id={message_id}")
             return create_success_response(
                 data=diagnosis_data,
                 status_code=200,
@@ -282,10 +269,6 @@ async def diagnose_stream(
     # Extract user ID IMMEDIATELY before any other operations (current_user may become detached)
     user_id = current_user.id if current_user else None
     
-    # Handle both authenticated and unauthenticated users
-    user_info = f"{current_user.username} (role: {current_user.role})" if current_user else "unauthenticated user"
-    logger.info(f"Streaming diagnosis request from: {user_info}")
-
     try:
         # Validate input data
         if not data.patient_data or len(data.patient_data.strip()) < 3:
@@ -324,14 +307,12 @@ async def diagnose_stream(
         if session_id_int and current_user:
             try:
                 chat_history = session_service.get_chat_history(session_id_int, current_user)
-                logger.info(f"Retrieved chat history from session {session_id_int}: {len(chat_history)} chars")
             except Exception as e:
                 logger.warning(f"Could not get chat history from session {session_id_int}: {e}")
         # Don't auto-create sessions - they will be created when the first user message is saved
         # This prevents empty sessions from being saved
 
         deep_search_enabled = data.deep_search if data.deep_search is not None else False
-        logger.info(f"Search mode: {'DEEP SEARCH' if deep_search_enabled else 'QUICK SEARCH'} (streaming)")
         
         # Create session only when saving the first user message (prevents empty sessions)
         user_message_saved = False
@@ -350,7 +331,6 @@ async def diagnose_stream(
                     user_msg_response = session_service.add_message(session_id_int, current_user, user_message)
                     if user_msg_response:
                         user_message_saved = True
-                        logger.info(f"Stored user message in session {session_id_int}")
                     else:
                         logger.warning(f"Failed to save user message in existing session {session_id_int}")
                         session_id_int = None  # Don't use this session
@@ -365,19 +345,16 @@ async def diagnose_stream(
                         current_user, new_session_data, device_type=get_device_type(request)
                     )
                     session_id_int = new_session.id
-                    logger.info(f"Created new streaming session {session_id_int} for user {current_user.id}")
                     
                     # Now save the user message
                     user_msg_response = session_service.add_message(session_id_int, current_user, user_message)
                     if user_msg_response:
                         user_message_saved = True
-                        logger.info(f"Stored user message in new session {session_id_int}")
                     else:
                         logger.warning(f"Failed to save user message in newly created session {session_id_int}")
                         # Clean up empty session
                         try:
                             session_service.delete_session(session_id_int, current_user)
-                            logger.info(f"Cleaned up empty session {session_id_int}")
                             session_id_int = None
                         except Exception as cleanup_error:
                             logger.warning(f"Could not clean up empty session: {cleanup_error}")
@@ -391,7 +368,6 @@ async def diagnose_stream(
                         ).scalar() or 0
                         if message_count == 0:
                             session_service.delete_session(session_id_int, current_user)
-                            logger.info(f"Cleaned up empty session {session_id_int} after error")
                             session_id_int = None
                     except Exception as cleanup_error:
                         logger.warning(f"Could not clean up empty session after error: {cleanup_error}")
@@ -463,7 +439,6 @@ async def diagnose_stream(
                                     if saved_message:
                                         ai_message_id_container["value"] = saved_message.id
                                         ai_message_saved = True
-                                        logger.info(f"✅ Stored AI streaming response in session {session_id_int}: message_id={saved_message.id}, {len(content_to_save)} chars")
                                     else:
                                         logger.warning(f"⚠️ Failed to save AI message - add_message returned None")
                             except Exception as save_error:
@@ -487,7 +462,6 @@ async def diagnose_stream(
                     try:
                         from healthnavi.services.conversational_service import generate_followup_questions_sync
                         followup_questions = generate_followup_questions_sync(data.patient_data, ai_response_content)
-                        logger.info(f"Generated {len(followup_questions)} follow-up questions")
                     except Exception as e:
                         logger.warning(f"Could not generate follow-up questions: {e}", exc_info=True)
                     
@@ -495,11 +469,10 @@ async def diagnose_stream(
                         import json
                         followup_json = json.dumps(followup_questions)
                         yield f"\n\n[FOLLOWUP_QUESTIONS]:{followup_json}"
-                        logger.info(f"✅ Sent {len(followup_questions)} follow-up questions to frontend")
                     else:
                         logger.warning("⚠️ Follow-up question generation returned empty list")
                 elif followup_already_sent:
-                    logger.info("ℹ️ Follow-up questions already sent in stream, skipping duplicate generation")
+                    pass  # Skip duplicate generation
                 elif stream_error:
                     logger.warning("⚠️ Skipping follow-up question generation due to stream error")
                 elif not ai_response_content or len(ai_response_content.strip()) <= 10:
@@ -509,12 +482,8 @@ async def diagnose_stream(
                 if ai_message_id_container["value"]:
                     yield f"\n[MESSAGE_ID]:{ai_message_id_container['value']}\n"
                 
-                # Log final status
-                if session_id_int and user_id:
-                    if ai_message_saved:
-                        logger.info(f"✅ Successfully saved AI message to session {session_id_int}, message_id={ai_message_id_container['value']}")
-                    else:
-                        logger.warning(f"⚠️ AI message was NOT saved to session {session_id_int} (stream_error={stream_error}, content_len={len(ai_response_content.strip())})")
+                if session_id_int and user_id and not ai_message_saved and not stream_error:
+                    logger.warning(f"⚠️ AI message was NOT saved to session {session_id_int} (content_len={len(ai_response_content.strip())})")
                         
             except Exception as e:
                 logger.error(f"Error during streaming generation: {e}", exc_info=True)
@@ -592,12 +561,6 @@ async def submit_feedback(
                 MessageFeedback.message_id == feedback_data.message_id
             ).first()
 
-            logger.info(
-                f"Feedback submission attempt: message_id={feedback_data.message_id}, "
-                f"user_id={current_user.id}, type={feedback_data.feedback_type}, "
-                f"rating={feedback_data.rating}, existing={existing_feedback is not None}"
-            )
-
             if existing_feedback:
                 # Update existing feedback
                 existing_feedback.feedback_type = feedback_data.feedback_type
@@ -606,12 +569,6 @@ async def submit_feedback(
                 existing_feedback.updated_at = datetime.utcnow().isoformat()
                 db.commit()
                 db.refresh(existing_feedback)
-
-                logger.info(
-                    f"Updated feedback {existing_feedback.id} for message {feedback_data.message_id} by user {current_user.id}. "
-                    f"Type: {feedback_data.feedback_type}, Rating: {feedback_data.rating}, "
-                    f"Updated At: {existing_feedback.updated_at}"
-                )
 
                 feedback_response = MessageFeedbackResponse(
                     id=existing_feedback.id,
@@ -645,12 +602,6 @@ async def submit_feedback(
                 db.add(new_feedback)
                 db.commit()
                 db.refresh(new_feedback)
-
-                logger.info(
-                    f"Created feedback {new_feedback.id} for message {feedback_data.message_id} by user {current_user.id}. "
-                    f"Type: {feedback_data.feedback_type}, Rating: {feedback_data.rating}, "
-                    f"Created At: {new_feedback.created_at}"
-                )
 
                 feedback_response = MessageFeedbackResponse(
                     id=new_feedback.id,
@@ -710,8 +661,6 @@ async def remove_feedback(
 
             db.delete(feedback)
             db.commit()
-
-            logger.info(f"Removed feedback for message {message_id} by user {current_user.id}")
 
             return create_success_response(
                 data={"message_id": message_id},

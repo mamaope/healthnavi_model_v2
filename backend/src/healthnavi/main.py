@@ -22,6 +22,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Suppress SQLAlchemy/PostgreSQL engine and pool logs (SQL queries, connections)
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy.dialects").setLevel(logging.WARNING)
+
 from healthnavi.core.config import get_config
 from healthnavi.core.response_utils import create_success_response, create_error_response, ResponseTimer
 from healthnavi.schemas import StandardResponse

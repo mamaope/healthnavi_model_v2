@@ -1,6 +1,5 @@
 from healthnavi.services.vectordb_service import ZillizService
 from typing import Tuple, List
-import time
 import logging
 import os
 from collections import defaultdict
@@ -42,7 +41,6 @@ def search_all_collections(
     Perform semantic retrieval and return optimized context for LLM.
     - Retrieves chunks with diversity across multiple sources.
     """
-    start_time = time.time()
     client = vectordb_service.client
     collection_name = vectordb_service.collection_name
 
@@ -51,7 +49,6 @@ def search_all_collections(
         raise RuntimeError("Vector store not initialized. Call initialize_vectorstore() first.")
 
     full_search_query = f"{query.strip()}\n{patient_data.strip()}".strip()
-    logger.info(f"🔍 Running semantic retrieval (query length={len(full_search_query)})")
 
     try:
         # Retrieve more chunks to ensure diversity across multiple sources
@@ -79,8 +76,6 @@ def search_all_collections(
             file_name = file_name.replace('.pdf', '').replace('_', ' ').replace('-', ' ')
             unique_top_sources.add(file_name)
 
-        total_time = time.time() - start_time
-        logger.info(f"📚 Retrieved {len(top_chunks)} top chunks in {total_time:.2f}s from {len(unique_top_sources)} sources.")
         return top_chunks, list(unique_top_sources)
 
     except Exception as e:
@@ -150,7 +145,5 @@ def _apply_book_diversity(
         if not found:
             break
     
-    final_books = len(set(os.path.basename(c.get('file_path', '')) for c in selected_chunks))
-    logger.info(f"📖 Diversity selection: {len(selected_chunks)} chunks from {final_books} different books")
     return selected_chunks
     

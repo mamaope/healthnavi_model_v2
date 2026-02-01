@@ -51,9 +51,23 @@ export default defineConfig({
       usePolling: false,
     },
   },
-  // Disable HMR in production builds
   build: {
     sourcemap: !isProduction,
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          // Split heavy/vendor chunks so initial load is smaller
+          if (id.includes('node_modules')) {
+            if (id.includes('recharts') || id.includes('d3-')) return 'charts'
+            if (id.includes('react-router')) return 'router'
+            if (id.includes('@tanstack/react-query')) return 'query'
+            if (id.includes('jspdf') || id.includes('html2canvas')) return 'pdf'
+            if (id.includes('marked') || id.includes('dompurify')) return 'markdown'
+          }
+        },
+      },
+    },
+    chunkSizeWarningLimit: 600,
   },
 })
 

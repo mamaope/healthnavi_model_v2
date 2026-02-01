@@ -7,6 +7,11 @@ import { ThemeProvider } from './providers/ThemeProvider'
 import { AuthProvider } from './providers/AuthProvider'
 import './styles/app.css'
 
+// Preload home page chunk so it’s ready as soon as the user sees the app
+if (typeof window !== 'undefined') {
+  import('./pages/HomePage').catch(() => {})
+}
+
 // Error boundary component
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },

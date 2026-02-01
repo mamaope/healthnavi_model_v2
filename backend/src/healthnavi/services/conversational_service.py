@@ -117,8 +117,6 @@ def generate_followup_questions_sync(original_query: str, response: str) -> list
         2. [Second question?]
         3. [Third question?]"""
         
-        logger.info("Generating follow-up questions...")
-
         followup_response = client.models.generate_content(
             model=MODEL_NAME,
             contents=[{"role": "user", "parts": [{"text": followup_prompt}]}],
@@ -131,20 +129,15 @@ def generate_followup_questions_sync(original_query: str, response: str) -> list
             }
         )
         
-        logger.info(f"Follow-up response received: {followup_response}")
-        
         if followup_response and hasattr(followup_response, 'candidates') and followup_response.candidates:
             candidate = followup_response.candidates[0]
-            logger.info(f"Candidate: {candidate}")
             finish_reason = getattr(candidate, 'finish_reason', 'unknown')
-            logger.info(f"Finish reason: {finish_reason}")
             
             if finish_reason == 'MAX_TOKENS':
                 logger.warning("⚠️ Follow-up questions hit MAX_TOKENS limit - response may be incomplete")
             
             if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts') and candidate.content.parts:
                 questions_text = candidate.content.parts[0].text.strip()
-                logger.info(f"Raw questions text: {questions_text}")
                 
                 questions = []
                 lines = [q.strip() for q in questions_text.split('\n') if q.strip()]
@@ -169,11 +162,9 @@ def generate_followup_questions_sync(original_query: str, response: str) -> list
                             # Remove trailing period/comma and add ?
                             cleaned = re.sub(r'[.,;]+$', '', cleaned).strip() + '?'
                         questions.append(cleaned)
-                        logger.info(f"Parsed question: {cleaned}")
                 
                 if questions:
                     result = questions[:3]  # Return max 3 questions
-                    logger.info(f"Returning {len(result)} follow-up questions")
                     return result
                 else:
                     logger.warning("No valid questions parsed from response")
@@ -200,27 +191,20 @@ def _get_cached_response(cache_key: str) -> str:
     if cache_key in RESPONSE_CACHE:
         response, timestamp = RESPONSE_CACHE[cache_key]
         if datetime.now() - timestamp < timedelta(minutes=CACHE_TTL_MINUTES):
-            logger.info(f"Cache HIT - Returning cached response (age: {(datetime.now() - timestamp).seconds}s)")
             return response
         else:
-            # Expired, remove from cache
             del RESPONSE_CACHE[cache_key]
-            logger.info("Cache EXPIRED - Will generate new response")
     return None
 
 
 def _cache_response(cache_key: str, response: str):
     """Cache a response with timestamp."""
     RESPONSE_CACHE[cache_key] = (response, datetime.now())
-    logger.info(f"Response cached (cache size: {len(RESPONSE_CACHE)} entries)")
     
-    # Cleanup old entries if cache gets too large
     if len(RESPONSE_CACHE) > MAX_CACHE_SIZE:
-        # Remove oldest entries
         sorted_keys = sorted(RESPONSE_CACHE.keys(), key=lambda k: RESPONSE_CACHE[k][1])
-        for key in sorted_keys[:20]:  # Remove 20 oldest
+        for key in sorted_keys[:20]:
             del RESPONSE_CACHE[key]
-        logger.info(f"🧹 Cache cleanup - Removed 20 oldest entries")
 
 
 @retry(
@@ -240,13 +224,11 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
             cache_key = _generate_cache_key(query, patient_data, deep_search)
             cached_response = _get_cached_response(cache_key)
             if cached_response:
-                logger.info(f"⚡ Cached response returned in {time.time() - total_start_time:.3f}s")
                 diagnosis_complete = is_diagnosis_complete(cached_response)
                 prompt_type = "deep_search" if deep_search else "quick_search"
-                # Generate follow-up questions even for cached responses
                 followup_questions = []
                 try:
-                    followup_questions = generate_followup_questions_sync(query, cached_response)
+                    followup_questions = await asyncio.to_thread(generate_followup_questions_sync, query, cached_response)
                 except Exception as e:
                     logger.warning(f"Failed to generate follow-up questions for cached response: {e}")
                 return cached_response, diagnosis_complete, prompt_type, followup_questions
@@ -261,12 +243,11 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
             max_output_tokens = DEEP_SEARCH_MAX_OUTPUT_TOKENS
             prompt_template = DEEP_SEARCH_PROMPT
             prompt_type = "deep_search"
-            logger.info("🔍 Using DEEP SEARCH mode")
         else:
-            max_chunks = 8
+            max_chunks = 6
             max_books = 4
-            min_chunks = 5
-            min_books = 3
+            min_chunks = 4
+            min_books = 2
             max_output_tokens = QUICK_SEARCH_MAX_OUTPUT_TOKENS
             prompt_template = QUICK_SEARCH_PROMPT
             prompt_type = "quick_search"
@@ -280,18 +261,15 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
             min_books=min_books
         )
         optimized_context = optimize_context_for_llm(context, max_chunks=max_chunks)
-        logger.info(f"Context optimized: {len(context)} chunks -> {len(optimized_context)} chars from {len(actual_sources)} sources")
 
         # Truncate context for quick search to reduce prompt size and improve speed
-        if not deep_search and len(optimized_context) > 6000:  # Limit quick search context to 6000 chars
-            optimized_context = optimized_context[:6000]
+        if not deep_search and len(optimized_context) > 5000:  # Limit quick search context to 5000 chars
+            optimized_context = optimized_context[:5000]
 
         # Format sources - should always have sources from knowledge base
         if actual_sources and len(actual_sources) > 0:
             sources_text = ", ".join(actual_sources)
-            logger.info(f"✅ Sources to be cited ({len(actual_sources)} sources): {sources_text}")
         else:
-            # Log as error since this indicates a potential system issue
             logger.error("⚠️ CRITICAL: No sources retrieved from knowledge base! Check vector store connection.")
             sources_text = ""
         
@@ -330,14 +308,10 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
             return f"⚠️ Request too large: {warning_msg}. Please try a shorter query or enable deep search.", False, prompt_type, []
         elif warning_msg:
             logger.warning(f"⚠️ {warning_msg}")
-        
-        logger.info(f"📊 Token estimate - Input: ~{estimated_input_tokens}, Max output: {max_output_tokens}, Total: ~{estimated_input_tokens + max_output_tokens}")
-        logger.info(f"--- PROMPT SENT TO API (first 500 chars) ---\n{full_prompt[:500]}\n...")
 
         client = get_genai_client()
 
         llm_start = time.time()
-        logger.info("Generating response from model...")
 
         try:
             response = client.models.generate_content(
@@ -367,7 +341,6 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
 
                 full_response_text = candidate.content.parts[0].text.strip()
                 finish_reason = getattr(candidate, 'finish_reason', 'UNKNOWN')
-                logger.info(f"Response finish reason: {finish_reason}")
 
                 if finish_reason == 'MAX_TOKENS':
                     truncation_note = (
@@ -396,16 +369,13 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
         if cache_key and full_response_text:
             _cache_response(cache_key, full_response_text)
 
-        logger.info(f"✅ Response generated successfully in {time.time() - llm_start:.3f}s")
-        logger.info(f"Full pipeline completed in {time.time() - total_start_time:.3f}s")
-
         # Determine if diagnosis is complete
         diagnosis_complete = is_diagnosis_complete(full_response_text)
         
-        # Generate follow-up questions from the response
+        # Generate follow-up questions in thread pool so event loop stays responsive
         followup_questions = []
         try:
-            followup_questions = generate_followup_questions_sync(query, full_response_text)
+            followup_questions = await asyncio.to_thread(generate_followup_questions_sync, query, full_response_text)
         except Exception as e:
             logger.warning(f"Failed to generate follow-up questions: {e}")
         
@@ -460,18 +430,16 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
             cache_key = _generate_cache_key(query, patient_data, deep_search)
             cached_response = _get_cached_response(cache_key)
             if cached_response:
-                # Stream cached response in chunks for consistent frontend behavior
-                chunk_size = 50  # Stream in 50-character chunks
+                # Stream cached response in larger chunks with no delay for faster client display
+                chunk_size = 150
                 for i in range(0, len(cached_response), chunk_size):
                     yield cached_response[i:i + chunk_size]
-                    await asyncio.sleep(0.01)  # Small delay to simulate streaming
-                logger.info(f"⚡ Cached response streamed in {time.time() - total_start_time:.3f}s")
                 
-                # Generate and yield follow-up questions for cached responses
+                # Generate follow-up questions in thread pool, then yield
                 if len(cached_response.strip()) > 10:
                     followup_questions = []
                     try:
-                        followup_questions = generate_followup_questions_sync(query, cached_response)
+                        followup_questions = await asyncio.to_thread(generate_followup_questions_sync, query, cached_response)
                     except Exception as e:
                         logger.warning(f"Failed to generate follow-up questions for cached response: {e}")
                     
@@ -479,7 +447,6 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
                         import json
                         followup_json = json.dumps(followup_questions)
                         yield f"\n\n[FOLLOWUP_QUESTIONS]:{followup_json}"
-                        logger.info(f"✅ Generated {len(followup_questions)} follow-up questions for cached response")
                     else:
                         logger.warning("⚠️ No follow-up questions generated for cached response")
                 
@@ -494,19 +461,15 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
             max_output_tokens = DEEP_SEARCH_MAX_OUTPUT_TOKENS
             prompt_template = DEEP_SEARCH_PROMPT
             prompt_type = "deep_search"
-            logger.info("🔍 Using DEEP SEARCH mode (streaming)")
         else:
-            max_chunks = 8
+            max_chunks = 6
             max_books = 4
-            min_chunks = 5
-            min_books = 3
+            min_chunks = 4
+            min_books = 2
             max_output_tokens = QUICK_SEARCH_MAX_OUTPUT_TOKENS
             prompt_template = QUICK_SEARCH_PROMPT
             prompt_type = "quick_search"
-            logger.info("⚡ Using QUICK SEARCH mode (streaming)")
 
-        # Retrieve context - TIME THIS to identify bottlenecks
-        search_start = time.time()
         context, actual_sources = search_all_collections(
             query, 
             patient_data, 
@@ -515,20 +478,15 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
             min_chunks=min_chunks,
             min_books=min_books
         )
-        search_time = time.time() - search_start
-        logger.info(f"🔍 Vector search completed in {search_time:.3f}s")
-        
         optimized_context = optimize_context_for_llm(context, max_chunks=max_chunks)
-        logger.info(f"Context optimized: {len(context)} chunks -> {len(optimized_context)} chars from {len(actual_sources)} sources")
 
         # Truncate context for quick search to reduce prompt size and improve speed
-        if not deep_search and len(optimized_context) > 6000:  # Limit quick search context to 6000 chars
-            optimized_context = optimized_context[:6000]
+        if not deep_search and len(optimized_context) > 5000:  # Limit quick search context to 5000 chars
+            optimized_context = optimized_context[:5000]
 
         # Format sources
         if actual_sources and len(actual_sources) > 0:
             sources_text = ", ".join(actual_sources)
-            logger.info(f"✅ Sources to be cited ({len(actual_sources)} sources): {sources_text}")
         else:
             logger.error("⚠️ CRITICAL: No sources retrieved from knowledge base!")
             sources_text = ""
@@ -568,14 +526,10 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
             return
         elif warning_msg:
             logger.warning(f"⚠️ {warning_msg}")
-        
-        logger.info(f"📊 Token estimate - Input: ~{estimated_input_tokens}, Max output: {max_output_tokens}, Total: ~{estimated_input_tokens + max_output_tokens}")
-        logger.info(f"--- STREAMING PROMPT (first 500 chars) ---\n{full_prompt[:500]}\n...")
 
         client = get_genai_client()
 
         llm_start = time.time()
-        logger.info("Starting streaming response generation...")
 
         try:
             response_stream = client.models.generate_content_stream(
@@ -602,7 +556,6 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
                         for candidate in chunk.candidates:
                             if hasattr(candidate, 'finish_reason') and candidate.finish_reason:
                                 finish_reason = candidate.finish_reason
-                                logger.info(f"Stream finished with reason: {finish_reason}")
                     
                     # Capture token usage if available
                     if hasattr(chunk, 'usage_metadata') and chunk.usage_metadata:
@@ -611,8 +564,6 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
                         final_token_usage = chunk.usage
                     
                     if not first_token_received:
-                        ttft = time.time() - llm_start
-                        logger.info(f"⚡ First token received in {ttft:.3f}s")
                         first_token_received = True
 
                     # Extract text from chunk - handle different response formats
@@ -646,14 +597,6 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
                         chunk_count += 1
                         yield chunk_text
                 
-                logger.info(f"✅ Streaming completed in {time.time() - llm_start:.3f}s ({chunk_count} chunks, {len(full_response_text)} chars)")
-                
-                # Log token usage if available
-                if final_token_usage:
-                    output_tokens = getattr(final_token_usage, 'candidates_token_count', None)
-                    if output_tokens:
-                        logger.info(f"Token usage - Output: {output_tokens}/{max_output_tokens} tokens ({output_tokens/max_output_tokens*100:.1f}%)")
-                
                 if finish_reason == 'MAX_TOKENS':
                     truncation_note = (
                         f"\n\n---\n"
@@ -678,9 +621,6 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
             except Exception as stream_error:
                 logger.error(f"Error iterating stream: {stream_error}", exc_info=True)
                 raise
-            
-            logger.info(f"Full pipeline completed in {time.time() - total_start_time:.3f}s")
-            logger.info(f"Final response length: {len(full_response_text)} characters")
 
             # Cache the complete response if applicable
             if cache_key and full_response_text:

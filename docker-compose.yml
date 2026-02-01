@@ -33,6 +33,19 @@ services:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
+    # Only log errors; suppress all statement/connection/checkpoint logs
+    command:
+      - "postgres"
+      - "-c"
+      - "log_min_messages=error"
+      - "-c"
+      - "log_statement=none"
+      - "-c"
+      - "log_connections=off"
+      - "-c"
+      - "log_disconnections=off"
+      - "-c"
+      - "log_checkpoints=off"
     ports:
       - "5437:5432"
     volumes:

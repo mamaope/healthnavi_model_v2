@@ -283,7 +283,6 @@ export const authApi = {
     })
   },
   register(firstName: string, lastName: string, email: string, password: string) {
-    console.log('Registration attempt with:', { firstName, lastName, email, passwordLength: password.length })
     return apiFetch<AuthSuccessResponse>('/auth/register', 'POST', {
       body: JSON.stringify({
         first_name: firstName,
@@ -292,10 +291,7 @@ export const authApi = {
         password,
       }),
       skipAuthHeader: true,
-    }).then(response => {
-      console.log('Registration successful:', response.success)
-      return response
-    }).catch(error => {
+    }).then(response => response).catch(error => {
       console.error('Registration failed:', error.message)
       throw error
     })

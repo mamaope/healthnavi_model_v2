@@ -93,7 +93,6 @@ def create_tables():
         # Import all models to ensure they are registered with SQLAlchemy
         from healthnavi.models import Base, User, DiagnosisSession, ChatMessage, MessageFeedback
         Base.metadata.create_all(bind=engine)
-        logger.info("Database tables created successfully")
     except SQLAlchemyError as e:
         logger.error(f"Failed to create database tables: {e}")
         raise
@@ -109,7 +108,6 @@ def check_database_connection() -> bool:
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
-        logger.info("Database connection check successful")
         return True
     except SQLAlchemyError as e:
         logger.error(f"Database connection check failed: {e}")
@@ -164,4 +162,3 @@ if config.application.environment != 'test':
         initialize_database()
     except Exception as e:
         logger.warning(f"Database initialization failed on import: {e}")
-        logger.info("Database will be initialized when first accessed")

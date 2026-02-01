@@ -214,7 +214,6 @@ export function useChatEngine() {
               const messageIdMatch = chunk.match(/\[MESSAGE_ID\]:(\d+)/)
               if (messageIdMatch) {
                 messageIdFromStream = parseInt(messageIdMatch[1], 10)
-                console.log('✅ Extracted message_id from stream:', messageIdFromStream)
                 // Remove the marker from content before adding to stream
                 const contentWithoutMarker = chunk.replace(/\[MESSAGE_ID\]:\d+\s*/g, '').trim()
                 if (contentWithoutMarker) {
@@ -268,7 +267,6 @@ export function useChatEngine() {
             const messageIdMatch = allContent.match(/\[MESSAGE_ID\]:(\d+)/)
             if (messageIdMatch) {
               messageIdFromStream = parseInt(messageIdMatch[1], 10)
-              console.log('✅ Extracted message_id from stream (end of stream search):', messageIdFromStream)
             }
           }
           
@@ -277,14 +275,11 @@ export function useChatEngine() {
             useChatStore.getState().replaceMessage(aiMessageId, {
               messageId: messageIdFromStream
             })
-            console.log('✅ Updated message with messageId:', messageIdFromStream, 'for message:', aiMessageId)
           } else {
-            console.warn('⚠️ No messageId received from stream for message:', aiMessageId, 'Content length:', streamedContent.length)
             // Try to fetch messageId from session if we have a session
             const returnValue = streamResult.value
             const finalSessionId = returnValue?.sessionId || sessionId
             if (finalSessionId && isAuthenticated && currentSession) {
-              console.log('Attempting to fetch messageId from session...')
               try {
                 const sessionMessages = await sessionsApi.messages(finalSessionId)
                 if (sessionMessages.success && sessionMessages.data.messages) {
@@ -299,7 +294,6 @@ export function useChatEngine() {
                     useChatStore.getState().replaceMessage(aiMessageId, {
                       messageId: fetchedMessageId
                     })
-                    console.log('✅ Fetched and updated messageId from session:', fetchedMessageId)
                     messageIdFromStream = fetchedMessageId
                   }
                 }
@@ -317,9 +311,8 @@ export function useChatEngine() {
                 followupQuestions = parsed
                 setFollowupQuestionsHook(parsed)
               }
-            } catch (parseError) {
+            } catch {
               // If parsing fails, we'll just not have follow-up questions
-              console.warn('Failed to parse follow-up questions JSON:', parseError)
             }
           }
           
@@ -368,7 +361,6 @@ export function useChatEngine() {
           if (cleanedContent !== streamedContent) {
             streamedContent = cleanedContent
             useChatStore.getState().updateMessageContent(aiMessageId, cleanedContent)
-            console.log('🧹 Cleaned follow-up questions marker from message content')
           }
           
           // Always set isFetchingFollowup to false after stream completes
