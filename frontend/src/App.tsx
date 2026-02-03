@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { AppLoadingSkeleton } from './components/AppLoadingSkeleton'
 
 // Lazy-load pages so the initial bundle is small and first paint is fast
 const HomePage = lazy(() => import('./pages/HomePage'))
@@ -16,27 +17,9 @@ const SettingsBilling = lazy(() => import('./pages/settings/SettingsBilling'))
 const SettingsPrivacy = lazy(() => import('./pages/settings/SettingsPrivacy'))
 const SettingsCloseAccount = lazy(() => import('./pages/settings/SettingsCloseAccount'))
 
-function PageFallback() {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '60vh',
-        fontFamily: 'system-ui, sans-serif',
-        color: 'var(--text-secondary, #666)',
-      }}
-      aria-label="Loading"
-    >
-      <span>Loading…</span>
-    </div>
-  )
-}
-
 export default function App() {
   return (
-    <Suspense fallback={<PageFallback />}>
+    <Suspense fallback={<AppLoadingSkeleton />}>
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/auth/google/success" element={<HomePage />} />

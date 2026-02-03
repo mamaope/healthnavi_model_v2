@@ -131,9 +131,88 @@
         referrerpolicy="no-referrer"
       />
     </noscript>
+    <!-- Preload logo for faster LCP on home page -->
+    <link rel="preload" href="/logo.png" as="image" />
+    <!-- Inline loading skeleton - visible before JS loads -->
+    <style>
+      .app-loading-skeleton {
+        min-height: 100vh;
+        background: #f9fafb;
+        display: flex;
+        flex-direction: column;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+      .app-loading-skeleton .skeleton-header {
+        height: 56px;
+        background: #ffffff;
+        border-bottom: 1px solid #e5e7eb;
+        flex-shrink: 0;
+      }
+      .app-loading-skeleton .skeleton-chat {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        gap: 24px;
+      }
+      .app-loading-skeleton .skeleton-logo {
+        width: 80px;
+        height: 80px;
+        background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+        background-size: 200% 100%;
+        animation: skeleton-shimmer 1.5s ease-in-out infinite;
+        border-radius: 16px;
+      }
+      .app-loading-skeleton .skeleton-input {
+        width: 100%;
+        max-width: 560px;
+        height: 52px;
+        background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+        background-size: 200% 100%;
+        animation: skeleton-shimmer 1.5s ease-in-out infinite;
+        border-radius: 26px;
+      }
+      .app-loading-skeleton .skeleton-dots {
+        display: flex;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .app-loading-skeleton .skeleton-dot {
+        width: 8px;
+        height: 8px;
+        background: #0d9488;
+        border-radius: 50%;
+        animation: skeleton-pulse 1.2s ease-in-out infinite;
+      }
+      .app-loading-skeleton .skeleton-dot:nth-child(2) { animation-delay: 0.2s; }
+      .app-loading-skeleton .skeleton-dot:nth-child(3) { animation-delay: 0.4s; }
+      @keyframes skeleton-shimmer {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+      }
+      @keyframes skeleton-pulse {
+        0%, 100% { opacity: 0.4; transform: scale(0.9); }
+        50% { opacity: 1; transform: scale(1); }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="app-loading-skeleton" aria-hidden="true" id="app-loading-skeleton">
+        <div class="skeleton-header"></div>
+        <div class="skeleton-chat">
+          <div class="skeleton-logo"></div>
+          <div class="skeleton-input"></div>
+          <div class="skeleton-dots">
+            <span class="skeleton-dot"></span>
+            <span class="skeleton-dot"></span>
+            <span class="skeleton-dot"></span>
+          </div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

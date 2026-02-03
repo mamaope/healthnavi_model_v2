@@ -63,6 +63,8 @@ export default defineConfig({
             if (id.includes('@tanstack/react-query')) return 'query'
             if (id.includes('jspdf') || id.includes('html2canvas')) return 'pdf'
             if (id.includes('marked') || id.includes('dompurify')) return 'markdown'
+            if (id.includes('zustand')) return 'store'
+            if (id.includes('react-hook-form')) return 'forms'
           }
         },
       },

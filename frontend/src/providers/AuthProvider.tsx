@@ -190,14 +190,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    // We optimistically set the state while verifying the token
+    // Show UI immediately with cached user - don't block on auth API
+    // Run refreshProfile in background; UI updates when it completes
     setAuthState({
       user: stored.user,
       token: stored.token,
-      initializing: true,
+      initializing: false, // No longer blocking - show app right away
       isAuthenticated: Boolean(stored.token),
     })
 
+    // Verify token in background; refreshProfile will update state when done
     refreshProfile().catch((error) => {
       console.error('Failed to initialize auth state', error)
     })
