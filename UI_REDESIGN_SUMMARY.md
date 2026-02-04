@@ -1,4 +1,4 @@
-# HealthNavy Web App - UI/UX Redesign Summary
+# Empirico Web App - UI/UX Redesign Summary
 
 ## Overview
 Complete redesign of the HealthNavy web application with a modern, user-friendly interface that prioritizes clarity, accessibility, and professional medical aesthetics.
@@ -195,5 +195,5 @@ App.tsx
 
 ## Conclusion
 
-This redesign transforms the HealthNavy web application into a modern, professional, and user-friendly platform that maintains medical-grade standards while providing an appealing and desirable user experience. The new structure is more maintainable, accessible, and ready for future enhancements.
+This redesign transforms the Empirico web application into a modern, professional, and user-friendly platform that maintains medical-grade standards while providing an appealing and desirable user experience. The new structure is more maintainable, accessible, and ready for future enhancements.
 

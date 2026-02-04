@@ -1,5 +1,5 @@
 """
-Data deletion service for HealthNavi AI CDSS.
+Data deletion service for Empirico AI CDSS.
 
 Supports user-initiated data deletion requests for privacy compliance (e.g. GDPR right to erasure).
 Deletion is scheduled 6 months after the request to allow for a change-of-mind period.

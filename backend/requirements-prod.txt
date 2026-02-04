@@ -1,4 +1,4 @@
-# HealthNavi AI CDSS - Production dependencies only (smaller Docker image)
+# Empirico AI CDSS - Production dependencies only (smaller Docker image)
 # Omit pytest, black, flake8, mypy, isort, ipython
 
 # Core Framework & API

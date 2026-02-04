@@ -1,5 +1,5 @@
 """
-Admin Service for HealthNavi AI CDSS.
+Admin Service for Empirico AI CDSS.
 Provides metrics, analytics, and admin functionality.
 """
 

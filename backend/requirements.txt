@@ -1,4 +1,4 @@
-# HealthNavi AI CDSS - Production Dependencies
+# Empirico AI CDSS - Production Dependencies
 # Optimized requirements with only direct dependencies
 # Generated: 2025-01-27
 

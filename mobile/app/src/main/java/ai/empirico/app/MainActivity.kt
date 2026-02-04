@@ -10,14 +10,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.rememberNavController
 import ai.empirico.app.navigation.NavGraph
-import ai.empirico.app.ui.theme.HealthNavyTheme
+import ai.empirico.app.ui.theme.EmpiricoTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            HealthNavyTheme {
+            EmpiricoTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background

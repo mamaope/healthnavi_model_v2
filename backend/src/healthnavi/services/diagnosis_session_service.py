@@ -1,5 +1,5 @@
 """
-Diagnosis Session Service for HealthNavi AI CDSS.
+Diagnosis Session Service for Empirico AI CDSS.
 
 This module provides services for managing diagnosis sessions and chat messages.
 """

@@ -55,7 +55,7 @@ def seed_admin():
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("HealthNavi Admin Setup")
+    print("Empirico Admin Setup")
     print("=" * 60)
     
     # Check if .env file exists
@@ -69,7 +69,7 @@ if __name__ == "__main__":
         print("  - DB_HOST")
         print("  - DB_PORT")
         print("\nOptional admin user variables:")
-        print("  - ADMIN_EMAIL (default: admin@healthnavi.com)")
+        print("  - ADMIN_EMAIL (default: admin@empirico.ai)")
         print("  - ADMIN_PASSWORD (default: admin123)")
         print("  - ADMIN_USERNAME (default: admin)")
         print("  - ADMIN_FULL_NAME (default: System Administrator)")

@@ -1,5 +1,5 @@
 """
-Enhanced database service for HealthNavi AI CDSS.
+Enhanced database service for Empirico AI CDSS.
 
 This module provides secure database operations with proper connection management,
 transaction handling, and audit logging following medical software standards.

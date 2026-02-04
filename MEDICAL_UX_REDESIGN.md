@@ -1,7 +1,7 @@
 # Medical-First UX/UI Redesign Summary
 
 ## Overview
-Complete redesign of HealthNavi AI CDSS following medical-first UX principles with a calm, clinical, and accessible design system.
+Complete redesign of Empirico AI CDSS following medical-first UX principles with a calm, clinical, and accessible design system.
 
 ## Color Palette (Applied)
 

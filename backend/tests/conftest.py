@@ -1,5 +1,5 @@
 """
-Pytest configuration and fixtures for HealthNavi API tests.
+Pytest configuration and fixtures for Empirico API tests.
 """
 
 import pytest

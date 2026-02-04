@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document reviews the HealthNavi API implementation against the provided best practices and rules. Overall, the codebase demonstrates **good adherence** to most standards, with some areas requiring improvement, particularly in testing and documentation.
+This document reviews the Empirico API implementation against the provided best practices and rules. Overall, the codebase demonstrates **good adherence** to most standards, with some areas requiring improvement, particularly in testing and documentation.
 
 **Overall Compliance Score: 75/100**
 
@@ -312,7 +312,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 
 ## Conclusion
 
-The HealthNavi API demonstrates **strong fundamentals** with proper authentication, standardized responses, and good code structure. The main gaps are in **testing** and **documentation**, which should be prioritized for production readiness.
+The Empirico API demonstrates **strong fundamentals** with proper authentication, standardized responses, and good code structure. The main gaps are in **testing** and **documentation**, which should be prioritized for production readiness.
 
 **Estimated effort to reach 95%+ compliance:**
 - Testing: 2-3 weeks

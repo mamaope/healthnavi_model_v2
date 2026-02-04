@@ -1,5 +1,5 @@
 """
-Authentication router for HealthNavi AI CDSS.
+Authentication router for Empirico AI CDSS.
 """
 
 import logging

@@ -3,14 +3,14 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "healthnavi-cdss"
+name = "empirico-cdss"
 version = "2.0.0"
-description = "HealthNavi AI Clinical Decision Support System"
+description = "Empirico AI Clinical Decision Support System"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
-    {name = "HealthNavi Team", email = "support@healthnavi.ai"}
+    {name = "Empirico Team", email = "support@empirico.ai"}
 ]
 keywords = ["healthcare", "ai", "clinical", "diagnosis", "fastapi"]
 classifiers = [
@@ -72,10 +72,10 @@ scripts = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/healthnavi/cdss"
-Documentation = "https://docs.healthnavi.ai"
-Repository = "https://github.com/healthnavi/cdss.git"
-Issues = "https://github.com/healthnavi/cdss/issues"
+Homepage = "https://github.com/empirico/cdss"
+Documentation = "https://docs.empirico.ai"
+Repository = "https://github.com/empirico/cdss.git"
+Issues = "https://github.com/empirico/cdss/issues"
 
 [project.scripts]
 healthnavi = "healthnavi.main:main"

@@ -1,5 +1,5 @@
 """
-Admin API endpoints for HealthNavi AI CDSS.
+Admin API endpoints for Empirico AI CDSS.
 Provides dashboard metrics, alerts, and admin functionality.
 """
 

@@ -1,3 +1,3 @@
 """
-Test suite for HealthNavi API.
+Test suite for Empirico API.
 """

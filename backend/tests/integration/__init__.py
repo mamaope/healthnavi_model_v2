@@ -1,3 +1,3 @@
 """
-Integration tests for HealthNavi API.
+Integration tests for Empirico API.
 """

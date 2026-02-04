@@ -19,7 +19,7 @@ Migrations run **automatically** when the production container starts via `start
 When the container starts, you'll see migration output:
 
 ```bash
-docker logs healthnavi_cdss_api | grep -A 10 "migration"
+docker logs empirico_cdss_api | grep -A 10 "migration"
 ```
 
 Look for:
@@ -33,10 +33,10 @@ Run the migration check script inside the container:
 
 ```bash
 # Check migration status
-docker exec healthnavi_cdss_api python /backend/scripts/check_migrations.py
+docker exec empirico_cdss_api python /backend/scripts/check_migrations.py
 
 # Check migration status with history
-docker exec healthnavi_cdss_api python /backend/scripts/check_migrations.py --history
+docker exec empirico_cdss_api python /backend/scripts/check_migrations.py --history
 ```
 
 ### Method 3: Direct Alembic Commands
@@ -45,16 +45,16 @@ You can also run Alembic commands directly:
 
 ```bash
 # Check current revision
-docker exec healthnavi_cdss_api alembic current
+docker exec empirico_cdss_api alembic current
 
 # Check head revision
-docker exec healthnavi_cdss_api alembic heads
+docker exec empirico_cdss_api alembic heads
 
 # Show migration history
-docker exec healthnavi_cdss_api alembic history
+docker exec empirico_cdss_api alembic history
 
 # Check for pending migrations
-docker exec healthnavi_cdss_api alembic check
+docker exec empirico_cdss_api alembic check
 ```
 
 ### Method 4: Database Query
@@ -62,7 +62,7 @@ docker exec healthnavi_cdss_api alembic check
 Check the `alembic_version` table directly:
 
 ```bash
-docker exec -it healthnavi_cdss_postgres psql -U $DB_USER -d $DB_NAME -c "SELECT * FROM alembic_version;"
+docker exec -it empirico_cdss_postgres psql -U $DB_USER -d $DB_NAME -c "SELECT * FROM alembic_version;"
 ```
 
 ## Troubleshooting
@@ -72,7 +72,7 @@ docker exec -it healthnavi_cdss_postgres psql -U $DB_USER -d $DB_NAME -c "SELECT
 If migrations fail, the container will exit with an error. Check logs:
 
 ```bash
-docker logs healthnavi_cdss_api
+docker logs empirico_cdss_api
 ```
 
 Common issues:
@@ -86,7 +86,7 @@ If you need to run migrations manually:
 
 ```bash
 # Enter the container
-docker exec -it healthnavi_cdss_api bash
+docker exec -it empirico_cdss_api bash
 
 # Run migrations
 cd /backend
@@ -102,10 +102,10 @@ alembic current
 
 ```bash
 # Rollback one migration
-docker exec healthnavi_cdss_api alembic downgrade -1
+docker exec empirico_cdss_api alembic downgrade -1
 
 # Rollback to specific revision
-docker exec healthnavi_cdss_api alembic downgrade <revision_id>
+docker exec empirico_cdss_api alembic downgrade <revision_id>
 ```
 
 ## Best Practices
@@ -129,7 +129,7 @@ The migration check script can be integrated into health checks:
 
 ```bash
 # Add to health check
-docker exec healthnavi_cdss_api python /backend/scripts/check_migrations.py && echo "Migrations OK" || echo "Migration issue"
+docker exec empirico_cdss_api python /backend/scripts/check_migrations.py && echo "Migrations OK" || echo "Migration issue"
 ```
 
 ## Environment Variables Required

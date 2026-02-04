@@ -3,7 +3,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: healthnavi_cdss_api
+    container_name: empirico_cdss_api
     ports:
       - "8050:8050"
     env_file:
@@ -28,7 +28,7 @@ services:
 
   db:
     image: postgres:15-alpine
-    container_name: healthnavi_cdss_postgres
+    container_name: empirico_cdss_postgres
     environment:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
@@ -60,7 +60,7 @@ services:
 
   frontend:
     image: node:20-alpine
-    container_name: healthnavi_cdss_frontend
+    container_name: empirico_cdss_frontend
     working_dir: /app
     ports:
       - "3000:5173"

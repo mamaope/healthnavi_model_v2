@@ -1,7 +1,7 @@
 # Modern Design System Redesign
 
 ## Overview
-Complete modern redesign of the HealthNavy web application following Material Design 3 principles and modern design guidelines for a cohesive, polished, and user-friendly interface.
+Complete modern redesign of the Empirico web application following Material Design 3 principles and modern design guidelines for a cohesive, polished, and user-friendly interface.
 
 ## Design Principles Applied
 
@@ -187,5 +187,5 @@ Complete modern redesign of the HealthNavy web application following Material De
 
 ## Conclusion
 
-This redesign transforms the HealthNavy application into a modern, cohesive, and user-friendly platform that follows industry-standard design guidelines while maintaining medical-grade professionalism. The new design system ensures consistency, accessibility, and an excellent user experience across all devices.
+This redesign transforms the Empirico application into a modern, cohesive, and user-friendly platform that follows industry-standard design guidelines while maintaining medical-grade professionalism. The new design system ensures consistency, accessibility, and an excellent user experience across all devices.
 

@@ -1,5 +1,5 @@
 """
-User model for HealthNavi AI CDSS.
+User model for Empirico AI CDSS.
 """
 
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text

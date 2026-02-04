@@ -1,3 +1,3 @@
 """
-Unit tests for HealthNavi API.
+Unit tests for Empirico API.
 """

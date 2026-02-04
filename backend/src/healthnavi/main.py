@@ -1,5 +1,5 @@
 """
-Main FastAPI application for HealthNavi AI CDSS.
+Main FastAPI application for Empirico AI CDSS.
 """
 
 import asyncio
@@ -48,7 +48,7 @@ except ImportError as e:
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     # Startup
-    logger.info("Starting HealthNavi AI CDSS application...")
+    logger.info("Starting Empirico AI CDSS application...")
     try:
         from healthnavi.core.database import initialize_database
         initialize_database()
@@ -114,7 +114,7 @@ async def lifespan(app: FastAPI):
         await _deletion_task
     except asyncio.CancelledError:
         pass
-    logger.info("Shutting down HealthNavi AI CDSS application...")
+    logger.info("Shutting down Empirico AI CDSS application...")
 
 
 # Create FastAPI application

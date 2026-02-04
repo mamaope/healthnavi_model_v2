@@ -1,4 +1,4 @@
-# HealthNavi Architecture & Security Overview
+# Empirico Architecture & Security Overview
 
 ## System Components
 - **Clients**: React web app, Android mobile app (Retrofit).
@@ -22,7 +22,7 @@
 
 ## Client Integrations
 - **Web (frontend/src/services/apiClient.ts)**: Uses bearer token; calls auth, chat sessions, diagnosis, feedback.
-- **Mobile (mobile/.../ApiService.kt)**: Base URL `https://healthnavy.mamaope.com/api/v2/`; same endpoints with bearer token header from `RetrofitClient`.
+- **Mobile (mobile/.../ApiService.kt)**: Base URL `https://empirico.ai/api/v2/`; same endpoints with bearer token header from `RetrofitClient`.
 
 ## Security Findings (priority)
 1) Diagnosis endpoint allows anonymous access → AI + vector search exposed to unauthenticated users.

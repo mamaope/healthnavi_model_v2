@@ -1,5 +1,5 @@
 """
-Chat Sessions API router for HealthNavi AI CDSS.
+Chat Sessions API router for Empirico AI CDSS.
 
 This module provides endpoints for managing diagnosis chat sessions and messages.
 """

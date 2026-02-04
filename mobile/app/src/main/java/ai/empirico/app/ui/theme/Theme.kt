@@ -55,7 +55,7 @@ private val LightColorScheme = lightColorScheme(
 )
 
 @Composable
-fun HealthNavyTheme(
+fun EmpiricoTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
@@ -81,7 +81,7 @@ fun HealthNavyTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = HealthNavyTypography,
+        typography = EmpiricoTypography,
         content = content
     )
 }

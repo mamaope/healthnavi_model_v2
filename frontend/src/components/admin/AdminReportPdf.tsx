@@ -99,7 +99,7 @@ export default function AdminReportPdf({
     <div className="admin-report-pdf" id="pdf-report-content">
       <div className="pdf-report-inner">
         <header className="pdf-header">
-          <h1>HealthNavi Admin Report</h1>
+          <h1>Empirico Admin Report</h1>
           <p className="pdf-period">{periodLabel}</p>
           <p className="pdf-generated">Generated: {formatDate(reportData.generated_at)}</p>
           {reportData.filters?.active_users_only && (

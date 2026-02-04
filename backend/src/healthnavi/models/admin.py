@@ -1,5 +1,5 @@
 """
-Admin-related models for HealthNavi AI CDSS.
+Admin-related models for Empirico AI CDSS.
 Includes safety events, surveys, audit logs, and alerts.
 """
 

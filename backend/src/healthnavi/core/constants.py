@@ -1,5 +1,5 @@
 """
-Application constants for HealthNavi AI CDSS.
+Application constants for Empirico AI CDSS.
 """
 
 # Model Configuration
@@ -187,7 +187,7 @@ DEEP_SEARCH_PROMPT = """
 
 **{global_conduct_rules}**
 
-YOU ARE **HEALTHNAVY**, A SENIOR CHIEF RESIDENT / ATTENDING PHYSICIAN.
+YOU ARE **EMPIRICO**, A SENIOR CHIEF RESIDENT / ATTENDING PHYSICIAN.
 GOAL: Analyze the case comprehensively. Think through differential diagnoses, contraindications, and resource availability.
 
 {exam_handling}

@@ -1,5 +1,5 @@
 """
-Configuration management for HealthNavi AI CDSS.
+Configuration management for Empirico AI CDSS.
 
 This module provides secure configuration management following medical software
 standards with proper environment variable handling and validation.
@@ -99,7 +99,7 @@ class ApplicationConfig(BaseSettings):
     """Main application configuration."""
     
     # Application settings
-    app_name: str = Field(default="HealthNavi AI CDSS", env="APP_NAME")
+    app_name: str = Field(default="Empirico AI CDSS", env="APP_NAME")
     app_version: str = Field(default="2.0.0", env="APP_VERSION")
     app_description: str = Field(default="AI Clinical Decision Support System", env="APP_DESCRIPTION")
     environment: str = Field(default="development", env="ENV")

@@ -4,7 +4,7 @@ set -e
 # Ensure we're in the backend directory
 cd /backend
 
-echo "🚀 Starting HealthNavi API (Production)..."
+echo "🚀 Starting Empirico API (Production)..."
 
 # Wait for database to be ready
 echo "⏳ Waiting for database to be ready..."

@@ -1,5 +1,5 @@
 """
-Diagnosis router for HealthNavi AI CDSS.
+Diagnosis router for Empirico AI CDSS.
 """
 
 import logging

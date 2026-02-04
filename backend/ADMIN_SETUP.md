@@ -70,7 +70,7 @@ This script will:
 
 The seed script will create an admin user with the following defaults (can be overridden with environment variables):
 
-- **Email**: `admin@healthnavi.com` (set `ADMIN_EMAIL` to change)
+- **Email**: `admin@empirico.ai` (set `ADMIN_EMAIL` to change)
 - **Username**: `admin` (set `ADMIN_USERNAME` to change)
 - **Password**: `admin123` (set `ADMIN_PASSWORD` to change)
 - **Role**: `super_admin` (set `ADMIN_ROLE` to change)

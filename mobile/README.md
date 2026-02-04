@@ -1,6 +1,6 @@
-# HealthNavy Mobile App
+# Empirico Mobile App
 
-Android mobile application for HealthNavy Clinical Decision Support System.
+Android mobile application for Empirico Clinical Decision Support System.
 
 ## Features
 
@@ -61,7 +61,7 @@ The app follows MVVM (Model-View-ViewModel) architecture:
 
 ## API Integration
 
-The app connects to the HealthNavy backend API. Ensure the backend is running and accessible from your device/emulator.
+The app connects to the Empirico backend API. Ensure the backend is running and accessible from your device/emulator.
 
 ## Notes
 

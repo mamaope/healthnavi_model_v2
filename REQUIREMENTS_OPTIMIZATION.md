@@ -1,7 +1,7 @@
 # Requirements Optimization Summary
 
 ## Overview
-Optimized dependency management across the HealthNavi AI CDSS project to reduce bloat, improve security, and simplify maintenance.
+Optimized dependency management across the Empirico AI CDSS project to reduce bloat, improve security, and simplify maintenance.
 
 ## Changes Made
 

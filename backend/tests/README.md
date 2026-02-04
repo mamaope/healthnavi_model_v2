@@ -1,6 +1,6 @@
-# HealthNavi API Tests
+# Empirico API Tests
 
-This directory contains the test suite for the HealthNavi API.
+This directory contains the test suite for the Empirico API.
 
 ## Structure
 

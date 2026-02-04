@@ -1,5 +1,5 @@
 """
-Email service for HealthNavi AI CDSS.
+Email service for Empirico AI CDSS.
 Handles email verification and notifications.
 """
 
