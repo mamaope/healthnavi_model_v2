@@ -2,6 +2,7 @@
 Diagnosis router for HealthNavi AI CDSS.
 """
 
+import asyncio
 import logging
 import time
 from datetime import datetime
@@ -13,7 +14,11 @@ from healthnavi.core.database import get_db
 from healthnavi.core.response_utils import create_success_response, create_error_response, ResponseTimer
 from healthnavi.models.user import User
 from healthnavi.schemas import DiagnosisInput, DiagnosisResponse, StandardResponse, SuccessResponse, ChatMessageCreate, MessageFeedbackRequest, MessageFeedbackResponse
-from healthnavi.services.conversational_service import generate_response, generate_response_stream
+from healthnavi.services.conversational_service import (
+    generate_response,
+    generate_response_stream,
+    _generate_followups_bounded,
+)
 from healthnavi.services.diagnosis_session_service import DiagnosisSessionService
 from healthnavi.api.v1.auth import get_current_user, require_user_role, require_admin_role, get_current_user_safe_v2
 from healthnavi.core.device_utils import get_device_type
@@ -253,7 +258,56 @@ async def diagnose(
             )
 
 
+@router.post("/diagnose/retrieval_debug")
+async def retrieval_debug(
+    data: DiagnosisInput,
+    current_user: User = Depends(get_current_user_safe_v2),
+):
+    """
+    Debug endpoint: returns retrieval results (chunks, sources, timing) to verify
+    the knowledge base is being used. No LLM call.
+    """
+    from healthnavi.services.vectorstore_manager import search_all_collections
+    from healthnavi.services.vectordb_service import vectordb_service
+
+    deep_search = data.deep_search if data.deep_search is not None else False
+    t0 = time.time()
+    chunks, sources = await asyncio.to_thread(
+        search_all_collections,
+        data.patient_data,
+        data.patient_data,
+        max_chunks=8,
+        max_books=5,
+        min_chunks=1,
+        min_books=1,
+        deep_search=deep_search,
+    )
+    ms = int((time.time() - t0) * 1000)
+
+    preview = []
+    for c in chunks[:8]:
+        preview.append({
+            "doc": c.get("file_path"),
+            "page": c.get("display_page_number"),
+            "score": c.get("score"),
+            "text_preview": (c.get("content") or "")[:240],
+        })
+
+    # Breakdown: embed_ms, dense_ms, sparse_ms from vectordb_service last run
+    last_timing = getattr(vectordb_service, "last_timing", None)
+
+    return {
+        "ok": True,
+        "retrieval_ms": ms,
+        "timing": last_timing,
+        "num_chunks": len(chunks),
+        "sources": sources,
+        "top_chunks_preview": preview,
+    }
+
+
 @router.post("/diagnose/stream")
+@router.post("/diagnose_stream")  # alias for clients using underscore
 async def diagnose_stream(
     data: DiagnosisInput,
     request: Request,
@@ -455,22 +509,25 @@ async def diagnose_stream(
                 elif not user_message_saved:
                     logger.warning(f"Skipping AI message save - user message was not saved successfully")
                 
-                # Generate follow-up questions if we have valid content
                 followup_already_sent = "[FOLLOWUP_QUESTIONS]:" in full_response
                 if not stream_error and not followup_already_sent and ai_response_content and len(ai_response_content.strip()) > 10:
-                    followup_questions = []
                     try:
                         from healthnavi.services.conversational_service import generate_followup_questions_sync
-                        followup_questions = generate_followup_questions_sync(data.patient_data, ai_response_content)
+                        followup_questions = await asyncio.wait_for(
+                            asyncio.to_thread(
+                                generate_followup_questions_sync,
+                                data.patient_data,
+                                ai_response_content,
+                            ),
+                            timeout=4.0 if deep_search_enabled else 2.0,
+                        )
                     except Exception as e:
                         logger.warning(f"Could not generate follow-up questions: {e}", exc_info=True)
-                    
+                        followup_questions = []
                     if followup_questions:
                         import json
                         followup_json = json.dumps(followup_questions)
                         yield f"\n\n[FOLLOWUP_QUESTIONS]:{followup_json}"
-                    else:
-                        logger.warning("⚠️ Follow-up question generation returned empty list")
                 elif followup_already_sent:
                     pass  # Skip duplicate generation
                 elif stream_error:

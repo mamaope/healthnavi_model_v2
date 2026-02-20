@@ -1,0 +1,9 @@
+{
+  "done": {
+    "gs://empirico_knowledge_base/input/NATIONAL DRUG REGISTER OF UGANDA - HUMAN MEDICINES - FEBRUARY 2020.pdf": "complete",
+    "gs://empirico_knowledge_base/input/PROVISIONAL-HUMAN-HERBAL-MEDICINES-REGISTER-MARCH-2022.pdf": "complete",
+    "gs://empirico_knowledge_base/input/Uganda Clinical Guidelines 2023.pdf": "complete",
+    "gs://empirico_knowledge_base/test_input_ugc/Uganda Clinical Guidelines 2023.pdf": "complete"
+  },
+  "running_ops": {}
+}

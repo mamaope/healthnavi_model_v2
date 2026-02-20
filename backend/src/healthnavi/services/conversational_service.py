@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import logging
 import asyncio
@@ -8,7 +9,7 @@ from healthnavi.services.genai_client import get_genai_client
 from healthnavi.services.vectorstore_manager import search_all_collections
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_not_exception_type
 from dotenv import load_dotenv
-from typing import Dict, Tuple, AsyncGenerator
+from typing import Dict, Tuple, AsyncGenerator, Optional
 from google.api_core import exceptions
 from enum import Enum
 from datetime import datetime, timedelta
@@ -20,7 +21,9 @@ from healthnavi.core.constants import (
     QUICK_SEARCH_PROMPT, DEEP_SEARCH_PROMPT,
     QUICK_SEARCH_MAX_OUTPUT_TOKENS, DEEP_SEARCH_MAX_OUTPUT_TOKENS,
     CHARS_PER_TOKEN, MAX_CONTEXT_WINDOW, ROLE_INSTRUCTIONS,
-    BOLDING_RULES, EXAM_HANDLING, GLOBAL_CONDUCT_RULES
+    BOLDING_RULES, EXAM_HANDLING, GLOBAL_CONDUCT_RULES,
+    QUICK_SEARCH_CONTEXT_MAX_CHARS,
+    NO_CONTEXT_FALLBACK_INSTRUCTION,
 )
 
 logging.basicConfig(
@@ -30,6 +33,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 load_dotenv()
+
+# Log token limits at startup so you can verify they are loaded after server restart
+logger.info("QUICK_SEARCH_MAX_OUTPUT_TOKENS=%s DEEP_SEARCH_MAX_OUTPUT_TOKENS=%s", QUICK_SEARCH_MAX_OUTPUT_TOKENS, DEEP_SEARCH_MAX_OUTPUT_TOKENS)
+
+KB_ONLY = os.getenv("KB_ONLY", "true").lower() in {"1", "true", "yes", "y"}
 
 # Simple in-memory cache for responses
 RESPONSE_CACHE: Dict[str, Tuple[str, datetime]] = {}
@@ -71,6 +79,7 @@ def optimize_context_for_llm(chunks: list[dict], max_chunks: int = 3) -> str:
     Each chunk is numbered and tagged with its source for mechanical grounding.
     """
     context_parts = []
+    context_parts.append("### INTERNAL CLINICAL MEMORY (FACTUAL BASIS) ###")
     
     for idx, chunk in enumerate(chunks, 1):
         file_name = os.path.basename(chunk['file_path'])
@@ -90,13 +99,80 @@ def optimize_context_for_llm(chunks: list[dict], max_chunks: int = 3) -> str:
 def is_diagnosis_complete(response: str) -> bool:
     return "question:" not in response.lower().strip()
 
+# handle references formatting and doc names
+def _clean_doc_name(file_path: str) -> str:
+    base = os.path.basename(file_path or "Unknown")
+    base = re.sub(r"\.pdf$", "", base, flags=re.IGNORECASE)
+    base = base.replace("_", " ").replace("-", " ")
+    base = re.sub(r"\s+", " ", base).strip()
+    return base or "Unknown"
+
+def _is_table_hit(chunk: dict) -> bool:
+    p = (chunk or {}).get("raw_payload") or {}
+    bt = (p.get("block_type") or p.get("type") or "").lower()
+    if bt in {"table", "tables"}:
+        return True
+    if p.get("is_table") is True:
+        return True
+    if (p.get("layout") or "").lower() == "table":
+        return True
+    return False
+
+def _strip_model_references(text: str) -> str:
+    if not text:
+        return text
+    # remove a trailing References section 
+    patterns = [
+        r"\n\*\*references\*\*.*$",
+        r"\nreferences\s*\n.*$",
+        r"\n#+\s*references\s*\n.*$",
+    ]
+    out = text
+    for pat in patterns:
+        out = re.sub(pat, "", out, flags=re.IGNORECASE | re.DOTALL).rstrip()
+    return out
+
+def _format_page_label(page_label: str) -> Optional[str]:
+    if not page_label:
+        return None
+    pl = str(page_label).strip()
+    if not pl or pl.lower() in {"unknown page", "?", "none"}:
+        return None
+    if re.search(r"\bpage\b", pl, flags=re.IGNORECASE):
+        return pl
+    return f"Page {pl}"
+
+def _build_reference_block(chunks: list[dict]) -> str:
+    refs = []
+    seen = set()
+
+    for ch in (chunks or []):
+        doc = _clean_doc_name(ch.get("file_path", "Unknown"))
+        is_table = _is_table_hit(ch)
+        page = None if is_table else _format_page_label(ch.get("display_page_number"))
+
+        if is_table:
+            key = (doc, "table")
+            if key in seen:
+                continue
+            seen.add(key)
+            refs.append(f"- {doc} (table → no page)")
+        else:
+            key = (doc, page or "nopage")
+            if key in seen:
+                continue
+            seen.add(key)
+            refs.append(f"- {doc}" + (f" — {page}" if page else ""))
+
+    if not refs:
+        return "References\n- (No matching passages in the knowledge base)"
+    return "References\n" + "\n".join(refs)
 
 def generate_followup_questions_sync(original_query: str, response: str) -> list[str]:
     """
     Generate 3-4 relevant follow-up questions based on the original query and AI response.
     Returns only the questions, no prefix text.
     """
-    import re
     client = get_genai_client()
     
     try:
@@ -122,7 +198,7 @@ def generate_followup_questions_sync(original_query: str, response: str) -> list
             contents=[{"role": "user", "parts": [{"text": followup_prompt}]}],
             config={
                 "temperature": 0.7,
-                "max_output_tokens": 2000,  # Increased to prevent MAX_TOKENS cutoff
+                "max_output_tokens": 180, 
                 "top_p": 0.9,
                 "top_k": 40,
                 "candidate_count": 1
@@ -179,6 +255,23 @@ def generate_followup_questions_sync(original_query: str, response: str) -> list
     logger.warning("Could not generate follow-up questions")
     return []
 
+
+async def _generate_followups_bounded(query: str, response_text: str, deep_search: bool) -> list[str]:
+    """Generate follow-ups via Gemini with a timeout; returns [] on timeout or error."""
+    timeout_s = 4.0 if deep_search else 2.0
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(generate_followup_questions_sync, query, response_text),
+            timeout=timeout_s,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(f"Follow-up question generation timed out after {timeout_s}s")
+        return []
+    except Exception as e:
+        logger.warning(f"Follow-up question generation failed: {e}")
+        return []
+
+
 def _generate_cache_key(query: str, patient_data: str, deep_search: bool = False) -> str:
     """Generate a cache key from query and patient data."""
     mode = "deep" if deep_search else "standard"
@@ -226,58 +319,70 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
             if cached_response:
                 diagnosis_complete = is_diagnosis_complete(cached_response)
                 prompt_type = "deep_search" if deep_search else "quick_search"
-                followup_questions = []
-                try:
-                    followup_questions = await asyncio.to_thread(generate_followup_questions_sync, query, cached_response)
-                except Exception as e:
-                    logger.warning(f"Failed to generate follow-up questions for cached response: {e}")
+                followup_questions = await _generate_followups_bounded(query, cached_response, deep_search)
                 return cached_response, diagnosis_complete, prompt_type, followup_questions
 
         # Adjust chunks and sources based on search type
-        # Default to quick search unless explicitly enabled
         if deep_search:
-            max_chunks = 20
-            max_books = 8
-            min_chunks = 10
-            min_books = 5
+            max_chunks = 12  # Reduced from 20
+            max_books = 6    # Reduced from 8
+            min_chunks = 8   # Reduced from 10
+            min_books = 4    # Reduced from 5
             max_output_tokens = DEEP_SEARCH_MAX_OUTPUT_TOKENS
             prompt_template = DEEP_SEARCH_PROMPT
             prompt_type = "deep_search"
         else:
-            max_chunks = 6
-            max_books = 4
-            min_chunks = 4
-            min_books = 2
+            max_chunks = 5   # Reduced from 6
+            max_books = 3    # Reduced from 4
+            min_chunks = 3   # Reduced from 4
+            min_books = 2    # Same
             max_output_tokens = QUICK_SEARCH_MAX_OUTPUT_TOKENS
             prompt_template = QUICK_SEARCH_PROMPT
             prompt_type = "quick_search"
         
-        context, actual_sources = search_all_collections(
-            query, 
-            patient_data, 
+        context, actual_sources = await asyncio.to_thread(
+            search_all_collections,
+            query,
+            patient_data,
             max_chunks=max_chunks,
             max_books=max_books,
             min_chunks=min_chunks,
-            min_books=min_books
+            min_books=min_books,
+            deep_search=deep_search,
         )
-        optimized_context = optimize_context_for_llm(context, max_chunks=max_chunks)
 
-        # Truncate context for quick search to reduce prompt size and improve speed
-        if not deep_search and len(optimized_context) > 5000:  # Limit quick search context to 5000 chars
-            optimized_context = optimized_context[:5000]
-
-        # Format sources - should always have sources from knowledge base
-        if actual_sources and len(actual_sources) > 0:
-            sources_text = ", ".join(actual_sources)
+        # Fallback when knowledge base returns nothing
+        use_fallback = (not context) or (len(context) < 1) or (not actual_sources)
+        if use_fallback and KB_ONLY:
+            msg = (
+                "I couldn't find enough information in the knowledge base to answer this.\n\n"
+                "Try rephrasing with more clinical detail (age, severity signs, setting), or enable Deep Search."
+            )
+            msg = msg.strip() + "\n\n" + _build_reference_block(context or [])
+            return msg, False, prompt_type, []
+        if use_fallback:
+            logger.info("No or insufficient context from knowledge base; using fallback to model medical knowledge (CDSS, Uganda-contextualised).")
+            optimized_context = "No relevant passages were found in the curated knowledge base for this specific query."
+            sources_text = "General medical knowledge"
         else:
-            logger.error("⚠️ CRITICAL: No sources retrieved from knowledge base! Check vector store connection.")
-            sources_text = ""
+            optimized_context = optimize_context_for_llm(context, max_chunks=max_chunks)
+
+            # Truncate context for quick search — cut at chunk boundary, not mid-sentence
+            if not deep_search and len(optimized_context) > QUICK_SEARCH_CONTEXT_MAX_CHARS:
+                truncated = optimized_context[:QUICK_SEARCH_CONTEXT_MAX_CHARS + 200]
+                last_chunk_boundary = truncated.rfind("\n\n[CHUNK")
+                if last_chunk_boundary > QUICK_SEARCH_CONTEXT_MAX_CHARS * 0.5:
+                    optimized_context = truncated[:last_chunk_boundary]
+                else:
+                    optimized_context = optimized_context[:QUICK_SEARCH_CONTEXT_MAX_CHARS]
+
+            sources_text = ", ".join(actual_sources)
         
         # Truncate chat history if too long to keep prompt size reasonable
-        max_chat_history_chars = 2000  # Limit chat history to ~2000 chars
+        max_chat_history_chars = 2000
         truncated_chat_history = chat_history
         if chat_history and len(chat_history) > max_chat_history_chars:
-            truncated_chat_history = chat_history[-max_chat_history_chars:]  # Keep last 2000 chars
+            truncated_chat_history = chat_history[-max_chat_history_chars:]
         
         role_text = get_role_instruction(user_role_from_db)
         full_prompt = prompt_template.format(
@@ -288,6 +393,8 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
             exam_handling=EXAM_HANDLING,
             global_conduct_rules=GLOBAL_CONDUCT_RULES
         )
+        if use_fallback:
+            full_prompt += f"\n\n{NO_CONTEXT_FALLBACK_INSTRUCTION.strip()}"
         user_context_block = f"""
             ### USER QUESTION:
             {query}
@@ -372,12 +479,9 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
         # Determine if diagnosis is complete
         diagnosis_complete = is_diagnosis_complete(full_response_text)
         
-        # Generate follow-up questions in thread pool so event loop stays responsive
-        followup_questions = []
-        try:
-            followup_questions = await asyncio.to_thread(generate_followup_questions_sync, query, full_response_text)
-        except Exception as e:
-            logger.warning(f"Failed to generate follow-up questions: {e}")
+        followup_questions = await _generate_followups_bounded(query, full_response_text, deep_search)
+        full_response_text = _strip_model_references(full_response_text)
+        full_response_text = full_response_text.rstrip() + "\n\n" + _build_reference_block(context or [])
         
         return full_response_text, diagnosis_complete, prompt_type, followup_questions
 
@@ -435,67 +539,78 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
                 for i in range(0, len(cached_response), chunk_size):
                     yield cached_response[i:i + chunk_size]
                 
-                # Generate follow-up questions in thread pool, then yield
                 if len(cached_response.strip()) > 10:
-                    followup_questions = []
-                    try:
-                        followup_questions = await asyncio.to_thread(generate_followup_questions_sync, query, cached_response)
-                    except Exception as e:
-                        logger.warning(f"Failed to generate follow-up questions for cached response: {e}")
-                    
+                    followup_questions = await _generate_followups_bounded(query, cached_response, deep_search)
                     if followup_questions:
                         import json
                         followup_json = json.dumps(followup_questions)
                         yield f"\n\n[FOLLOWUP_QUESTIONS]:{followup_json}"
-                    else:
-                        logger.warning("⚠️ No follow-up questions generated for cached response")
                 
                 return
 
         # Adjust chunks and sources based on search type
+        # Reduced chunk counts for faster retrieval from 10M+ collection
         if deep_search:
-            max_chunks = 20
-            max_books = 8
-            min_chunks = 10
-            min_books = 5
+            max_chunks = 12  # Reduced from 20
+            max_books = 6    # Reduced from 8
+            min_chunks = 8   # Reduced from 10
+            min_books = 4    # Reduced from 5
             max_output_tokens = DEEP_SEARCH_MAX_OUTPUT_TOKENS
             prompt_template = DEEP_SEARCH_PROMPT
             prompt_type = "deep_search"
         else:
-            max_chunks = 6
-            max_books = 4
-            min_chunks = 4
-            min_books = 2
+            max_chunks = 5   # Reduced from 6
+            max_books = 3    # Reduced from 4
+            min_chunks = 3   # Reduced from 4
+            min_books = 2    # Same
             max_output_tokens = QUICK_SEARCH_MAX_OUTPUT_TOKENS
             prompt_template = QUICK_SEARCH_PROMPT
             prompt_type = "quick_search"
 
-        context, actual_sources = search_all_collections(
-            query, 
-            patient_data, 
+        context, actual_sources = await asyncio.to_thread(
+            search_all_collections,
+            query,
+            patient_data,
             max_chunks=max_chunks,
             max_books=max_books,
             min_chunks=min_chunks,
-            min_books=min_books
+            min_books=min_books,
+            deep_search=deep_search,
         )
-        optimized_context = optimize_context_for_llm(context, max_chunks=max_chunks)
 
-        # Truncate context for quick search to reduce prompt size and improve speed
-        if not deep_search and len(optimized_context) > 5000:  # Limit quick search context to 5000 chars
-            optimized_context = optimized_context[:5000]
-
-        # Format sources
-        if actual_sources and len(actual_sources) > 0:
-            sources_text = ", ".join(actual_sources)
+        # Fallback when knowledge base returns nothing
+        use_fallback = (not context) or (len(context) < 1) or (not actual_sources)
+        if use_fallback and KB_ONLY:
+            msg = (
+                "I couldn't find enough information in the knowledge base to answer this.\n\n"
+                "Try rephrasing with more clinical detail (age, severity signs, setting), or enable Deep Search."
+            )
+            yield msg
+            yield "\n\n" + _build_reference_block(context or [])
+            return
+        if use_fallback:
+            logger.info("No or insufficient context from knowledge base; using fallback to model medical knowledge (CDSS, Uganda-contextualised).")
+            optimized_context = "No relevant passages were found in the curated knowledge base for this specific query."
+            sources_text = "General medical knowledge"
         else:
-            logger.error("⚠️ CRITICAL: No sources retrieved from knowledge base!")
-            sources_text = ""
+            optimized_context = optimize_context_for_llm(context, max_chunks=max_chunks)
+
+            # Truncate context for quick search — cut at chunk boundary, not mid-sentence
+            if not deep_search and len(optimized_context) > QUICK_SEARCH_CONTEXT_MAX_CHARS:
+                truncated = optimized_context[:QUICK_SEARCH_CONTEXT_MAX_CHARS + 200]
+                last_chunk_boundary = truncated.rfind("\n\n[CHUNK")
+                if last_chunk_boundary > QUICK_SEARCH_CONTEXT_MAX_CHARS * 0.5:
+                    optimized_context = truncated[:last_chunk_boundary]
+                else:
+                    optimized_context = optimized_context[:QUICK_SEARCH_CONTEXT_MAX_CHARS]
+
+            sources_text = ", ".join(actual_sources)
 
         # Truncate chat history if too long to keep prompt size reasonable
-        max_chat_history_chars = 2000  # Limit chat history to ~2000 chars
+        max_chat_history_chars = 2000
         truncated_chat_history = chat_history
         if chat_history and len(chat_history) > max_chat_history_chars:
-            truncated_chat_history = chat_history[-max_chat_history_chars:]  # Keep last 2000 chars
+            truncated_chat_history = chat_history[-max_chat_history_chars:]
 
         role_text = get_role_instruction(user_role_from_db)
         full_prompt = prompt_template.format(
@@ -506,6 +621,8 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
             exam_handling=EXAM_HANDLING,
             global_conduct_rules=GLOBAL_CONDUCT_RULES
         )
+        if use_fallback:
+            full_prompt += f"\n\n{NO_CONTEXT_FALLBACK_INSTRUCTION.strip()}"
         user_context_block = f"""
             ### USER QUESTION:
             {query}
@@ -608,7 +725,12 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
                     full_response_text += truncation_note
                     yield truncation_note
                     logger.warning(f"⚠️ Response truncated at {max_output_tokens} tokens. Consider increasing limit or using deep search.")
-                
+
+                cleaned = _strip_model_references(full_response_text)
+                refs = _build_reference_block(context or [])
+                yield "\n\n" + refs
+                full_response_text = cleaned + "\n\n" + refs
+
                 # Warn if stream ended prematurely
                 if chunk_count < 10 and finish_reason == 'STOP':
                     logger.warning(f"⚠️ Stream ended with only {chunk_count} text chunks - response may be incomplete")

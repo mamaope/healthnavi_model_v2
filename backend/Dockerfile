@@ -14,7 +14,7 @@ ENV VIRTUAL_ENV="/opt/venv"
 # Copy requirements.txt
 COPY requirements.txt .
 
-RUN uv pip install --no-cache -r requirements.txt
+RUN uv pip install --no-cache --index-strategy unsafe-best-match -r requirements.txt
 
 # Production stage
 FROM python:3.11-slim

@@ -12,6 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
+from healthnavi.services.vectorstore_manager import initialize_vectorstore
+
 import time
 
 logging.basicConfig(
@@ -58,12 +60,10 @@ async def lifespan(app: FastAPI):
         logger.info("Application will continue - database will be initialized on first access")
     
     try:
-        from healthnavi.services.vectorstore_manager import initialize_vectorstore
         initialize_vectorstore()
-        logger.info("Vector store initialization completed")
+        logger.info("Qdrant ready")
     except Exception as e:
-        logger.warning(f"Vector store initialization failed during startup: {e}")
-        logger.info("Application will continue - AI will work without RAG context")
+        logger.warning(f"Qdrant init warning: {e}")
     
     try:
         from healthnavi.services.genai_client import initialize_genai_client

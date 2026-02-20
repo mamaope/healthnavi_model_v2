@@ -5,6 +5,7 @@ import os
 import io
 import sys
 import json
+import math
 import time
 import uuid
 import argparse
@@ -311,15 +312,73 @@ def get_existing_filenames(collection: Collection) -> set:
         logger.warning(f"Could not retrieve existing filenames: {e}. Proceeding without deduplication.")
         return set()
 
-def upsert_to_milvus(collection: Collection, ids: List[str], vectors: List[List[float]], metas: List[Dict[str, Any]]):
-    """
-    Insert rows into Milvus. metas are JSON-serializable metadata per vector.
-    """
-    payloads = [json.dumps(m) for m in metas]
+def _encode_sparse_fast(tokenizer, texts: List[str]) -> List[Dict[int, float]]:
+    """Sparse vectors for hybrid collection (BAAI/bge-m3 tokenizer, same as migrate_to_hybrid)."""
+    enc = tokenizer(texts, truncation=True, max_length=512, add_special_tokens=True)
+    sparse_vecs = []
+    pad_id = tokenizer.pad_token_id or 0
+    for ids in enc["input_ids"]:
+        counts = {}
+        for tid in ids:
+            if tid != pad_id:
+                counts[tid] = counts.get(tid, 0) + 1
+        sparse_vecs.append({int(k): math.log1p(v) for k, v in counts.items()})
+    return sparse_vecs
+
+
+_SPARSE_TOKENIZER = None
+
+
+def get_sparse_vectors_for_texts(texts: List[str]) -> List[Dict[int, float]]:
+    """Lazy-load BAAI/bge-m3 tokenizer and return sparse vectors (for hybrid collection)."""
+    global _SPARSE_TOKENIZER
+    if _SPARSE_TOKENIZER is None:
+        try:
+            from transformers import AutoTokenizer
+            logger.info("Loading BAAI/bge-m3 tokenizer for sparse vectors (hybrid collection)...")
+            _SPARSE_TOKENIZER = AutoTokenizer.from_pretrained("BAAI/bge-m3", use_fast=True)
+        except Exception as e:
+            logger.exception(f"Failed to load sparse tokenizer: {e}")
+            raise RuntimeError("Hybrid collection requires 'transformers' and BAAI/bge-m3 tokenizer.") from e
+    return _encode_sparse_fast(_SPARSE_TOKENIZER, texts)
+
+
+def _collection_has_sparse_vector(collection: Collection) -> bool:
+    """True if collection schema has a sparse_vector field (hybrid schema)."""
     try:
-        collection.insert([ids, vectors, payloads])
-        collection.flush()  # Ensure data is persisted
-        logger.info(f"Inserted {len(ids)} vectors to Milvus collection {collection.name}.")
+        for f in collection.schema.fields:
+            if getattr(f, "name", None) == "sparse_vector":
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def upsert_to_milvus(
+    collection: Collection,
+    ids: Optional[List[str]],
+    vectors: List[List[float]],
+    metas: List[Dict[str, Any]],
+    sparse_vectors: Optional[List[Dict[int, float]]] = None,
+):
+    """
+    Insert rows into Milvus.
+    - If sparse_vectors is provided (hybrid collection): insert list of dicts with vector, sparse_vector, payload; ids ignored (auto_id).
+    - Else (legacy): insert [ids, vectors, payloads] with payload as JSON strings.
+    """
+    try:
+        if sparse_vectors is not None:
+            # Hybrid schema: no ids, payload as dict (JSON field)
+            data = [
+                {"vector": v, "sparse_vector": s, "payload": m}
+                for v, s, m in zip(vectors, sparse_vectors, metas)
+            ]
+            collection.insert(data)
+        else:
+            payloads = [json.dumps(m) for m in metas]
+            collection.insert([ids, vectors, payloads])
+        collection.flush()
+        logger.info(f"Inserted {len(vectors)} vectors to Milvus collection {collection.name}.")
     except Exception as e:
         logger.exception("Milvus insert failed.")
         raise
@@ -592,6 +651,278 @@ def extract_document_title(file_bytes: bytes, filename: str, elements: List[Any]
     # No good title found
     return None
 
+def _get_element_page(elem) -> Optional[int]:
+    """Get page number from an element (dict or unstructured object)."""
+    if isinstance(elem, dict):
+        return elem.get("page")
+    page_meta = getattr(elem, "metadata", None)
+    if page_meta:
+        return getattr(page_meta, "page_number", None)
+    return None
+
+
+def _parse_html_table_to_rows(html: str) -> Tuple[List[str], List[List[str]]]:
+    """Parse an HTML table string into (headers, data_rows).
+
+    Returns empty lists if parsing fails or table has fewer than 2 rows.
+    """
+    try:
+        from html.parser import HTMLParser
+
+        class _TableParser(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.rows: List[List[str]] = []
+                self.current_row: List[str] = []
+                self.current_cell = ""
+                self.in_cell = False
+
+            def handle_starttag(self, tag, attrs):
+                if tag in ("td", "th"):
+                    self.in_cell = True
+                    self.current_cell = ""
+                elif tag == "tr":
+                    self.current_row = []
+
+            def handle_endtag(self, tag):
+                if tag in ("td", "th"):
+                    self.in_cell = False
+                    self.current_row.append(self.current_cell.strip())
+                elif tag == "tr":
+                    if self.current_row:
+                        self.rows.append(self.current_row)
+
+            def handle_data(self, data):
+                if self.in_cell:
+                    self.current_cell += data
+
+        parser = _TableParser()
+        parser.feed(html)
+
+        if len(parser.rows) < 2:
+            return [], []
+
+        headers = parser.rows[0]
+        data_rows = parser.rows[1:]
+        return headers, data_rows
+
+    except Exception as e:
+        logger.warning(f"HTML table parsing failed: {e}")
+        return [], []
+
+
+def _extract_tables_with_pymupdf(file_bytes: bytes) -> List[Dict[str, Any]]:
+    """Extract tables from a PDF using PyMuPDF's ``find_tables()``.
+
+    For multi-page tables (like the National Drug Register), the header row
+    from the first page is carried forward to subsequent pages so every row
+    retains its column associations.
+
+    Returns a list of dicts: ``{"headers": [...], "rows": [[...], ...], "page": int}``.
+    """
+    if not HAS_PYMUPDF:
+        logger.warning("PyMuPDF not available - cannot extract tables")
+        return []
+
+    # Check PyMuPDF version - find_tables() requires >= 1.23.0
+    try:
+        import fitz
+        pymupdf_version = fitz.version[0] if hasattr(fitz, 'version') else "unknown"
+        logger.info(f"PyMuPDF version: {pymupdf_version}")
+        
+        # Check if find_tables method exists
+        test_doc = fitz.open()
+        test_page = test_doc.new_page()
+        if not hasattr(test_page, "find_tables"):
+            logger.error("PyMuPDF find_tables() method not available. Need PyMuPDF >= 1.23.0")
+            logger.error("Install with: pip install --upgrade pymupdf")
+            test_doc.close()
+            return []
+        test_doc.close()
+    except Exception as e:
+        logger.error(f"Error checking PyMuPDF version: {e}")
+        return []
+
+    all_table_data: List[Dict[str, Any]] = []
+    persistent_headers: Optional[List[str]] = None
+    pages_processed = 0
+    tables_found = 0
+
+    try:
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        total_pages = len(doc)
+        logger.info(f"Attempting table extraction from {total_pages} pages...")
+        
+        for page_num in range(total_pages):
+            page = doc[page_num]
+            try:
+                tabs = page.find_tables()
+            except AttributeError:
+                logger.warning(f"Page {page_num + 1}: find_tables() method not available (PyMuPDF version too old?)")
+                continue
+            except Exception as exc:
+                logger.warning(f"Page {page_num + 1}: find_tables() failed: {exc}")
+                continue
+
+            if not hasattr(tabs, "tables"):
+                logger.debug(f"Page {page_num + 1}: No 'tables' attribute on find_tables() result")
+                continue
+
+            page_tables = list(tabs.tables) if tabs.tables else []
+            if not page_tables:
+                continue
+
+            pages_processed += 1
+            logger.debug(f"Page {page_num + 1}: Found {len(page_tables)} table(s)")
+
+            for tab_idx, tab in enumerate(page_tables):
+                try:
+                    rows = tab.extract()
+                except Exception as e:
+                    logger.warning(f"Page {page_num + 1}, table {tab_idx + 1}: extract() failed: {e}")
+                    continue
+
+                if not rows or len(rows) < 1:
+                    logger.debug(f"Page {page_num + 1}, table {tab_idx + 1}: No rows extracted")
+                    continue
+
+                first_row = [str(c or "").strip() for c in rows[0]]
+                num_cols = len(first_row)
+                
+                if num_cols == 0:
+                    continue
+
+                if persistent_headers is None:
+                    # Very first table encountered – first row is the header.
+                    persistent_headers = first_row
+                    data_rows = [[str(c or "").strip() for c in r] for r in rows[1:]]
+                    logger.info(f"Page {page_num + 1}: Detected header row with {num_cols} columns: {first_row[:3]}...")
+                elif len(persistent_headers) == num_cols:
+                    # Same column count as known header – all rows are data.
+                    data_rows = [[str(c or "").strip() for c in r] for r in rows]
+                else:
+                    # Column count changed – treat as a brand-new table.
+                    logger.info(f"Page {page_num + 1}: Column count changed ({len(persistent_headers)} -> {num_cols}), treating as new table")
+                    persistent_headers = first_row
+                    data_rows = [[str(c or "").strip() for c in r] for r in rows[1:]]
+
+                # Drop completely empty rows
+                data_rows = [r for r in data_rows if any(cell.strip() for cell in r)]
+
+                if data_rows:
+                    all_table_data.append({
+                        "headers": persistent_headers[:],
+                        "rows": data_rows,
+                        "page": page_num + 1,
+                    })
+                    tables_found += 1
+                    logger.debug(f"Page {page_num + 1}, table {tab_idx + 1}: Extracted {len(data_rows)} data rows")
+
+        doc.close()
+        
+        if pages_processed == 0:
+            logger.warning("No pages with tables found - table extraction may have failed")
+        elif tables_found == 0:
+            logger.warning(f"Processed {pages_processed} pages but found 0 tables")
+        else:
+            total_rows = sum(len(t["rows"]) for t in all_table_data)
+            logger.info(f"✓ PyMuPDF extracted {tables_found} table segments from {pages_processed} pages with {total_rows} total data rows")
+            
+    except Exception as e:
+        logger.error(f"PyMuPDF table extraction failed: {e}", exc_info=True)
+
+    return all_table_data
+
+
+def _format_table_rows_as_chunks(
+    headers: List[str],
+    rows: List[List[str]],
+    page: Optional[int] = None,
+    document_title: str = "",
+    rows_per_chunk: int = 3,
+) -> List[Dict[str, Any]]:
+    """Convert table rows into embedding-friendly chunks.
+
+    Each chunk contains *rows_per_chunk* complete rows formatted as structured
+    ``ColumnHeader: CellValue`` pairs so the embedding model (and LLM) can
+    understand column–row associations.
+    """
+    if not headers or not rows:
+        return []
+
+    chunks: List[Dict[str, Any]] = []
+    clean_headers = [h.strip() for h in headers if h.strip()]
+
+    for i in range(0, len(rows), rows_per_chunk):
+        batch_rows = rows[i : i + rows_per_chunk]
+        row_texts: List[str] = []
+
+        for row in batch_rows:
+            pairs: List[str] = []
+            for col_idx, cell in enumerate(row):
+                cell_text = cell.strip() if cell else ""
+                if col_idx < len(clean_headers) and cell_text:
+                    pairs.append(f"{clean_headers[col_idx]}: {cell_text}")
+            if pairs:
+                row_texts.append(" | ".join(pairs))
+
+        if row_texts:
+            chunk_header = ""
+            if document_title:
+                chunk_header = f"Source: {document_title}\n"
+            chunk_header += f"Table columns: {', '.join(clean_headers)}\n\n"
+            chunk_text = chunk_header + "\n---\n".join(row_texts)
+
+            chunks.append({
+                "text": chunk_text,
+                "meta": {
+                    "page": None,  # Don't use page numbers for tables - use row numbers instead
+                    "section": f"Table entry rows {i + 1}-{i + len(batch_rows)}",
+                    "content_type": "table",
+                    "table_row_start": i + 1,
+                    "table_row_end": i + len(batch_rows),
+                },
+            })
+
+    return chunks
+
+
+def _process_unstructured_table_elements(
+    elements: List[Any],
+    document_title: str = "",
+) -> Tuple[List[Dict[str, Any]], List[Any]]:
+    """Separate ``Table`` elements from other elements, parse their HTML, and
+    return structured table chunks alongside the remaining non-table elements.
+    """
+    table_chunks: List[Dict[str, Any]] = []
+    non_table_elements: List[Any] = []
+
+    for elem in elements:
+        elem_type = type(elem).__name__
+        if elem_type == "Table":
+            html = getattr(getattr(elem, "metadata", None), "text_as_html", None)
+            page = getattr(getattr(elem, "metadata", None), "page_number", None)
+
+            if html:
+                headers, rows = _parse_html_table_to_rows(html)
+                if headers and rows:
+                    chunks = _format_table_rows_as_chunks(
+                        headers, rows, page=page, document_title=document_title,
+                    )
+                    table_chunks.extend(chunks)
+                    continue
+
+            # Could not parse HTML – fall through to regular chunking.
+            non_table_elements.append(elem)
+        else:
+            non_table_elements.append(elem)
+
+    if table_chunks:
+        logger.info(f"Processed {len(table_chunks)} chunks from unstructured Table elements")
+
+    return table_chunks, non_table_elements
+
+
 def heading_based_chunking(elements: List[Any], max_chars: int=1000, overlap: int=150) -> List[Dict[str,Any]]:
     """
     Chunk elements using headings as boundaries if possible; otherwise do char-based splits.
@@ -696,18 +1027,24 @@ class Ingestor:
         is_txt = (mime and "text" in mime) or ext == ".txt"
 
         prefer_hi_res = True
-        # If PDF but it's text-based, prefer fast; if likely image/scanned, prefer hi_res
+        # For PDFs: Always prefer hi_res if we have PyMuPDF (better table detection)
+        # Only use fast if PyMuPDF is unavailable
         if is_pdf:
-            # quick heuristics to detect scanned pdf (no textual content)
-            try:
-                if PdfReader:
-                    reader = PdfReader(io.BytesIO(file_bytes))
-                    if any(page.extract_text() for page in reader.pages if page.extract_text()):
-                        # has embedded text -> fast is fine
-                        prefer_hi_res = False
-            except Exception:
-                # if pypdf fails, keep prefer_hi_res True (let unstructured try)
-                pass
+            if HAS_PYMUPDF:
+                # Use hi_res for better table structure detection
+                prefer_hi_res = True
+                logger.info("PDF detected with PyMuPDF available - using hi_res strategy for better table detection")
+            else:
+                # Fallback: quick heuristics to detect scanned pdf
+                try:
+                    if PdfReader:
+                        reader = PdfReader(io.BytesIO(file_bytes))
+                        if any(page.extract_text() for page in reader.pages if page.extract_text()):
+                            # has embedded text -> fast is fine
+                            prefer_hi_res = False
+                except Exception:
+                    # if pypdf fails, keep prefer_hi_res True (let unstructured try)
+                    pass
 
         elements = None
         extraction_method = None
@@ -802,13 +1139,79 @@ class Ingestor:
         if not document_title:
             # Fallback to filename without extension
             document_title = os.path.splitext(os.path.basename(filename))[0]
-        
-        # chunk
-        chunks = heading_based_chunking(elements)
-        
+
+        # ---- Table-aware extraction ----------------------------------------
+        table_chunks: List[Dict[str, Any]] = []
+        remaining_elements = list(elements)
+
+        # 1. For PDFs: use PyMuPDF find_tables() for reliable structured extraction
+        # This MUST run first and should produce most/all chunks for table-heavy PDFs
+        if is_pdf and HAS_PYMUPDF:
+            logger.info(f"Attempting PyMuPDF table extraction for {os.path.basename(filename)}...")
+            pymupdf_tables = _extract_tables_with_pymupdf(file_bytes)
+            
+            if pymupdf_tables:
+                table_pages: set = set()
+                total_table_rows = 0
+                
+                for tab_data in pymupdf_tables:
+                    t_chunks = _format_table_rows_as_chunks(
+                        tab_data["headers"],
+                        tab_data["rows"],
+                        page=tab_data.get("page"),
+                        document_title=document_title,
+                        rows_per_chunk=3,  # 3 rows per chunk for drug register
+                    )
+                    table_chunks.extend(t_chunks)
+                    total_table_rows += len(tab_data["rows"])
+                    if tab_data.get("page"):
+                        table_pages.add(tab_data["page"])
+
+                if table_chunks:
+                    logger.info(
+                        f"✓ Table extraction SUCCESS: {len(table_chunks)} table chunks from "
+                        f"{len(pymupdf_tables)} table segments ({total_table_rows} total rows) "
+                        f"across {len(table_pages)} pages"
+                    )
+                    
+                    # Remove text elements whose page is already covered by tables
+                    # For table-heavy PDFs, this should remove most/all elements
+                    before_count = len(remaining_elements)
+                    remaining_elements = [
+                        e for e in remaining_elements
+                        if _get_element_page(e) not in table_pages
+                    ]
+                    removed_count = before_count - len(remaining_elements)
+                    logger.info(
+                        f"  Removed {removed_count} text elements from pages with tables; "
+                        f"{len(remaining_elements)} non-table elements remain"
+                    )
+                else:
+                    logger.warning("PyMuPDF found tables but produced 0 chunks - check _format_table_rows_as_chunks()")
+            else:
+                logger.warning("PyMuPDF table extraction returned 0 tables - PDF may not have detectable table structure")
+
+        # 2. Also handle any unstructured Table elements (hi_res strategy)
+        # This is a fallback if PyMuPDF didn't find tables
+        if not table_chunks:
+            logger.info("No PyMuPDF tables found, checking unstructured Table elements...")
+            html_table_chunks, remaining_elements = _process_unstructured_table_elements(
+                remaining_elements, document_title,
+            )
+            if html_table_chunks:
+                logger.info(f"Found {len(html_table_chunks)} chunks from unstructured Table elements")
+            table_chunks.extend(html_table_chunks)
+
+        # 3. Regular heading-based chunking for non-table elements
+        text_chunks = heading_based_chunking(remaining_elements)
+
+        # 4. Combine table + text chunks
+        all_raw_chunks = table_chunks + text_chunks
+        # ---- /Table-aware extraction ---------------------------------------
+
         # attach top-level metadata
         enriched = []
-        for ch in chunks:
+        for ch in all_raw_chunks:
             meta = {
                 "source": source,
                 "filename": os.path.basename(filename),
@@ -819,8 +1222,11 @@ class Ingestor:
                 "extraction_method": extraction_method
             }
             text = ch["text"]
-            # simple cleaning
-            text = " ".join(text.split())
+            # Clean text: preserve row structure for table chunks
+            if ch["meta"].get("content_type") == "table":
+                text = "\n".join(line.strip() for line in text.split("\n") if line.strip())
+            else:
+                text = " ".join(text.split())
             if not text or len(text) < 30:
                 continue
             enriched.append({"text": text, "meta": meta})
@@ -873,10 +1279,20 @@ class Ingestor:
         if self.collection is None:
             self.collection = ensure_milvus_collection(self.milvus_collection_name, dim)
 
-        # generate IDs
-        ids = [str(uuid.uuid4()) for _ in vectors]
-        # upsert
-        upsert_to_milvus(self.collection, ids, vectors, enriched_metas)
+        is_hybrid = _collection_has_sparse_vector(self.collection)
+        if is_hybrid:
+            # Hybrid schema: vector + sparse_vector + payload (JSON); no ids (auto_id)
+            sparse_vectors = get_sparse_vectors_for_texts(texts)
+            upsert_to_milvus(
+                self.collection,
+                ids=None,
+                vectors=vectors,
+                metas=enriched_metas,
+                sparse_vectors=sparse_vectors,
+            )
+        else:
+            ids = [str(uuid.uuid4()) for _ in vectors]
+            upsert_to_milvus(self.collection, ids, vectors, enriched_metas)
 
 
 # ---- File sources: local dir only ----
@@ -954,19 +1370,9 @@ def main():
         logger.warning("No files found to process. Exiting.")
         sys.exit(0)
 
-    # Get existing filenames to skip already processed files
-    logger.info("Checking for already processed files in collection...")
-    existing_filenames = set()
-    try:
-        if ing.collection is None:
-            # Create collection to check for existing files
-            test_dim = 3072  # Azure text-embedding-3-large dimension
-            ing.collection = ensure_milvus_collection(MILVUS_COLLECTION_NAME, test_dim)
-        existing_filenames = get_existing_filenames(ing.collection)
-        logger.info(f"Found {len(existing_filenames)} unique files already in collection")
-    except Exception as e:
-        logger.warning(f"Could not check for existing files: {e}. Will process all files.")
-    
+    # Skip expensive existing-file check; ingest all files directly into vector DB.
+    logger.info("Skipping existing-file check; ingesting all files directly.")
+
     # Statistics tracking
     stats = {
         "total_files": len(work_queue),
@@ -1036,12 +1442,7 @@ def main():
                     raise
                 continue
             
-            # Check if file already exists in collection (deduplication)
             base_filename = os.path.basename(filename)
-            if base_filename in existing_filenames:
-                logger.info(f"[{idx}/{stats['total_files']}] ⏭️  Skipping {base_filename} (already in collection)")
-                stats["skipped"] += 1
-                continue
 
             # Process file
             logger.info(f"[{idx}/{stats['total_files']}] Processing {base_filename}...")
