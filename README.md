@@ -65,7 +65,7 @@
 - **Deep Search Mode**: Enhanced search capabilities for comprehensive responses
 - **Session Management**: Create and manage multiple conversation sessions
 - **Message History**: Complete conversation history with search capabilities
-- **Rich Formatting**: Markdown support with proper medical formatting
+- **Rich Formatting**: Markdown support with proper medical formatting, aligned between web and Android (headings, spacing, lists, blockquotes)
 - **Feedback System**: Rate responses as helpful/not helpful to improve the system
 
 ### 📊 Survey & Research
@@ -375,6 +375,7 @@ Development: http://localhost:8050/api/v2/
   - Offline-capable chat interface
   - Session management
   - Google Sign-In integration
+  - AI response formatting consistent with web app (headings, spacing, lists, blockquotes)
   - Push notifications (coming soon)
 
 ---

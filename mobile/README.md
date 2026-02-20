@@ -67,7 +67,7 @@ The app connects to the Empirico backend API. Ensure the backend is running and 
 
 - The app uses cleartext traffic for localhost connections (development only)
 - For production, configure HTTPS and update the network security config
-- Google Sign-In can be added by configuring OAuth credentials
+- **Google Sign-In (release builds)**: If Google Sign-In works in debug but not in release (nothing happens after selecting an account), add your **release keystore SHA-1** to the Android OAuth client in Google Cloud Console. See **[RELEASE_GOOGLE_SIGNIN.md](RELEASE_GOOGLE_SIGNIN.md)** for steps.
 
 
 

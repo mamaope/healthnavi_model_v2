@@ -1,15 +1,20 @@
 package ai.empirico.app.ui.viewmodel
 
 import android.app.Application
+import android.content.Intent
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import ai.empirico.app.data.model.User
 import ai.empirico.app.data.repository.AuthRepository
 import ai.empirico.app.data.repository.DeletionStatus
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.common.api.ApiException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 data class AuthUiState(
     val isLoading: Boolean = false,
@@ -29,6 +34,10 @@ data class AuthUiState(
 )
 
 class AuthViewModel(application: Application) : AndroidViewModel(application) {
+
+    private companion object {
+        private const val TAG = "AuthViewModel"
+    }
     
     private val authRepository: AuthRepository by lazy { AuthRepository(application.applicationContext) }
     
@@ -38,11 +47,17 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     init {
         // Initialize repository with saved auth data (restore token to AuthTokenProvider)
         viewModelScope.launch {
-            authRepository.initialize()
-            _uiState.value = _uiState.value.copy(
-                isInitialized = true,
-                isAuthenticated = _uiState.value.currentUser != null
-            )
+            try {
+                authRepository.initialize()
+                _uiState.value = _uiState.value.copy(isInitialized = true)
+                // isAuthenticated is set by the flow collector below
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isInitialized = true,
+                    isAuthenticated = false,
+                    errorMessage = null // Don't show init errors - user will see login screen
+                )
+            }
         }
         
         // Observe user state changes (isAuthenticated only true when initialized and user present)
@@ -55,9 +70,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
             } catch (e: Exception) {
-                // Handle collection error gracefully
                 _uiState.value = _uiState.value.copy(
-                    errorMessage = "Error: ${e.message}"
+                    isInitialized = true,
+                    isAuthenticated = false,
+                    errorMessage = null
                 )
             }
         }
@@ -71,9 +87,20 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     _uiState.value = _uiState.value.copy(isLoading = false)
                 }
                 .onFailure { e ->
+                    val msg = e.message ?: ""
+                    val userMessage = when {
+                        msg.contains("401", ignoreCase = true) || msg.contains("invalid", ignoreCase = true) ->
+                            "Invalid email or password. Please try again."
+                        msg.contains("network", ignoreCase = true) || msg.contains("unable to resolve", ignoreCase = true) ->
+                            "Network error. Please check your connection and try again."
+                        msg.contains("timeout", ignoreCase = true) ->
+                            "Connection timed out. Please try again."
+                        msg.isNotBlank() -> msg
+                        else -> "Unable to sign in. Please try again."
+                    }
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        errorMessage = e.message ?: "Login failed"
+                        errorMessage = userMessage
                     )
                 }
         }
@@ -90,9 +117,20 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
                 .onFailure { e ->
+                    val msg = e.message ?: ""
+                    val userMessage = when {
+                        msg.contains("already", ignoreCase = true) || msg.contains("exists", ignoreCase = true) ->
+                            "This email is already registered. Please sign in instead."
+                        msg.contains("network", ignoreCase = true) || msg.contains("unable to resolve", ignoreCase = true) ->
+                            "Network error. Please check your connection and try again."
+                        msg.contains("invalid", ignoreCase = true) ->
+                            "Please check your details and try again."
+                        msg.isNotBlank() -> msg
+                        else -> "Unable to create account. Please try again."
+                    }
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        errorMessage = e.message ?: "Registration failed"
+                        errorMessage = userMessage
                     )
                 }
         }
@@ -125,20 +163,80 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     
+    /**
+     * Handle the result from the Google Sign-In activity. Call this from the activity result
+     * callback so that token extraction and backend sign-in run in viewModelScope and are not
+     * cancelled if the composable is disposed when returning from the account picker.
+     */
+    fun handleGoogleSignInResult(resultCode: Int, data: Intent?) {
+        viewModelScope.launch {
+            Log.d(TAG, "handleGoogleSignInResult(resultCode=$resultCode, hasData=${data != null})")
+            if (data == null) {
+                Log.w(TAG, "Google Sign-In result missing intent data (resultCode=$resultCode)")
+                _uiState.value = _uiState.value.copy(
+                    errorMessage = "Google Sign-In was cancelled or failed"
+                )
+                return@launch
+            }
+            try {
+                val task = GoogleSignIn.getSignedInAccountFromIntent(data)
+                val account = task.await()
+                val idToken = account?.idToken
+                if (!idToken.isNullOrBlank()) {
+                    Log.d(TAG, "Google Sign-In received idToken (len=${idToken.length})")
+                    googleSignIn(idToken)
+                } else {
+                    Log.w(TAG, "Google Sign-In returned null/blank idToken")
+                    // Common in release builds when the release keystore SHA-1 is not added in Google Cloud Console
+                    _uiState.value = _uiState.value.copy(
+                        errorMessage = "Google Sign-In failed: No ID token. If this is a release build, add your release keystore SHA-1 in Google Cloud Console (see mobile/RELEASE_GOOGLE_SIGNIN.md)."
+                    )
+                }
+            } catch (e: ApiException) {
+                Log.w(TAG, "Google Sign-In ApiException status=${e.statusCode}", e)
+                val errorMessage = when (e.statusCode) {
+                    7 -> "Network error. Please check your connection."
+                    12501 -> "Sign in cancelled"
+                    4 -> "Sign in required"
+                    10 -> "Google Sign-In not configured for this build. Add your release keystore SHA-1 in Google Cloud Console (see RELEASE_GOOGLE_SIGNIN.md)."
+                    8 -> "Internal error - please try again"
+                    else -> "Google Sign-In failed: ${e.statusCode}"
+                }
+                _uiState.value = _uiState.value.copy(errorMessage = errorMessage)
+            } catch (e: Exception) {
+                Log.e(TAG, "Google Sign-In unexpected exception", e)
+                _uiState.value = _uiState.value.copy(
+                    errorMessage = "Google Sign-In error: ${e.message ?: "Unknown error"}"
+                )
+            }
+        }
+    }
+
     fun googleSignIn(idToken: String) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
             authRepository.googleSignIn(idToken)
-                .onSuccess { response ->
-                    // The repository updates _currentUser.value synchronously, which triggers
-                    // the flow collector in init block to update _uiState automatically
-                    // Just set loading to false - the flow collector will handle isAuthenticated and currentUser
-                    _uiState.value = _uiState.value.copy(isLoading = false)
+                .onSuccess { user ->
+                    // Set auth state immediately so navigation runs on first try without waiting for DataStore flow
+                    _uiState.value = _uiState.value.copy(
+                        currentUser = user,
+                        isAuthenticated = _uiState.value.isInitialized,
+                        isLoading = false
+                    )
                 }
                 .onFailure { e ->
+                    val msg = e.message ?: ""
+                    val userMessage = when {
+                        msg.contains("network", ignoreCase = true) || msg.contains("unable to resolve", ignoreCase = true) ->
+                            "Network error. Please check your connection and try again."
+                        msg.contains("403", ignoreCase = true) || msg.contains("disabled", ignoreCase = true) ->
+                            "Google Sign-In is not available for this account."
+                        msg.isNotBlank() -> msg
+                        else -> "Google Sign-In failed. Please try again."
+                    }
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        errorMessage = e.message ?: "Google Sign-In failed"
+                        errorMessage = userMessage
                     )
                 }
         }
