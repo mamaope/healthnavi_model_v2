@@ -19,6 +19,7 @@ data class ChatUiState(
     val sessions: List<ChatSession> = emptyList(),
     val currentSession: ChatSession? = null,
     val errorMessage: String? = null,
+    val authExpired: Boolean = false, // When true, redirect to login instead of showing error
     val deepSearchEnabled: Boolean = false,
     val feedback: Map<Int, String> = emptyMap(), // messageId -> feedbackType ("helpful" or "not_helpful")
     val feedbackDialogOpen: Boolean = false,
@@ -82,15 +83,18 @@ class ChatViewModel : ViewModel() {
                     }
                 }
                 .onFailure { e ->
-                    // When the user is not authenticated yet, the backend may return
-                    // a "Not authenticated" error. This commonly happens on app start
-                    // before login. We don't want to surface this to the user as an
-                    // error message in the chat UI, so we silently ignore it.
                     val message = e.message ?: ""
-                    if (message.contains("not authenticated", ignoreCase = true)) {
+                    val isAuthError = message.contains("not authenticated", ignoreCase = true) ||
+                        message.contains("401", ignoreCase = true) ||
+                        message.contains("unauthorized", ignoreCase = true) ||
+                        message.contains("session expired", ignoreCase = true) ||
+                        message.contains("token", ignoreCase = true)
+                    if (isAuthError) {
+                        // Redirect to login instead of showing error - user must re-authenticate
                         _uiState.value = _uiState.value.copy(
                             isLoading = false,
-                            errorMessage = null
+                            errorMessage = null,
+                            authExpired = true
                         )
                     } else {
                         _uiState.value = _uiState.value.copy(
@@ -130,9 +134,14 @@ class ChatViewModel : ViewModel() {
                     }
                 }
                 .onFailure { e ->
+                    val message = e.message ?: ""
+                    val isAuthError = message.contains("not authenticated", ignoreCase = true) ||
+                        message.contains("401", ignoreCase = true) ||
+                        message.contains("unauthorized", ignoreCase = true)
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        errorMessage = e.message ?: "Failed to create session"
+                        errorMessage = if (isAuthError) null else message.ifBlank { "Failed to create session" },
+                        authExpired = isAuthError
                     )
                 }
         }
@@ -153,9 +162,14 @@ class ChatViewModel : ViewModel() {
                         _uiState.value = _uiState.value.copy(isLoading = false)
                     }
                     .onFailure { e ->
+                        val message = e.message ?: ""
+                        val isAuthError = message.contains("not authenticated", ignoreCase = true) ||
+                            message.contains("401", ignoreCase = true) ||
+                            message.contains("unauthorized", ignoreCase = true)
                         _uiState.value = _uiState.value.copy(
                             isLoading = false,
-                            errorMessage = e.message ?: "Failed to load messages"
+                            errorMessage = if (isAuthError) null else message.ifBlank { "Failed to load messages" },
+                            authExpired = isAuthError
                         )
                     }
             } else {
@@ -170,9 +184,14 @@ class ChatViewModel : ViewModel() {
                                     _uiState.value = _uiState.value.copy(isLoading = false)
                                 }
                                 .onFailure { e ->
+                                    val msg = e.message ?: ""
+                                    val isAuthError = msg.contains("not authenticated", ignoreCase = true) ||
+                                        msg.contains("401", ignoreCase = true) ||
+                                        msg.contains("unauthorized", ignoreCase = true)
                                     _uiState.value = _uiState.value.copy(
                                         isLoading = false,
-                                        errorMessage = e.message ?: "Failed to load messages"
+                                        errorMessage = if (isAuthError) null else msg.ifBlank { "Failed to load messages" },
+                                        authExpired = isAuthError
                                     )
                                 }
                         } else {
@@ -183,9 +202,14 @@ class ChatViewModel : ViewModel() {
                         }
                     }
                     .onFailure { e ->
+                        val msg = e.message ?: ""
+                        val isAuthError = msg.contains("not authenticated", ignoreCase = true) ||
+                            msg.contains("401", ignoreCase = true) ||
+                            msg.contains("unauthorized", ignoreCase = true)
                         _uiState.value = _uiState.value.copy(
                             isLoading = false,
-                            errorMessage = e.message ?: "Failed to load session"
+                            errorMessage = if (isAuthError) null else msg.ifBlank { "Failed to load session" },
+                            authExpired = isAuthError
                         )
                     }
             }
@@ -255,17 +279,29 @@ class ChatViewModel : ViewModel() {
                     _uiState.value = _uiState.value.copy(isSending = false)
                 }
                 .onFailure { e ->
-                    val errorMessage = ChatMessage(
-                        id = (System.currentTimeMillis() + 1).toString(),
-                        author = MessageAuthor.ERROR,
-                        content = e.message ?: "Failed to send message",
-                        createdAt = System.currentTimeMillis().toString()
-                    )
-                    chatRepository.addMessage(errorMessage)
-                    _uiState.value = _uiState.value.copy(
-                        isSending = false,
-                        errorMessage = e.message ?: "Failed to send message"
-                    )
+                    val message = e.message ?: ""
+                    val isAuthError = message.contains("not authenticated", ignoreCase = true) ||
+                        message.contains("401", ignoreCase = true) ||
+                        message.contains("unauthorized", ignoreCase = true)
+                    if (isAuthError) {
+                        _uiState.value = _uiState.value.copy(
+                            isSending = false,
+                            errorMessage = null,
+                            authExpired = true
+                        )
+                    } else {
+                        val errorMessage = ChatMessage(
+                            id = (System.currentTimeMillis() + 1).toString(),
+                            author = MessageAuthor.ERROR,
+                            content = message.ifBlank { "Failed to send message" },
+                            createdAt = System.currentTimeMillis().toString()
+                        )
+                        chatRepository.addMessage(errorMessage)
+                        _uiState.value = _uiState.value.copy(
+                            isSending = false,
+                            errorMessage = message.ifBlank { "Failed to send message" }
+                        )
+                    }
                 }
         }
     }
@@ -357,10 +393,13 @@ class ChatViewModel : ViewModel() {
                         _uiState.value = _uiState.value.copy(isSubmittingFeedback = false)
                     }
                     .onFailure { e ->
-                        // Revert on failure
+                        val msg = e.message ?: ""
+                        val isAuthError = msg.contains("not authenticated", ignoreCase = true) ||
+                            msg.contains("401", ignoreCase = true) || msg.contains("unauthorized", ignoreCase = true)
                         _uiState.value = _uiState.value.copy(
                             feedback = _uiState.value.feedback + (messageId to currentFeedback!!),
-                            errorMessage = e.message ?: "Failed to remove feedback",
+                            errorMessage = if (isAuthError) null else msg.ifBlank { "Failed to remove feedback" },
+                            authExpired = isAuthError,
                             isSubmittingFeedback = false
                         )
                     }
@@ -376,14 +415,17 @@ class ChatViewModel : ViewModel() {
                         )
                     }
                     .onFailure { e ->
-                        // Revert on failure
+                        val msg = e.message ?: ""
+                        val isAuthError = msg.contains("not authenticated", ignoreCase = true) ||
+                            msg.contains("401", ignoreCase = true) || msg.contains("unauthorized", ignoreCase = true)
                         _uiState.value = _uiState.value.copy(
                             feedback = if (currentFeedback != null) {
                                 _uiState.value.feedback + (messageId to currentFeedback)
                             } else {
                                 _uiState.value.feedback - messageId
                             },
-                            errorMessage = e.message ?: "Failed to submit feedback",
+                            errorMessage = if (isAuthError) null else msg.ifBlank { "Failed to submit feedback" },
+                            authExpired = isAuthError,
                             isSubmittingFeedback = false
                         )
                     }
@@ -394,6 +436,10 @@ class ChatViewModel : ViewModel() {
     
     fun clearError() {
         _uiState.value = _uiState.value.copy(errorMessage = null)
+    }
+
+    fun clearAuthExpired() {
+        _uiState.value = _uiState.value.copy(authExpired = false)
     }
     
     fun startNewChat() {

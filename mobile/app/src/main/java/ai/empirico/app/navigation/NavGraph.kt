@@ -1,6 +1,14 @@
 package ai.empirico.app.navigation
 
+import android.app.Activity
+import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -8,6 +16,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ai.empirico.app.ui.screen.ChatScreen
+import ai.empirico.app.util.GoogleSignInHelper
 import ai.empirico.app.ui.screen.LoadingScreen
 import ai.empirico.app.ui.screen.LoginScreen
 import ai.empirico.app.ui.screen.RegisterScreen
@@ -45,15 +54,89 @@ sealed class Screen(val route: String) {
     }
 }
 
+// Routes that require authentication - redirect to Login if user becomes unauthenticated
+private val PROTECTED_ROUTES = setOf(
+    Screen.Chat.route,
+    Screen.Sessions.route,
+    Screen.Profile.route,
+    Screen.Settings.route,
+    Screen.SettingsBilling.route,
+    Screen.SettingsPrivacy.route,
+    Screen.SettingsCloseAccount.route,
+    Screen.Pilot.route,
+    "pilot/survey" // SurveyForm.route prefix
+)
+
 @Composable
 fun NavGraph(
     navController: NavHostController
 ) {
+    val logTag = "NavGraph"
     val authViewModel: AuthViewModel = viewModel()
+    val authState by authViewModel.uiState.collectAsState()
+    val context = LocalContext.current
 
-    // Create a shared ChatViewModel at the NavGraph level
-    // This ensures the same instance is used across Chat and Sessions screens
+    // Google Sign-In launcher at NavGraph level so the result is always received even if the
+    // activity was recreated (e.g. returning from account picker) and we're on Loading or Login.
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        Log.d(logTag, "Google Sign-In activity resultCode=${result.resultCode}, hasData=${result.data != null}")
+        // Some devices / Google Play Services versions return RESULT_CANCELED even when the Intent contains
+        // failure details (ApiException status codes). Parse whenever data is present so we can surface the
+        // real reason (e.g. status=10 for misconfiguration / missing release SHA-1).
+        if (result.data != null) {
+            authViewModel.handleGoogleSignInResult(result.resultCode, result.data)
+        } else {
+            authViewModel.setError("Google Sign-In was cancelled or failed")
+        }
+    }
+
+    fun launchGoogleSignIn() {
+        val signInIntent = GoogleSignInHelper.getGoogleSignInClient(context).signInIntent
+        googleSignInLauncher.launch(signInIntent)
+    }
+
+    // Create a shared ChatViewModel at the NavGraph level (before auth effect so we can clear authExpired)
     val chatViewModel: ChatViewModel = viewModel()
+
+    // When auth becomes true while on Login or Loading, navigate to Chat immediately.
+    // Clear ChatViewModel.authExpired first: ChatViewModel is created on app start and its init
+    // calls loadSessions() with no token, which can set authExpired = true; without clearing it,
+    // ChatScreen would immediately call onSessionExpired() and send the user back to Login.
+    LaunchedEffect(authState.isAuthenticated) {
+        if (!authState.isAuthenticated) return@LaunchedEffect
+        val currentRoute = navController.currentBackStackEntry?.destination?.route ?: return@LaunchedEffect
+        when (currentRoute) {
+            Screen.Login.route -> {
+                chatViewModel.clearAuthExpired()
+                navController.navigate(Screen.Chat.route) {
+                    popUpTo(Screen.Login.route) { inclusive = true }
+                }
+            }
+            Screen.Loading.route -> {
+                chatViewModel.clearAuthExpired()
+                navController.navigate(Screen.Chat.route) {
+                    popUpTo(Screen.Loading.route) { inclusive = true }
+                }
+            }
+            else -> { }
+        }
+    }
+
+    // Global auth guard: redirect to Login when user becomes unauthenticated while on protected route
+    // Handles: explicit logout, token expiry (401), session invalidated
+    LaunchedEffect(authState.isAuthenticated, authState.isInitialized) {
+        if (!authState.isInitialized) return@LaunchedEffect
+        if (authState.isAuthenticated) return@LaunchedEffect
+        val currentRoute = navController.currentBackStackEntry?.destination?.route ?: return@LaunchedEffect
+        val isProtectedRoute = PROTECTED_ROUTES.any { currentRoute == it || currentRoute.startsWith(it) }
+        if (isProtectedRoute) {
+            navController.navigate(Screen.Login.route) {
+                popUpTo(0) { inclusive = true }
+            }
+        }
+    }
     
     NavHost(
         navController = navController,
@@ -88,6 +171,7 @@ fun NavGraph(
                 onNavigateToForgotPassword = {
                     navController.navigate(Screen.ForgotPassword.route)
                 },
+                onGoogleSignInRequested = { launchGoogleSignIn() },
                 viewModel = authViewModel
             )
         }
@@ -149,7 +233,14 @@ fun NavGraph(
                 onLogout = {
                     authViewModel.logout()
                     navController.navigate(Screen.Login.route) {
-                        popUpTo(Screen.Chat.route) { inclusive = true }
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
+                onSessionExpired = {
+                    chatViewModel.clearAuthExpired()
+                    authViewModel.logout()
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(0) { inclusive = true }
                     }
                 },
                 onNavigateToSessions = { navController.navigate(Screen.Sessions.route) },

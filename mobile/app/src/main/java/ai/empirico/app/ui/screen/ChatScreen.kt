@@ -60,6 +60,7 @@ fun ChatScreen(
     onNavigateToProfile: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     onNavigateToPilot: () -> Unit = {},
+    onSessionExpired: () -> Unit = {},
     chatViewModel: ChatViewModel = viewModel()
 ) {
     var messageText by remember { mutableStateOf("") }
@@ -67,6 +68,13 @@ fun ChatScreen(
     val uiState by chatViewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
     val clipboardManager = LocalClipboardManager.current
+
+    // Redirect to login when session expires (401, token invalid) - no error message, just redirect
+    LaunchedEffect(uiState.authExpired) {
+        if (uiState.authExpired) {
+            onSessionExpired()
+        }
+    }
 
     LaunchedEffect(uiState.messages.size) {
         if (uiState.messages.isNotEmpty()) {
@@ -293,9 +301,12 @@ private fun EmptyChatState(
                         disabledContainerColor = Color.Transparent,
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
-                        disabledIndicatorColor = Color.Transparent
+                        disabledIndicatorColor = Color.Transparent,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        disabledTextColor = TextDisabled
                     ),
-                    textStyle = MaterialTheme.typography.bodyMedium,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = TextPrimary),
                     maxLines = 5,
                     enabled = !isSending
                 )
@@ -576,6 +587,7 @@ private fun InputArea(
                     placeholder = { Text("Type your message...", color = TextTertiary) },
                     maxLines = 5,
                     shape = RoundedCornerShape(20.dp),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = TextPrimary),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Color.Transparent,
                         unfocusedBorderColor = Color.Transparent,
@@ -662,7 +674,8 @@ fun MessageBubble(
         ) {
             Column(
                 modifier = Modifier.padding(
-                    if (!isUser && !isError) 20.dp else 16.dp
+                    horizontal = if (!isUser && !isError) 20.dp else 16.dp,
+                    vertical = 16.dp
                 )
             ) {
                 val content = message.content ?: ""
@@ -998,11 +1011,12 @@ fun MessageBubble(
 
                     Text(
                         text = ai.empirico.app.util.MessageFormatter.formatMessage(content),
-                        style = MaterialTheme.typography.bodyLarge.copy(
-                            lineHeight = 28.sp
+                        modifier = Modifier.fillMaxWidth(),
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            lineHeight = 25.sp  // Match web: line-height 1.8 (14 * 1.8 ≈ 25)
                         ),
                         color = TextPrimary,
-                        textAlign = TextAlign.Start
+                        textAlign = TextAlign.Start  // Left align (headings and body)
                     )
                 } else {
                     Text(

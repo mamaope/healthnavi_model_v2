@@ -1,8 +1,5 @@
 package ai.empirico.app.ui.screen
 
-import android.app.Activity
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
@@ -14,13 +11,11 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import ai.empirico.app.R
 import androidx.compose.ui.text.font.FontWeight
@@ -29,12 +24,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.common.api.ApiException
 import ai.empirico.app.ui.theme.*
 import ai.empirico.app.ui.viewmodel.AuthViewModel
-import ai.empirico.app.util.GoogleSignInHelper
-import kotlinx.coroutines.tasks.await
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,15 +33,14 @@ fun LoginScreen(
     onLoginSuccess: () -> Unit,
     onNavigateToRegister: () -> Unit,
     onNavigateToForgotPassword: () -> Unit = {},
+    onGoogleSignInRequested: () -> Unit,
     viewModel: AuthViewModel = viewModel()
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     val uiState by viewModel.uiState.collectAsState()
-    val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    
+
     val logoScale by animateFloatAsState(
         targetValue = if (uiState.isLoading) 0.95f else 1f,
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
@@ -67,49 +57,7 @@ fun LoginScreen(
             onLoginSuccess()
         }
     }
-    
-    val googleSignInLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-            coroutineScope.launch {
-                try {
-            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-                    val account = task.await()
-                account?.idToken?.let { idToken ->
-                    viewModel.googleSignIn(idToken)
-                } ?: run {
-                        viewModel.setError("Google Sign-In failed: No ID token received")
-                }
-            } catch (e: ApiException) {
-                val errorMessage = when (e.statusCode) {
-                    7 -> "Network error. Please check your connection."
-                    12501 -> "Sign in cancelled"
-                    4 -> "Sign in required"
-                        10 -> "Developer error - check Google Sign-In configuration"
-                        8 -> "Internal error - please try again"
-                    else -> "Google Sign-In failed: ${e.statusCode}"
-                    }
-                    viewModel.setError(errorMessage)
-                } catch (e: Exception) {
-                    viewModel.setError("Google Sign-In error: ${e.message ?: "Unknown error"}")
-                }
-            }
-        } else {
-            if (result.resultCode == Activity.RESULT_CANCELED) {
-            viewModel.clearError()
-            } else {
-                viewModel.setError("Google Sign-In was cancelled or failed")
-            }
-        }
-    }
-    
-    fun signInWithGoogle() {
-        val signInClient = GoogleSignInHelper.getGoogleSignInClient(context)
-        val signInIntent = signInClient.signInIntent
-        googleSignInLauncher.launch(signInIntent)
-    }
-    
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -319,7 +267,7 @@ fun LoginScreen(
             
             // Google Sign-In Button
             OutlinedButton(
-                onClick = { signInWithGoogle() },
+                onClick = onGoogleSignInRequested,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
