@@ -32,15 +32,16 @@ from healthnavi.services.data_deletion_service import (
 from healthnavi.core.device_utils import get_device_type
 from healthnavi.services.admin_service import AdminService
 
+# Logger must be defined before any try/except that uses it
+logger = logging.getLogger(__name__)
+config = get_config()
+
 # Import email service with error handling
 try:
     from healthnavi.services.email_service import email_service
 except ImportError as e:
     logger.warning(f"Email service not available: {e}")
     email_service = None
-
-config = get_config()
-logger = logging.getLogger(__name__)
 
 # Security configuration
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -1413,10 +1414,20 @@ def google_login():
     """
     Initiate Google OAuth login flow.
     Redirects user to Google's OAuth consent screen.
+    In production, set BACKEND_URL=https://empirico.ai so the callback URL is correct.
     """
     with ResponseTimer() as timer:
         try:
-            if not config.security.google_client_id or not config.security.google_client_secret:
+            # Defensive: config.security may be missing in some setups
+            security = getattr(config, "security", None)
+            if not security:
+                logger.error("Google login: config.security not available")
+                return create_error_response(
+                    message="Google OAuth is not configured",
+                    status_code=503,
+                    execution_time=timer.get_execution_time()
+                )
+            if not security.google_client_id or not security.google_client_secret:
                 return create_error_response(
                     message="Google OAuth is not configured",
                     status_code=503,
@@ -1426,13 +1437,14 @@ def google_login():
             # Generate state token for CSRF protection
             state = secrets.token_urlsafe(32)
             
-            # Build Google OAuth URL - redirect to backend callback endpoint
-            backend_url = os.getenv('BACKEND_URL', 'http://localhost:8050')
-            redirect_uri = config.security.google_redirect_uri or f"{backend_url}/api/v2/auth/google/callback"
+            # Build Google OAuth URL - redirect to backend callback endpoint.
+            # BACKEND_URL must be the public API base (e.g. https://empirico.ai) for proxy setups.
+            backend_url = os.getenv("BACKEND_URL", "http://localhost:8050").rstrip("/")
+            redirect_uri = security.google_redirect_uri or f"{backend_url}/api/v2/auth/google/callback"
             
             google_oauth_url = (
                 "https://accounts.google.com/o/oauth2/v2/auth?"
-                f"client_id={config.security.google_client_id}&"
+                f"client_id={security.google_client_id}&"
                 f"redirect_uri={redirect_uri}&"
                 "response_type=code&"
                 "scope=openid email profile&"
@@ -1449,7 +1461,7 @@ def google_login():
             return response
             
         except Exception as e:
-            logger.error(f"Google login initiation error: {str(e)}")
+            logger.exception("Google login initiation error")
             return create_error_response(
                 message="Failed to initiate Google login",
                 status_code=500,

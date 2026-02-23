@@ -307,7 +307,20 @@ ENV=production
 DEBUG=false
 LOG_LEVEL=INFO
 CORS_ORIGINS=["https://your-frontend-domain.com"]
+
+# Production (when behind nginx/reverse proxy)
+BACKEND_URL=https://empirico.ai
+FRONTEND_URL=https://empirico.ai
 ```
+
+### Troubleshooting: 502 Bad Gateway on Google login
+
+If `https://empirico.ai/api/v2/auth/google/login` returns **502 Bad Gateway**:
+
+1. **Backend reachable** – Ensure the API container/process is running and nginx can reach it (e.g. `curl http://localhost:8050/api/v2/health` or your upstream URL).
+2. **Production env vars** – Set `BACKEND_URL=https://empirico.ai` and `FRONTEND_URL=https://empirico.ai` (no trailing slash). The backend uses `BACKEND_URL` to build the OAuth callback URL.
+3. **Google OAuth** – Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and optionally `GOOGLE_REDIRECT_URI=https://empirico.ai/api/v2/auth/google/callback` in the backend environment.
+4. **Logs** – Check backend logs when you hit the login URL; errors are logged with traceback.
 
 ### Google Cloud Setup
 
