@@ -1,4 +1,4 @@
-from healthnavi.services.vectordb_service import vectordb_service
+from healthnavi.services.vectordb_service import get_vectordb_service
 from typing import Tuple, List
 import logging
 import os
@@ -11,20 +11,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# vectordb_service is a lazy proxy; connection happens on first use
+# get_vectordb_service() is lazy; connection happens on first use
 vectorstore_initialized = False
 
 def initialize_vectorstore():
-    """Initializes and loads the Zilliz collection at startup."""
+    """Initializes and loads the Zilliz collection at startup. Connects to Zilliz on first use (lazy)."""
     global vectorstore_initialized
     if not vectorstore_initialized:
         logger.info("Initializing and loading Zilliz collection...")
         try:
+            vectordb_service = get_vectordb_service()
             vectordb_service.load_collection()
             vectorstore_initialized = True
             logger.info("Zilliz collection loaded and ready.")
         except Exception as e:
-            error_message = f"CRITICAL: Could not load collection '{vectordb_service.collection_name}'. Error: {e}"
+            coll_name = os.getenv("MILVUS_COLLECTION_NAME", "medical_knowledge")
+            error_message = f"CRITICAL: Could not load collection '{coll_name}'. Error: {e}"
             logger.error(error_message)
             raise RuntimeError(error_message)
 
@@ -40,6 +42,7 @@ def search_all_collections(
     Perform semantic retrieval and return optimized context for LLM.
     - Retrieves chunks with diversity across multiple sources.
     """
+    vectordb_service = get_vectordb_service()
     client = vectordb_service.client
     collection_name = vectordb_service.collection_name
 
