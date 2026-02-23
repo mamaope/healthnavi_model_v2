@@ -191,6 +191,8 @@ docker-compose logs -f api
 # API Docs: http://localhost:8050/api/v2/docs
 ```
 
+On first run, the API container runs database migrations and seeds an admin user if none exists (override with `ADMIN_EMAIL`, `ADMIN_PASSWORD`, etc. in `.env`). To seed an admin manually: `cd backend && python scripts/seed_admin_user.py`.
+
 ---
 
 ## 📦 Installation
@@ -220,7 +222,12 @@ cp .env.example .env
 alembic upgrade head
 ```
 
-5. **Start the backend**
+5. **Seed admin user** (optional, if not using Docker)
+```bash
+python scripts/seed_admin_user.py
+```
+
+6. **Start the backend**
 ```bash
 uvicorn healthnavi.main:app --reload --host 0.0.0.0 --port 8050
 ```
@@ -377,6 +384,7 @@ Development: http://localhost:8050/api/v2/
   - Google Sign-In integration
   - AI response formatting consistent with web app (headings, spacing, lists, blockquotes)
   - Push notifications (coming soon)
+- **Release builds**: For Google Sign-In to work in release APKs, add your **release keystore SHA-1** to the Android OAuth client in Google Cloud Console (APIs & Services → Credentials → your Android OAuth 2.0 client).
 
 ---
 
@@ -549,9 +557,7 @@ We welcome contributions! Please follow these guidelines:
 
 ### Documentation
 
-- **API Documentation**: Available at `/api/v2/docs`
-- **Architecture Guide**: See [ARCHITECTURE.md](ARCHITECTURE.md)
-- **Security Guide**: See [SECURITY.md](SECURITY.md) (if available)
+- **API Documentation**: Interactive docs at `/api/v2/docs` (Swagger) and `/api/v2/redoc` (ReDoc). Architecture and security overview are in the [Architecture](#-architecture) and [Security & Compliance](#-security--compliance) sections above.
 
 ### Getting Help
 

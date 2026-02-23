@@ -1,4 +1,4 @@
-from healthnavi.services.vectordb_service import ZillizService
+from healthnavi.services.vectordb_service import vectordb_service
 from typing import Tuple, List
 import logging
 import os
@@ -11,8 +11,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize ZillizService once
-vectordb_service = ZillizService()
+# vectordb_service is a lazy proxy; connection happens on first use
 vectorstore_initialized = False
 
 def initialize_vectorstore():

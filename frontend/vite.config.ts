@@ -58,6 +58,8 @@ export default defineConfig({
         manualChunks: (id) => {
           // Split heavy/vendor chunks so initial load is smaller
           if (id.includes('node_modules')) {
+            // React core in its own chunk - largest dependency, split so main parses faster
+            if (id.includes('react-dom') || id.includes('/react/') || id.includes('scheduler')) return 'react-vendor'
             if (id.includes('recharts') || id.includes('d3-')) return 'charts'
             if (id.includes('react-router')) return 'router'
             if (id.includes('@tanstack/react-query')) return 'query'
@@ -70,6 +72,12 @@ export default defineConfig({
       },
     },
     chunkSizeWarningLimit: 600,
+    minify: 'esbuild',
+    cssMinify: false, /* PostCSS + cssnano minifies CSS in production */
+    target: 'esnext',
+    esbuild: {
+      drop: isProduction ? ['console', 'debugger'] : [],
+    },
   },
 })
 

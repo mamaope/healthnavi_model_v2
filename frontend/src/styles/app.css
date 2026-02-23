@@ -99,23 +99,16 @@
   box-shadow: none;
 }
 
-.input-container textarea::placeholder {
-  color: #999 !important;
-  opacity: 0.7;
-}
-
-.input-container textarea::-webkit-input-placeholder {
-  color: #999 !important;
-  opacity: 0.7;
-}
-
-.input-container textarea::-moz-placeholder {
-  color: #999 !important;
-  opacity: 0.7;
-}
-
-.input-container textarea:-ms-input-placeholder {
-  color: #999 !important;
+/* Shared placeholder: .input-container and .chat-input-box */
+.input-container textarea::placeholder,
+.input-container textarea::-webkit-input-placeholder,
+.input-container textarea::-moz-placeholder,
+.input-container textarea:-ms-input-placeholder,
+.chat-input-box textarea::placeholder,
+.chat-input-box textarea::-webkit-input-placeholder,
+.chat-input-box textarea::-moz-placeholder,
+.chat-input-box textarea:-ms-input-placeholder {
+  color: #999;
   opacity: 0.7;
 }
 
@@ -6109,23 +6102,6 @@ textarea {
 /* Modern, clean structure with better component organization */
 /* OVERRIDDEN BY MODERN DESIGN SYSTEM BELOW - These are kept for backward compatibility */
 
-.messages-container::-webkit-scrollbar {
-    width: 8px;
-}
-
-.messages-container::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.messages-container::-webkit-scrollbar-thumb {
-    background: var(--border-light);
-    border-radius: var(--radius-full);
-}
-
-.messages-container::-webkit-scrollbar-thumb:hover {
-    background: var(--border-medium);
-}
-
 /* Follow-up Section */
 .followup-section {
     margin: var(--space-4) 0;
@@ -7077,49 +7053,15 @@ textarea {
     font-weight: 400;
 }
 
-.chat-input-box textarea::placeholder {
-    color: var(--gray-400);
-    opacity: 1;
-    font-weight: 400;
-}
-
-.chat-input-box textarea::placeholder {
-    color: #999 !important;
-    opacity: 0.7;
-}
-
-.chat-input-box textarea::-webkit-input-placeholder {
-    color: #999 !important;
-    opacity: 0.7;
-}
-
-.chat-input-box textarea::-moz-placeholder {
-    color: #999 !important;
-    opacity: 0.7;
-}
-
-.chat-input-box textarea:-ms-input-placeholder {
-    color: #999 !important;
-    opacity: 0.7;
-}
-
-[data-theme="dark"] .chat-input-box textarea::placeholder {
-    color: #888 !important;
-    opacity: 0.7;
-}
-
-[data-theme="dark"] .chat-input-box textarea::-webkit-input-placeholder {
-    color: #888 !important;
-    opacity: 0.7;
-}
-
-[data-theme="dark"] .chat-input-box textarea::-moz-placeholder {
-    color: #888 !important;
-    opacity: 0.7;
-}
-
+[data-theme="dark"] .input-container textarea::placeholder,
+[data-theme="dark"] .input-container textarea::-webkit-input-placeholder,
+[data-theme="dark"] .input-container textarea::-moz-placeholder,
+[data-theme="dark"] .input-container textarea:-ms-input-placeholder,
+[data-theme="dark"] .chat-input-box textarea::placeholder,
+[data-theme="dark"] .chat-input-box textarea::-webkit-input-placeholder,
+[data-theme="dark"] .chat-input-box textarea::-moz-placeholder,
 [data-theme="dark"] .chat-input-box textarea:-ms-input-placeholder {
-    color: #888 !important;
+    color: #888;
     opacity: 0.7;
 }
 
