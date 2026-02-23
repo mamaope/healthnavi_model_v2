@@ -11,6 +11,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# get_vectordb_service() is lazy; connection happens on first use
 vectorstore_initialized = False
 
 def initialize_vectorstore():

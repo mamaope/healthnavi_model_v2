@@ -24,6 +24,17 @@ Edit `lib/main.dart` and set `kPlatformUrl` to your web app URL (default: `https
 - **Android APK:** `flutter build apk`
 - **iOS:** `flutter build ios` (then archive in Xcode for distribution)
 
+## Launcher icon
+
+The app uses the same launcher icon as the native Android app (`mobile/`):
+
+- **Android:** Adaptive icon (green background + logo) is in `android/app/src/main/res/drawable/` and `mipmap-anydpi/` (copied from native app).
+- **iOS:** Generate the App Icon set from the source image:
+  ```bash
+  dart run flutter_launcher_icons
+  ```
+  Source image: `assets/icon/icon.png` (1024×1024). After running, the icons are written to `ios/Runner/Assets.xcassets/AppIcon.appiconset/`.
+
 ## Requirements
 
 - **Android:** minSdk from Flutter SDK (typically 21+). INTERNET permission is included.

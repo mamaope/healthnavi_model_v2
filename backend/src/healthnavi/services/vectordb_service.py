@@ -56,7 +56,11 @@ class ZillizService:
     """Service for interacting with Zilliz Cloud."""
 
     def __init__(self):
-        """Initializes the MilvusClient and Azure OpenAI client."""
+        """Initializes the MilvusClient and Azure OpenAI client.
+        Uses MILVUS_URI and MILVUS_TOKEN from env (Zilliz Cloud token auth).
+        If you see 'auth check failure, please check username and password' from gRPC,
+        the token is wrong/expired or not set in the environment (e.g. in Docker).
+        """
         try:
             self.client = MilvusClient(
                 uri=os.getenv('MILVUS_URI'),
@@ -240,14 +244,42 @@ class ZillizService:
             logger.error(f"Failed to load collection '{self.collection_name}': {e}")
             raise
 
-
-_vectordb_service: ZillizService | None = None
-
+_vectordb_instance: "ZillizService | None" = None
 
 def get_vectordb_service() -> ZillizService:
-    """Return the Zilliz service singleton, creating it on first use. 
-    Use so app/seed can start without connecting to Zilliz until vector search is needed."""
-    global _vectordb_service
-    if _vectordb_service is None:
-        _vectordb_service = ZillizService()
-    return _vectordb_service
+    """Return the singleton ZillizService, creating it on first use (lazy init).
+    This allows scripts that do not use the vector DB (e.g. seed_admin_user) to run
+    without requiring a valid MILVUS_URI / MILVUS_TOKEN.
+    """
+    global _vectordb_instance
+    if _vectordb_instance is None:
+        _vectordb_instance = ZillizService()
+    return _vectordb_instance
+
+class _VectordbServiceProxy:
+    """Proxy so existing code using vectordb_service.* does not connect at import time."""
+
+    def _svc(self) -> ZillizService:
+        return get_vectordb_service()
+
+    @property
+    def client(self):
+        return self._svc().client
+
+    @property
+    def collection_name(self) -> str:
+        return self._svc().collection_name
+
+    def check_collection_exists(self) -> bool:
+        return self._svc().check_collection_exists()
+
+    def generate_query_embedding(self, query: str) -> list[float]:
+        return self._svc().generate_query_embedding(query)
+
+    def search_medical_knowledge(self, query: str, k: int = 8) -> Tuple[List[Dict[str, Any]], List[str]]:
+        return self._svc().search_medical_knowledge(query, k=k)
+
+    def load_collection(self) -> None:
+        self._svc().load_collection()
+
+vectordb_service = _VectordbServiceProxy()

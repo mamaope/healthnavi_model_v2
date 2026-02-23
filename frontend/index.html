@@ -133,6 +133,8 @@
     </noscript>
     <!-- Preload logo for faster LCP on home page -->
     <link rel="preload" href="/logo.png" as="image" />
+    <!-- Entry script in head so browser starts fetching early (type=module defers execution until DOM ready) -->
+    <script type="module" src="/src/main.tsx"></script>
     <!-- Inline loading skeleton - visible before JS loads -->
     <style>
       .app-loading-skeleton {
@@ -213,6 +215,5 @@
         </div>
       </div>
     </div>
-    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

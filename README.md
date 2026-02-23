@@ -191,6 +191,8 @@ docker-compose logs -f api
 # API Docs: http://localhost:8050/api/v2/docs
 ```
 
+On first run, the API container runs database migrations and seeds an admin user if none exists (override with `ADMIN_EMAIL`, `ADMIN_PASSWORD`, etc. in `.env`). To seed an admin manually: `cd backend && python scripts/seed_admin_user.py`.
+
 ---
 
 ## 📦 Installation
@@ -220,7 +222,12 @@ cp .env.example .env
 alembic upgrade head
 ```
 
-5. **Start the backend**
+5. **Seed admin user** (optional, if not using Docker)
+```bash
+python scripts/seed_admin_user.py
+```
+
+6. **Start the backend**
 ```bash
 uvicorn healthnavi.main:app --reload --host 0.0.0.0 --port 8050
 ```
@@ -300,7 +307,20 @@ ENV=production
 DEBUG=false
 LOG_LEVEL=INFO
 CORS_ORIGINS=["https://your-frontend-domain.com"]
+
+# Production (when behind nginx/reverse proxy)
+BACKEND_URL=https://empirico.ai
+FRONTEND_URL=https://empirico.ai
 ```
+
+### Troubleshooting: 502 Bad Gateway on Google login
+
+If `https://empirico.ai/api/v2/auth/google/login` returns **502 Bad Gateway**:
+
+1. **Backend reachable** – Ensure the API container/process is running and nginx can reach it (e.g. `curl http://localhost:8050/api/v2/health` or your upstream URL).
+2. **Production env vars** – Set `BACKEND_URL=https://empirico.ai` and `FRONTEND_URL=https://empirico.ai` (no trailing slash). The backend uses `BACKEND_URL` to build the OAuth callback URL.
+3. **Google OAuth** – Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and optionally `GOOGLE_REDIRECT_URI=https://empirico.ai/api/v2/auth/google/callback` in the backend environment.
+4. **Logs** – Check backend logs when you hit the login URL; errors are logged with traceback.
 
 ### Google Cloud Setup
 
@@ -377,6 +397,7 @@ Development: http://localhost:8050/api/v2/
   - Google Sign-In integration
   - AI response formatting consistent with web app (headings, spacing, lists, blockquotes)
   - Push notifications (coming soon)
+- **Release builds**: For Google Sign-In to work in release APKs, add your **release keystore SHA-1** to the Android OAuth client in Google Cloud Console (APIs & Services → Credentials → your Android OAuth 2.0 client).
 
 ---
 
@@ -549,9 +570,7 @@ We welcome contributions! Please follow these guidelines:
 
 ### Documentation
 
-- **API Documentation**: Available at `/api/v2/docs`
-- **Architecture Guide**: See [ARCHITECTURE.md](ARCHITECTURE.md)
-- **Security Guide**: See [SECURITY.md](SECURITY.md) (if available)
+- **API Documentation**: Interactive docs at `/api/v2/docs` (Swagger) and `/api/v2/redoc` (ReDoc). Architecture and security overview are in the [Architecture](#-architecture) and [Security & Compliance](#-security--compliance) sections above.
 
 ### Getting Help
 
