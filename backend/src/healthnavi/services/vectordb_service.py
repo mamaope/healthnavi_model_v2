@@ -240,4 +240,14 @@ class ZillizService:
             logger.error(f"Failed to load collection '{self.collection_name}': {e}")
             raise
 
-vectordb_service = ZillizService()
+
+_vectordb_service: ZillizService | None = None
+
+
+def get_vectordb_service() -> ZillizService:
+    """Return the Zilliz service singleton, creating it on first use. 
+    Use so app/seed can start without connecting to Zilliz until vector search is needed."""
+    global _vectordb_service
+    if _vectordb_service is None:
+        _vectordb_service = ZillizService()
+    return _vectordb_service

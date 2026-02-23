@@ -9,6 +9,7 @@ import time
 import uuid
 import argparse
 import logging
+import hashlib
 import mimetypes
 import traceback
 import re
@@ -78,6 +79,10 @@ MILVUS_COLLECTION_NAME = os.getenv("MILVUS_COLLECTION_NAME", "medical_knowledge"
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "64"))
+
+# Hybrid collection: dense 3072 (Azure text-embedding-3-large) + sparse vectors
+DENSE_DIM = 3072
+SPARSE_DIM = int(os.getenv("MILVUS_SPARSE_DIM", "30000"))  # Must match collection sparse_vector dim
 
 # ---- Logging ----
 def setup_logging(log_dir: str = "./logs"):
@@ -157,6 +162,35 @@ def azure_embed_texts(texts: List[str]) -> List[List[float]]:
             raise
     return vectors
 
+
+def sparse_embed_text(text: str) -> Dict[int, float]:
+    """
+    Produce a sparse vector for hybrid search (BM25-style).
+    Tokenizes text, hashes tokens to dimension indices, and assigns weights.
+    Returns a dict {dimension_index: value} for non-zero dimensions only.
+    Dimension size is SPARSE_DIM; must match the collection's sparse_vector schema.
+    """
+    if not text or not text.strip():
+        return {}
+    # Simple tokenization: lowercase, split on non-alphanumeric, min length 2
+    tokens = re.findall(r"[a-z0-9]{2,}", text.lower())
+    if not tokens:
+        return {}
+    vec: Dict[int, float] = {}
+    for t in tokens:
+        # Stable hash so same token always maps to same index
+        h = int(hashlib.md5(t.encode("utf-8")).hexdigest()[:8], 16)
+        idx = h % SPARSE_DIM
+        vec[idx] = vec.get(idx, 0.0) + 1.0
+    # Optional: sublinear scaling (sqrt) to reduce impact of very frequent terms
+    return {k: (v ** 0.5) for k, v in vec.items()}
+
+
+def sparse_embed_texts(texts: List[str]) -> List[Dict[int, float]]:
+    """Batch sparse embedding for a list of texts."""
+    return [sparse_embed_text(t) for t in texts]
+
+
 def is_executable_in_path(cmd: str) -> bool:
     """Return True if shell command exists in PATH."""
     from shutil import which
@@ -194,6 +228,49 @@ def connect_milvus():
     except Exception as e:
         logger.exception("Failed to connect to Milvus. Check MILVUS_URI and MILVUS_TOKEN.")
         raise
+
+
+def _collection_has_sparse_field(collection: Collection) -> bool:
+    """Return True if the collection schema includes a sparse vector field (hybrid schema)."""
+    try:
+        for f in collection.schema.fields:
+            if getattr(f.dtype, "name", str(f.dtype)) == "SPARSE_FLOAT_VECTOR":
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def get_hybrid_collection(collection_name: str) -> Collection:
+    """
+    Load the existing hybrid Milvus collection (vector + sparse_vector + payload).
+    Does not create a collection; the hybrid collection must already exist in Zilliz (e.g. empirico_medical_knowledge).
+    Validates that the schema has 'vector', 'sparse_vector', and 'payload' for hybrid search compatibility.
+    """
+    if not utility.has_collection(collection_name):
+        raise RuntimeError(
+            f"Hybrid collection '{collection_name}' not found. "
+            "Create it in Zilliz Cloud with fields: id (INT64, Auto ID), vector (FLOAT_VECTOR 3072), "
+            "sparse_vector (SPARSE_FLOAT_VECTOR), payload (JSON)."
+        )
+    col = Collection(collection_name)
+    col.load()
+    field_names = {f.name for f in col.schema.fields}
+    required = {"vector", "sparse_vector", "payload"}
+    missing = required - field_names
+    if missing:
+        raise RuntimeError(
+            f"Collection '{collection_name}' is not a hybrid schema. Missing fields: {missing}. "
+            f"Expected: vector (3072), sparse_vector, payload (JSON)."
+        )
+    if not _collection_has_sparse_field(col):
+        raise RuntimeError(
+            f"Collection '{collection_name}' has no SPARSE_FLOAT_VECTOR field. "
+            "Use a hybrid collection created in Zilliz Cloud."
+        )
+    logger.info(f"Loaded hybrid collection '{collection_name}' with {col.num_entities} entities.")
+    return col
+
 
 def ensure_milvus_collection(collection_name: str, dim: int) -> Collection:
     """
@@ -245,34 +322,31 @@ def get_existing_filenames(collection: Collection) -> set:
     """
     Query Milvus collection to get all existing filenames.
     Returns a set of filenames that are already in the collection.
+    Supports both legacy schema (id VARCHAR) and hybrid schema (id INT64 auto, payload JSON).
     Uses pagination to avoid gRPC message size limits.
     """
     try:
         collection.load()
         filenames = set()
-        batch_size = 1000 
-        offset = 0
-        
-        logger.info("Retrieving existing filenames from collection (this may take a moment)...")
-        
-        # gRPC has 4MB message limit - payload field can be large
-        # Use very small batches to stay under limit
-        batch_size = 100  # Small batch to avoid gRPC message size limit
-        last_id = ""
+        batch_size = 100
         total_processed = 0
-        
+        is_hybrid = _collection_has_sparse_field(collection)
+        # Hybrid uses INT64 auto id; legacy uses VARCHAR id
+        last_id: Any = 0 if is_hybrid else ""
+
+        logger.info("Retrieving existing filenames from collection (this may take a moment)...")
+
         while True:
-            # Query records after last_id (lexicographic sorting)
-            if last_id:
-                expr = f'id > "{last_id}"'
+            if is_hybrid:
+                expr = f"id > {last_id}" if last_id != "" else "id >= 0"
             else:
-                expr = "id != ''"
-            
+                expr = f'id > "{last_id}"' if last_id else "id != ''"
+
             try:
                 results = collection.query(
                     expr=expr,
                     output_fields=["id", "payload"],
-                    limit=batch_size
+                    limit=batch_size,
                 )
             except Exception as e:
                 if "larger than max" in str(e) and batch_size > 10:
@@ -280,31 +354,33 @@ def get_existing_filenames(collection: Collection) -> set:
                     logger.debug(f"Reducing batch size to {batch_size} due to gRPC limit")
                     continue
                 raise
-            
+
             if not results:
                 break
-            
+
             for result in results:
                 try:
-                    payload = json.loads(result.get("payload", "{}"))
+                    raw_payload = result.get("payload", "{}")
+                    if isinstance(raw_payload, dict):
+                        payload = raw_payload
+                    else:
+                        payload = json.loads(raw_payload or "{}")
                     filename = payload.get("filename")
                     if filename:
                         filenames.add(filename)
-                    # Track last ID for next iteration
                     last_id = result.get("id", last_id)
                 except Exception as e:
                     logger.debug(f"Could not parse payload: {e}")
                     continue
-            
+            if is_hybrid and results:
+                last_id = max(r.get("id", last_id) for r in results)
+
             total_processed += len(results)
-            
             if len(results) < batch_size:
                 break
-            
-            # Log progress every 1000 records
             if total_processed % 1000 == 0:
                 logger.info(f"Processed {total_processed} chunks, found {len(filenames)} unique files so far...")
-        
+
         logger.info(f"Found {len(filenames)} unique files in collection (from {total_processed} chunks)")
         return filenames
     except Exception as e:
@@ -313,15 +389,36 @@ def get_existing_filenames(collection: Collection) -> set:
 
 def upsert_to_milvus(collection: Collection, ids: List[str], vectors: List[List[float]], metas: List[Dict[str, Any]]):
     """
-    Insert rows into Milvus. metas are JSON-serializable metadata per vector.
+    Insert rows into Milvus (legacy schema: id, embedding, payload VARCHAR).
     """
     payloads = [json.dumps(m) for m in metas]
     try:
         collection.insert([ids, vectors, payloads])
-        collection.flush()  # Ensure data is persisted
+        collection.flush()
         logger.info(f"Inserted {len(ids)} vectors to Milvus collection {collection.name}.")
     except Exception as e:
         logger.exception("Milvus insert failed.")
+        raise
+
+
+def upsert_hybrid_to_milvus(
+    collection: Collection,
+    vectors: List[List[float]],
+    sparse_vectors: List[Dict[int, float]],
+    metas: List[Dict[str, Any]],
+):
+    """
+    Insert rows into a hybrid Milvus collection (vector, sparse_vector, payload JSON).
+    id is auto-generated; do not pass it.
+    """
+    # Payload as list of dicts for JSON field
+    payloads = [m for m in metas]
+    try:
+        collection.insert([vectors, sparse_vectors, payloads])
+        collection.flush()
+        logger.info(f"Inserted {len(vectors)} hybrid vectors (dense + sparse) to Milvus collection {collection.name}.")
+    except Exception as e:
+        logger.exception("Milvus hybrid insert failed.")
         raise
 
 # ---- Text extraction & chunking ----
@@ -848,35 +945,36 @@ class Ingestor:
         logger.info(f"From file {filename} produced {len(enriched)} chunks (title: '{document_title}', method: {extraction_method}).")
         return enriched
 
-    def ingest_batch(self, items: List[Dict[str,Any]]):
+    def ingest_batch(self, items: List[Dict[str, Any]]):
         """
         items: list of dict with keys: 'text','meta'
-        Embeds each text, upserts to Milvus.
+        Embeds each text (dense + sparse for hybrid), upserts to Milvus hybrid collection.
         """
         texts = [it["text"] for it in items]
         metas = [it["meta"] for it in items]
-        
-        # Add the text content to metadata so it's stored in the payload
+
         enriched_metas = []
         for text, meta in zip(texts, metas):
             enriched_meta = meta.copy()
             enriched_meta["chunk_text"] = text
-            # Also add display_page_number field (map from 'page')
             enriched_meta["display_page_number"] = meta.get("page", "?")
-            # Add file_path field (map from 'source')
             enriched_meta["file_path"] = meta.get("source", meta.get("filename", "Unknown"))
             enriched_metas.append(enriched_meta)
 
         vectors = azure_embed_texts(texts)
         dim = len(vectors[0])
-        # ensure collection exists (only create once)
-        if self.collection is None:
-            self.collection = ensure_milvus_collection(self.milvus_collection_name, dim)
+        if dim != DENSE_DIM:
+            raise RuntimeError(
+                f"Azure embedding dimension {dim} does not match hybrid collection dense dim {DENSE_DIM}. "
+                "Use text-embedding-3-large (3072) for empirico_medical_knowledge."
+            )
 
-        # generate IDs
-        ids = [str(uuid.uuid4()) for _ in vectors]
-        # upsert
-        upsert_to_milvus(self.collection, ids, vectors, enriched_metas)
+        sparse_vectors = sparse_embed_texts(texts)
+
+        if self.collection is None:
+            self.collection = get_hybrid_collection(self.milvus_collection_name)
+
+        upsert_hybrid_to_milvus(self.collection, vectors, sparse_vectors, enriched_metas)
 
 
 # ---- File sources: local dir only ----
@@ -898,6 +996,7 @@ def main():
     )
     parser.add_argument("--input-dir", type=str, required=True, help="Local input directory containing docs (required)")
     parser.add_argument("--refresh", action="store_true", help="Drop existing collection and start fresh")
+    parser.add_argument("--skip-dedup", action="store_true", help="Skip checking existing filenames in collection (fast start; use when collection is very large)")
     parser.add_argument("--batch-size", type=int, default=32, help="Number of chunks per embedding batch")
     parser.add_argument("--quarantine-dir", type=str, default="./quarantine", help="Where to move failed files")
     parser.add_argument("--log-dir", type=str, default="./logs_priority", help="Directory for log files")
@@ -924,22 +1023,27 @@ def main():
 
     # Handle refresh mode BEFORE creating Ingestor
     if args.refresh:
-        # Connect to Milvus first
         from pymilvus import connections, utility
         try:
-            # Disconnect any existing connections first to clear cache
             try:
                 connections.disconnect("default")
-            except:
+            except Exception:
                 pass
-            
+
             connections.connect(uri=MILVUS_URI, token=MILVUS_TOKEN)
             if utility.has_collection(MILVUS_COLLECTION_NAME):
-                logger.warning(f"Dropping existing collection '{MILVUS_COLLECTION_NAME}'...")
-                utility.drop_collection(MILVUS_COLLECTION_NAME)
-                logger.info(f"Dropped collection '{MILVUS_COLLECTION_NAME}'.")
+                col = Collection(MILVUS_COLLECTION_NAME)
+                if _collection_has_sparse_field(col):
+                    logger.warning(
+                        f"Collection '{MILVUS_COLLECTION_NAME}' is a hybrid collection; "
+                        "skipping drop (--refresh has no effect). Create a new collection in Zilliz if you need to start fresh."
+                    )
+                else:
+                    logger.warning(f"Dropping existing collection '{MILVUS_COLLECTION_NAME}'...")
+                    utility.drop_collection(MILVUS_COLLECTION_NAME)
+                    logger.info(f"Dropped collection '{MILVUS_COLLECTION_NAME}'.")
             connections.disconnect("default")
-            time.sleep(2)  # Wait for drop to fully complete
+            time.sleep(2)
         except Exception as e:
             logger.error(f"Error during refresh: {e}")
 
@@ -954,18 +1058,20 @@ def main():
         logger.warning("No files found to process. Exiting.")
         sys.exit(0)
 
-    # Get existing filenames to skip already processed files
-    logger.info("Checking for already processed files in collection...")
-    existing_filenames = set()
-    try:
-        if ing.collection is None:
-            # Create collection to check for existing files
-            test_dim = 3072  # Azure text-embedding-3-large dimension
-            ing.collection = ensure_milvus_collection(MILVUS_COLLECTION_NAME, test_dim)
-        existing_filenames = get_existing_filenames(ing.collection)
-        logger.info(f"Found {len(existing_filenames)} unique files already in collection")
-    except Exception as e:
-        logger.warning(f"Could not check for existing files: {e}. Will process all files.")
+    # Get existing filenames to skip already processed files (unless --skip-dedup)
+    if args.skip_dedup:
+        logger.info("Skipping existing-files check (--skip-dedup). All input files will be processed.")
+        existing_filenames = set()
+    else:
+        logger.info("Checking for already processed files in collection...")
+        existing_filenames = set()
+        try:
+            if ing.collection is None:
+                ing.collection = get_hybrid_collection(MILVUS_COLLECTION_NAME)
+            existing_filenames = get_existing_filenames(ing.collection)
+            logger.info(f"Found {len(existing_filenames)} unique files already in collection")
+        except Exception as e:
+            logger.warning(f"Could not check for existing files: {e}. Will process all files.")
     
     # Statistics tracking
     stats = {
