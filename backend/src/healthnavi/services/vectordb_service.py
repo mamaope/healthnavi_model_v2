@@ -1,10 +1,11 @@
 import os
+import re
 import time
 import hashlib
 from typing import List, Dict, Tuple, Any
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from pymilvus import MilvusClient
+from pymilvus import MilvusClient, AnnSearchRequest, RRFRanker
 import openai
 import logging
 
@@ -16,6 +17,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 load_dotenv()
+
+# Must match the MILVUS_SPARSE_DIM used during ingestion (default 30000)
+SPARSE_DIM = int(os.getenv("MILVUS_SPARSE_DIM", "30000"))
 
 # Embedding cache to avoid regenerating embeddings for the same queries
 # Cache key: query hash -> (embedding, timestamp)
@@ -51,6 +55,24 @@ def _cache_embedding(query: str, embedding: List[float]):
         for key in sorted_keys[:50]:  # Remove 50 oldest
             del EMBEDDING_CACHE[key]
         logger.info(f"🧹 Embedding cache cleanup - Removed 50 oldest entries")
+
+def _sparse_embed_query(text: str) -> Dict[int, float]:
+    """
+    Generate a sparse BM25-style vector for the query using the same hashing scheme
+    as the ingestion pipeline. Must stay in sync with sparse_embed_text() in ingest_priority_docs.py.
+    Tokens are lowercased, hashed with MD5 modulo SPARSE_DIM, and weighted with sqrt(TF).
+    """
+    if not text or not text.strip():
+        return {}
+    tokens = re.findall(r"[a-z0-9]{2,}", text.lower())
+    if not tokens:
+        return {}
+    vec: Dict[int, float] = {}
+    for t in tokens:
+        h = int(hashlib.md5(t.encode("utf-8")).hexdigest()[:8], 16)
+        idx = h % SPARSE_DIM
+        vec[idx] = vec.get(idx, 0.0) + 1.0
+    return {k: (v ** 0.5) for k, v in vec.items()}
 
 class ZillizService:
     """Service for interacting with Zilliz Cloud."""
@@ -155,16 +177,36 @@ class ZillizService:
 
         try:
             query_embedding = self.generate_query_embedding(query)
+            query_sparse = _sparse_embed_query(query)
 
-            # Request fewer candidates for small k to speed up quick search
-            retrieve_k = min(k * 2, 80) if k <= 16 else min(k * 3, 100)
-            
-            search_results = self.client.search(
-                collection_name=self.collection_name,
+            # Dense: quality candidates — moderate cap to keep latency low.
+            # Sparse: cast a wide net so exact drug name tokens are never truncated off
+            # the candidate list. Sparse IP search is cheap, so a higher limit is fine.
+            dense_limit = min(k * 3, 120)
+            sparse_limit = min(k * 8, 500)
+            # Final output after RRF fusion — at most dense_limit results returned
+            fusion_limit = dense_limit
+
+            # Hybrid search: dense (semantic) + sparse (keyword/exact-match) fused with RRF.
+            # Dense finds semantically similar content; sparse ensures exact drug brand names
+            dense_req = AnnSearchRequest(
                 data=[query_embedding],
-                limit=retrieve_k,
+                anns_field="vector",
+                param={"metric_type": "COSINE"},
+                limit=dense_limit,
+            )
+            sparse_req = AnnSearchRequest(
+                data=[query_sparse],
+                anns_field="sparse_vector",
+                param={"metric_type": "IP"},
+                limit=sparse_limit,
+            )
+            search_results = self.client.hybrid_search(
+                collection_name=self.collection_name,
+                reqs=[dense_req, sparse_req],
+                ranker=RRFRanker(k=60),
+                limit=fusion_limit,
                 output_fields=["payload"],
-                search_params={"metric_type": "COSINE"}
             )
 
             if not search_results or not search_results[0]:
