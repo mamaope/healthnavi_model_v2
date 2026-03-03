@@ -1,6 +1,6 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, memo, useEffect, useRef, useState } from 'react'
 import type { ChatMessage } from '../../types/chat'
-import { renderModelResponse } from '../../utils/markdown'
+import { getRenderModelResponse, loadMarkdownRenderer } from '../../utils/markdownLoader'
 import { chatApi, sessionsApi } from '../../services/apiClient'
 import { useAuth } from '../../providers/AuthProvider'
 import { useChatStore } from '../../store/useChatStore'
@@ -12,7 +12,85 @@ interface MessageListProps {
   onDeepSearch?: (userQuestion: string) => void
 }
 
-export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch }: MessageListProps) {
+// Fallback renderer (plain text with line breaks) until markdown chunk loads
+const fallbackRender = getRenderModelResponse()
+
+// Memoized AI message row to avoid re-rendering all messages during streaming
+const AIMessageRow = memo(function AIMessageRow({
+  message,
+  renderContent,
+  feedback,
+  copyStatus,
+  shareStatus,
+  isSubmittingFeedback,
+  onDeepSearch,
+  onCopy,
+  onShare,
+  onFeedbackClick,
+}: {
+  message: ChatMessage
+  renderContent: (content: string) => string
+  feedback: 'helpful' | 'not_helpful' | null
+  copyStatus: 'copied' | null
+  shareStatus: 'shared' | 'copied' | null
+  isSubmittingFeedback: boolean
+  onDeepSearch: () => void
+  onCopy: () => void
+  onShare: () => void
+  onFeedbackClick: (value: 'helpful' | 'not_helpful') => void
+}) {
+  return (
+    <div className="message ai-message">
+      <div className="message-content">
+        <div dangerouslySetInnerHTML={{ __html: renderContent(message.content) }} />
+        {message.content.length > 0 && (
+          <div className="message-actions" role="group" aria-label="AI response feedback">
+            <button type="button" className="message-action deep-search" onClick={onDeepSearch} aria-label="Deep search" title="Get a more detailed response">
+              <i className="fas fa-brain" aria-hidden="true" />
+              <span className="sr-only">Deep search</span>
+            </button>
+            <button type="button" className="message-action neutral" onClick={onCopy} aria-label="Copy AI response">
+              <i className="fas fa-copy" aria-hidden="true" />
+              <span className="sr-only">Copy</span>
+            </button>
+            <button type="button" className="message-action neutral" onClick={onShare} aria-label="Share">
+              <i className="fas fa-share-alt" aria-hidden="true" />
+              <span className="sr-only">Share</span>
+            </button>
+            <button
+              type="button"
+              className={`message-action positive ${feedback === 'helpful' ? 'active' : ''}`}
+              onClick={() => onFeedbackClick('helpful')}
+              aria-pressed={feedback === 'helpful'}
+              aria-label="Helpful"
+              disabled={isSubmittingFeedback}
+              title={!message.messageId ? 'Message ID missing - cannot submit feedback' : 'Mark as helpful'}
+            >
+              <i className="fas fa-thumbs-up" aria-hidden="true" />
+              <span className="sr-only">Helpful</span>
+            </button>
+            <button
+              type="button"
+              className={`message-action negative ${feedback === 'not_helpful' ? 'active' : ''}`}
+              onClick={() => onFeedbackClick('not_helpful')}
+              aria-pressed={feedback === 'not_helpful'}
+              aria-label="Not helpful"
+              disabled={isSubmittingFeedback}
+              title={!message.messageId ? 'Message ID missing - cannot submit feedback' : 'Mark as not helpful'}
+            >
+              <i className="fas fa-thumbs-down" aria-hidden="true" />
+              <span className="sr-only">Not helpful</span>
+            </button>
+            {shareStatus && <span className="message-action-status">{shareStatus === 'shared' ? 'Shared!' : 'Copied to clipboard'}</span>}
+            {copyStatus && <span className="message-action-status">Copied!</span>}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+})
+
+const MessageListComponent = function MessageList({ messages, showWelcomeMessage = false, onDeepSearch }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const { isAuthenticated } = useAuth()
   const [feedback, setFeedback] = useState<Record<string, 'helpful' | 'not_helpful' | null>>({})
@@ -22,11 +100,15 @@ export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch
   const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false)
   const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null)
   const [selectedFeedbackType, setSelectedFeedbackType] = useState<'helpful' | 'not_helpful' | null>(null)
+  const [renderContent, setRenderContent] = useState<((content: string) => string)>(() => fallbackRender)
   const shareTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  
-  // Streaming state commented out - reverted to non-streaming
-  // const isStreaming = useChatStore((state) => state.isStreaming)
-  // const streamingMessageId = useChatStore((state) => state.streamingMessageId)
+
+  // Lazy-load markdown (marked + DOMPurify) only when we have assistant messages
+  const hasAssistantMessage = messages.some((m) => m.author === 'assistant')
+  useEffect(() => {
+    if (!hasAssistantMessage) return
+    loadMarkdownRenderer().then((fn) => setRenderContent(() => fn))
+  }, [hasAssistantMessage])
 
   useEffect(() => {
     return () => {
@@ -95,21 +177,9 @@ export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch
     rating: number = 0,
     isRemoving: boolean = false
   ) => {
-    console.log('handleFeedback called:', {
-      messageId: message.id,
-      backendMessageId: message.messageId,
-      value,
-      feedbackTextLength: feedbackText.length,
-      rating,
-      isRemoving,
-      isAuthenticated
-    })
-    
     const messageId = message.id
 
-    // Only submit feedback if user is authenticated and message has a backend ID
     if (!isAuthenticated) {
-      console.warn('Cannot submit feedback: User not authenticated')
       // For unauthenticated users, just update local state
       setFeedback((prev) => ({
         ...prev,
@@ -123,33 +193,19 @@ export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch
     }
 
     if (!message.messageId) {
-      console.error('Cannot submit feedback: Message missing backend ID', {
-        messageId: message.id,
-        message: message,
-        allMessages: messages.map(m => ({ id: m.id, messageId: m.messageId, author: m.author }))
-      })
-      
-      // Try to reload the session to get fresh message data with messageId
       const { currentSession } = useChatStore.getState()
       if (currentSession && message.author === 'assistant') {
-        console.log('Attempting to reload session to get messageId...')
         try {
           const sessionMessages = await sessionsApi.messages(currentSession.id)
           if (sessionMessages.success && sessionMessages.data.messages) {
-            // Find matching message by content
-            const matchingMessage = sessionMessages.data.messages.find(m => 
-              m.message_type === 'assistant' && 
-              (m.content.trim() === message.content.trim() || 
-               m.content.trim().includes(message.content.trim().substring(0, 100)))
+            const matchingMessage = sessionMessages.data.messages.find(m =>
+              m.message_type === 'assistant' &&
+              (m.content.trim() === message.content.trim() ||
+                m.content.trim().includes(message.content.trim().substring(0, 100)))
             )
             if (matchingMessage && matchingMessage.id) {
               const fetchedMessageId = typeof matchingMessage.id === 'number' ? matchingMessage.id : parseInt(String(matchingMessage.id), 10)
-              // Update the message in the store
-              useChatStore.getState().replaceMessage(message.id, {
-                messageId: fetchedMessageId
-              })
-              console.log('✅ Fetched messageId from session:', fetchedMessageId)
-              // Retry feedback submission with the fetched messageId
+              useChatStore.getState().replaceMessage(message.id, { messageId: fetchedMessageId })
               message.messageId = fetchedMessageId
             } else {
               throw new Error('Message not found in session')
@@ -174,14 +230,6 @@ export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch
       }
     }
 
-    const backendMessageId = message.messageId
-    console.log('Submitting feedback:', {
-      backendMessageId,
-      feedbackType: value,
-      rating,
-      feedbackText: feedbackText.substring(0, 50) + '...'
-    })
-
     // Optimistically update UI
     setFeedback((prev) => ({
       ...prev,
@@ -191,13 +239,9 @@ export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch
 
     try {
       if (isRemoving) {
-        // Remove feedback
-        await chatApi.removeFeedback(backendMessageId)
-        console.log('Feedback removed successfully')
+        await chatApi.removeFeedback(message.messageId)
       } else {
-        // Submit feedback with text and rating
-        const response = await chatApi.submitFeedback(backendMessageId, value, feedbackText, rating)
-        console.log('Feedback submitted successfully:', response)
+        await chatApi.submitFeedback(message.messageId, value, feedbackText, rating)
       }
       // Close dialog immediately on successful submission
       setFeedbackDialogOpen(false)
@@ -221,18 +265,7 @@ export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch
   }
 
   const handleFeedbackSubmit = async (feedbackText: string, rating: number) => {
-    console.log('handleFeedbackSubmit called:', {
-      hasSelectedMessage: !!selectedMessage,
-      selectedFeedbackType,
-      feedbackTextLength: feedbackText.length,
-      rating
-    })
-    
     if (!selectedMessage || !selectedFeedbackType) {
-      console.error('Cannot submit feedback: Missing selected message or feedback type', {
-        selectedMessage,
-        selectedFeedbackType
-      })
       setFeedbackDialogOpen(false)
       setSelectedMessage(null)
       setSelectedFeedbackType(null)
@@ -301,109 +334,21 @@ export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch
         // const isCurrentlyStreaming = isStreaming && streamingMessageId === message.id
         
         if (message.author === 'assistant') {
-          // Hide empty message containers (they show as white ovals)
-          if (!message.content || message.content.trim().length === 0) {
-            return null
-          }
-          
+          if (!message.content || message.content.trim().length === 0) return null
           return (
-            <div key={message.id} className="message ai-message">
-              <div className="message-content">
-                <div
-                  dangerouslySetInnerHTML={{
-                    __html: renderModelResponse(message.content),
-                  }}
-                />
-                {/* Show actions when message has content */}
-                {message.content.length > 0 && (
-                  <div className="message-actions" role="group" aria-label="AI response feedback">
-                    {/* Deep search - first */}
-                    <button
-                      type="button"
-                      className="message-action deep-search"
-                      onClick={() => handleDeepSearch(message)}
-                      aria-label="Deep search"
-                      title="Get a more detailed response"
-                    >
-                      <i className="fas fa-brain" aria-hidden="true" />
-                      <span className="sr-only">Deep search</span>
-                    </button>
-                    {/* Copy - second */}
-                    <button
-                      type="button"
-                      className="message-action neutral"
-                      onClick={() => handleCopy(message.id, message.content)}
-                      aria-label="Copy AI response"
-                    >
-                      <i className="fas fa-copy" aria-hidden="true" />
-                      <span className="sr-only">Copy</span>
-                    </button>
-                    {/* Share - third */}
-                    <button
-                      type="button"
-                      className="message-action neutral"
-                      onClick={() => handleShare(message.id, message.content)}
-                      aria-label="Share"
-                    >
-                      <i className="fas fa-share-alt" aria-hidden="true" />
-                      <span className="sr-only">Share</span>
-                    </button>
-                    {/* Useful (Helpful) - fourth */}
-                    <button
-                      type="button"
-                      className={`message-action positive ${feedback[message.id] === 'helpful' ? 'active' : ''}`}
-                      onClick={() => {
-                        console.log('Helpful button clicked:', {
-                          messageId: message.id,
-                          backendMessageId: message.messageId,
-                          hasMessageId: !!message.messageId,
-                          message: message
-                        })
-                        handleFeedbackClick(message, 'helpful')
-                      }}
-                      aria-pressed={feedback[message.id] === 'helpful'}
-                      aria-label="Helpful"
-                      disabled={isSubmittingFeedback[message.id]}
-                      title={!message.messageId ? 'Message ID missing - cannot submit feedback' : 'Mark as helpful'}
-                    >
-                      <i className="fas fa-thumbs-up" aria-hidden="true" />
-                      <span className="sr-only">Helpful</span>
-                    </button>
-                    {/* Not useful - fifth */}
-                    <button
-                      type="button"
-                      className={`message-action negative ${feedback[message.id] === 'not_helpful' ? 'active' : ''}`}
-                      onClick={() => {
-                        console.log('Not helpful button clicked:', {
-                          messageId: message.id,
-                          backendMessageId: message.messageId,
-                          hasMessageId: !!message.messageId,
-                          message: message
-                        })
-                        handleFeedbackClick(message, 'not_helpful')
-                      }}
-                      aria-pressed={feedback[message.id] === 'not_helpful'}
-                      aria-label="Not helpful"
-                      disabled={isSubmittingFeedback[message.id]}
-                      title={!message.messageId ? 'Message ID missing - cannot submit feedback' : 'Mark as not helpful'}
-                    >
-                      <i className="fas fa-thumbs-down" aria-hidden="true" />
-                      <span className="sr-only">Not helpful</span>
-                    </button>
-                    {shareStatus[message.id] && (
-                      <span className="message-action-status">
-                        {shareStatus[message.id] === 'shared' ? 'Shared!' : 'Copied to clipboard'}
-                      </span>
-                    )}
-                    {copyStatus[message.id] && (
-                      <span className="message-action-status">
-                        Copied!
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
+            <AIMessageRow
+              key={message.id}
+              message={message}
+              renderContent={renderContent}
+              feedback={feedback[message.id] ?? null}
+              copyStatus={copyStatus[message.id] ?? null}
+              shareStatus={shareStatus[message.id] ?? null}
+              isSubmittingFeedback={isSubmittingFeedback[message.id] ?? false}
+              onDeepSearch={() => handleDeepSearch(message)}
+              onCopy={() => handleCopy(message.id, message.content)}
+              onShare={() => handleShare(message.id, message.content)}
+              onFeedbackClick={(value) => handleFeedbackClick(message, value)}
+            />
           )
         }
 
@@ -457,3 +402,4 @@ export function MessageList({ messages, showWelcomeMessage = false, onDeepSearch
   )
 }
 
+export const MessageList = memo(MessageListComponent)

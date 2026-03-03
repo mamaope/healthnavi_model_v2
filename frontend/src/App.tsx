@@ -1,9 +1,11 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AppLoadingSkeleton } from './components/AppLoadingSkeleton'
+import './styles/app.css'
 
 // Lazy-load pages so the initial bundle is small and first paint is fast
 const HomePage = lazy(() => import('./pages/HomePage'))
+const AboutPage = lazy(() => import('./pages/AboutPage'))
 const TermsOfService = lazy(() => import('./pages/TermsOfService'))
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'))
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
@@ -24,6 +26,7 @@ export default function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/auth/google/success" element={<HomePage />} />
         <Route path="/auth/google/error" element={<HomePage />} />
+        <Route path="/about" element={<AboutPage />} />
         <Route path="/terms" element={<TermsOfService />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/admin" element={<AdminDashboard />} />

@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { APP_METADATA, STORAGE_KEYS } from '../config'
 import { authApi } from '../services/apiClient'
+import { useChatStore } from '../store/useChatStore'
 import type { User } from '../types/auth'
 
 interface AuthState {
@@ -122,16 +123,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           initializing: false,
           isAuthenticated: false,
         })
-        // Clear chat state when auth fails
         if (typeof window !== 'undefined') {
-          try {
-            const { useChatStore } = require('../store/useChatStore')
-            useChatStore.getState().reset()
-            window.localStorage.removeItem('empirico.chat')
-          } catch (error) {
-            window.localStorage.removeItem('empirico.chat')
-          }
-          // Refresh the page when auth fails
+          useChatStore.getState().reset()
+          window.localStorage.removeItem('empirico.chat')
           window.location.href = '/'
         }
       }
@@ -154,15 +148,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           initializing: false,
           isAuthenticated: false,
         })
-        // Clear chat state when auth fails
         if (typeof window !== 'undefined') {
-          try {
-            const { useChatStore } = require('../store/useChatStore')
-            useChatStore.getState().reset()
-            window.localStorage.removeItem('empirico.chat')
-          } catch (error) {
-            window.localStorage.removeItem('empirico.chat')
-          }
+          useChatStore.getState().reset()
+          window.localStorage.removeItem('empirico.chat')
         }
       } else {
         // Other error (network, server, etc.) - keep token but mark as not authenticated
@@ -218,7 +206,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const handleStorageChange = (e: StorageEvent | null = null) => {
       const updatedStored = getStoredAuth()
       
-      // If token was removed, clear auth state
       if (!updatedStored.token) {
         setAuthState({
           user: null,
@@ -226,16 +213,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           initializing: false,
           isAuthenticated: false,
         })
-        // Clear chat state when auth is cleared
         if (typeof window !== 'undefined') {
-          try {
-            const { useChatStore } = require('../store/useChatStore')
-            useChatStore.getState().reset()
-            window.localStorage.removeItem('empirico.chat')
-          } catch (error) {
-            window.localStorage.removeItem('empirico.chat')
-          }
-          // Refresh the page when auth is cleared
+          useChatStore.getState().reset()
+          window.localStorage.removeItem('empirico.chat')
           window.location.href = '/'
         }
       } else if (updatedStored.token && updatedStored.token !== stored.token) {
@@ -367,23 +347,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: false,
     })
     
-    // Clear chat state on logout
     if (typeof window !== 'undefined') {
-      // Clear chat store synchronously
-      try {
-        const { useChatStore } = require('../store/useChatStore')
-        useChatStore.getState().reset()
-        // Also clear persisted chat data from localStorage
-        window.localStorage.removeItem('empirico.chat')
-      } catch (error) {
-        console.warn('Failed to clear chat state on logout:', error)
-        // Fallback: manually clear chat localStorage
-        window.localStorage.removeItem('empirico.chat')
-      }
-      
-      // Dispatch logout event for other listeners
+      useChatStore.getState().reset()
+      window.localStorage.removeItem('empirico.chat')
       window.dispatchEvent(new Event('logout'))
-      // Refresh the page after logout
       window.location.href = '/'
     }
   }, [clearPersistedAuth])
