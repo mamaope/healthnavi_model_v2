@@ -220,6 +220,35 @@
   gap: 1.5rem;
 }
 
+.admin-tabs {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 1rem 2rem 0 2rem;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.admin-tab {
+  padding: 0.5rem 0.9rem;
+  border: 1px solid #d0d0d0;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #1a1a1a;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.admin-tab:hover {
+  background: #f3f4f6;
+}
+
+.admin-tab.active {
+  background: #0ea5e9;
+  border-color: #0ea5e9;
+  color: #ffffff;
+}
+
 @media (max-width: 1200px) {
   .admin-panels {
     grid-template-columns: 1fr;
@@ -240,5 +269,9 @@
 
   .admin-panels {
     padding: 1rem;
+  }
+
+  .admin-tabs {
+    padding: 1rem 1rem 0 1rem;
   }
 }

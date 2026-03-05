@@ -17,9 +17,12 @@ import SurveyStatisticsPanel from '../components/admin/SurveyStatisticsPanel'
 import DeviceStatisticsPanel from '../components/admin/DeviceStatisticsPanel'
 import FeedbackCommentsPanel from '../components/admin/FeedbackCommentsPanel'
 import UsageOverTimePanel from '../components/admin/UsageOverTimePanel'
+import UserSessionActivityPanel from '../components/admin/UserSessionActivityPanel'
+import SessionDetailsPanel from '../components/admin/SessionDetailsPanel'
 import './AdminDashboard.css'
 
 type FilterMode = 'preset' | 'custom'
+type AdminTab = 'overview' | 'users' | 'sessions' | 'feedback' | 'surveys' | 'system'
 
 export default function AdminDashboard() {
   const { user, isAuthenticated, initializing } = useAuth()
@@ -42,6 +45,7 @@ export default function AdminDashboard() {
     usersByType: Record<string, number>
     periodLabel: string
   } | null>(null)
+  const [activeTab, setActiveTab] = useState<AdminTab>('overview')
 
   const metricsParams = {
     days: filterMode === 'preset' ? days : undefined,
@@ -420,21 +424,104 @@ export default function AdminDashboard() {
       )}
 
       {metrics && (
-        <div className="admin-panels">
-          <UsageOverTimePanel filters={{ startDate: metricsParams.startDate, endDate: metricsParams.endDate, userIds: metricsParams.userIds, excludeUserIds: metricsParams.excludeUserIds }} days={effectiveDays} />
-          <UserTypeBreakdownPanel days={effectiveDays} />
-          <DeviceStatisticsPanel devices={metrics.devices} days={effectiveDays} />
-          <UsagePanel metrics={metrics.usage} days={effectiveDays} />
-          <ClinicalValuePanel metrics={metrics.clinical_value} />
-          <SafetyPanel metrics={metrics.safety} />
-          <PmfPanel metrics={metrics.pmf} />
-          <SessionManagementPanel days={effectiveDays} />
-          <AIResponseStatisticsPanel days={effectiveDays} />
-          <UserManagementPanel days={effectiveDays} />
-          <SurveyStatisticsPanel days={effectiveDays} />
-          <FeedbackCommentsPanel filters={{ startDate: feedbackDateRange.startDate, endDate: feedbackDateRange.endDate, userIds: metricsParams.userIds, excludeUserIds: metricsParams.excludeUserIds }} />
-          <SurveyManagementPanel />
-        </div>
+        <>
+          <div className="admin-tabs" role="tablist" aria-label="Admin sections">
+            <button type="button" role="tab" aria-selected={activeTab === 'overview'} className={`admin-tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>
+              Overview
+            </button>
+            <button type="button" role="tab" aria-selected={activeTab === 'users'} className={`admin-tab ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>
+              Users
+            </button>
+            <button type="button" role="tab" aria-selected={activeTab === 'sessions'} className={`admin-tab ${activeTab === 'sessions' ? 'active' : ''}`} onClick={() => setActiveTab('sessions')}>
+              Sessions
+            </button>
+            <button type="button" role="tab" aria-selected={activeTab === 'feedback'} className={`admin-tab ${activeTab === 'feedback' ? 'active' : ''}`} onClick={() => setActiveTab('feedback')}>
+              Feedback
+            </button>
+            <button type="button" role="tab" aria-selected={activeTab === 'surveys'} className={`admin-tab ${activeTab === 'surveys' ? 'active' : ''}`} onClick={() => setActiveTab('surveys')}>
+              Surveys
+            </button>
+            <button type="button" role="tab" aria-selected={activeTab === 'system'} className={`admin-tab ${activeTab === 'system' ? 'active' : ''}`} onClick={() => setActiveTab('system')}>
+              System
+            </button>
+          </div>
+
+          {activeTab === 'overview' && (
+            <div className="admin-panels">
+              <UsageOverTimePanel
+                filters={{
+                  startDate: metricsParams.startDate,
+                  endDate: metricsParams.endDate,
+                  userIds: metricsParams.userIds,
+                  excludeUserIds: metricsParams.excludeUserIds,
+                }}
+                days={effectiveDays}
+              />
+              <UsagePanel metrics={metrics.usage} days={effectiveDays} />
+              <ClinicalValuePanel metrics={metrics.clinical_value} />
+              <SafetyPanel metrics={metrics.safety} />
+              <PmfPanel metrics={metrics.pmf} />
+            </div>
+          )}
+
+          {activeTab === 'users' && (
+            <div className="admin-panels">
+              <UserTypeBreakdownPanel days={effectiveDays} />
+              <UserManagementPanel days={effectiveDays} />
+              <UserSessionActivityPanel
+                filters={{
+                  days: effectiveDays,
+                  startDate: metricsParams.startDate,
+                  endDate: metricsParams.endDate,
+                  userIds: metricsParams.userIds,
+                  excludeUserIds: metricsParams.excludeUserIds,
+                }}
+              />
+            </div>
+          )}
+
+          {activeTab === 'sessions' && (
+            <div className="admin-panels">
+              <SessionManagementPanel days={effectiveDays} />
+              <SessionDetailsPanel
+                filters={{
+                  days: effectiveDays,
+                  startDate: metricsParams.startDate,
+                  endDate: metricsParams.endDate,
+                  userIds: metricsParams.userIds,
+                  excludeUserIds: metricsParams.excludeUserIds,
+                }}
+              />
+            </div>
+          )}
+
+          {activeTab === 'feedback' && (
+            <div className="admin-panels">
+              <AIResponseStatisticsPanel days={effectiveDays} />
+              <FeedbackCommentsPanel
+                filters={{
+                  startDate: feedbackDateRange.startDate,
+                  endDate: feedbackDateRange.endDate,
+                  userIds: metricsParams.userIds,
+                  excludeUserIds: metricsParams.excludeUserIds,
+                }}
+              />
+            </div>
+          )}
+
+          {activeTab === 'surveys' && (
+            <div className="admin-panels">
+              <SurveyStatisticsPanel days={effectiveDays} />
+              <SurveyManagementPanel />
+            </div>
+          )}
+
+          {activeTab === 'system' && (
+            <div className="admin-panels">
+              <DeviceStatisticsPanel devices={metrics.devices} days={effectiveDays} />
+            </div>
+          )}
+        </>
       )}
     </div>
   )

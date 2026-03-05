@@ -45,22 +45,27 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
     
     init {
-        // Initialize repository with saved auth data (restore token to AuthTokenProvider)
+        // Restore session: load token first, then set authenticated state from persisted user.
+        // This keeps users logged in after app close until they log out.
         viewModelScope.launch {
             try {
                 authRepository.initialize()
-                _uiState.value = _uiState.value.copy(isInitialized = true)
-                // isAuthenticated is set by the flow collector below
+                val persistedUser = authRepository.getPersistedUser()
+                _uiState.value = _uiState.value.copy(
+                    isInitialized = true,
+                    currentUser = persistedUser,
+                    isAuthenticated = (persistedUser != null)
+                )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isInitialized = true,
                     isAuthenticated = false,
-                    errorMessage = null // Don't show init errors - user will see login screen
+                    errorMessage = null
                 )
             }
         }
-        
-        // Observe user state changes (isAuthenticated only true when initialized and user present)
+
+        // Keep UI in sync when user changes (login, logout, profile update)
         viewModelScope.launch {
             try {
                 authRepository.currentUser.collect { user ->

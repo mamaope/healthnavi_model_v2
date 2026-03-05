@@ -216,12 +216,14 @@ class ChatViewModel : ViewModel() {
         }
     }
     
-    fun sendMessage(message: String) {
+    fun sendMessage(message: String, useDeepSearch: Boolean? = null) {
         if (message.isBlank()) return
-        
+
+        val deepSearch = useDeepSearch ?: _uiState.value.deepSearchEnabled
+
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSending = true, errorMessage = null)
-            
+
             // Add user message immediately
             val userMessage = ChatMessage(
                 id = System.currentTimeMillis().toString(),
@@ -230,7 +232,7 @@ class ChatViewModel : ViewModel() {
                 createdAt = System.currentTimeMillis().toString()
             )
             chatRepository.addMessage(userMessage)
-            
+
             // Get or create session
             val sessionId = _uiState.value.currentSession?.id
             val finalSessionId = if (sessionId == null) {
@@ -238,9 +240,9 @@ class ChatViewModel : ViewModel() {
             } else {
                 sessionId
             }
-            
-            // Send to API
-            chatRepository.sendMessage(message, finalSessionId, _uiState.value.deepSearchEnabled)
+
+            // Send to API (use explicit deepSearch so performDeepSearch works reliably)
+            chatRepository.sendMessage(message, finalSessionId, deepSearch)
                 .onSuccess { response ->
                     val aiMessage = ChatMessage(
                         id = (System.currentTimeMillis() + 1).toString(),
@@ -316,17 +318,11 @@ class ChatViewModel : ViewModel() {
         // Find the user's question that prompted this AI response
         val currentIndex = _uiState.value.messages.indexOfFirst { it.id == aiMessage.id }
         if (currentIndex > 0) {
-            // Look backwards for the most recent user message
             for (i in currentIndex - 1 downTo 0) {
                 val message = _uiState.value.messages[i]
                 if (message.author == MessageAuthor.USER) {
-                    // Send the user's question again with deep search enabled
-                    viewModelScope.launch {
-                        _uiState.value = _uiState.value.copy(deepSearchEnabled = true)
-                        sendMessage(message.content ?: "")
-                        // Reset deep search after sending
-                        _uiState.value = _uiState.value.copy(deepSearchEnabled = false)
-                    }
+                    // Pass useDeepSearch = true so the API gets it even though we don't toggle UI state
+                    sendMessage(message.content ?: "", useDeepSearch = true)
                     return
                 }
             }

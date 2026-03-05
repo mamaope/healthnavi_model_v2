@@ -1347,61 +1347,79 @@ class AdminService:
         user_ids: Optional[List[int]] = None,
         exclude_user_ids: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
-        """Get session statistics including active sessions and average length."""
+        """Get aggregate session statistics including active sessions and average length."""
         try:
             period_start, period_end = self._resolve_period(days, period_start, period_end)
             now = datetime.utcnow()
-            
+
             # Total sessions
             total_sessions_q = self.db.query(func.count(DiagnosisSession.id)).filter(
-                text("diagnosis_sessions.created_at >= :period_start AND diagnosis_sessions.created_at < :period_end").bindparams(period_start=period_start, period_end=period_end)
+                text(
+                    "diagnosis_sessions.created_at >= :period_start "
+                    "AND diagnosis_sessions.created_at < :period_end"
+                ).bindparams(period_start=period_start, period_end=period_end)
             )
             if user_ids:
                 total_sessions_q = total_sessions_q.filter(DiagnosisSession.user_id.in_(user_ids))
             if exclude_user_ids:
                 total_sessions_q = total_sessions_q.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
             total_sessions = total_sessions_q.scalar() or 0
-            
+
             # Active sessions (sessions updated in last 24 hours)
             last_24h = (now - timedelta(hours=24)).isoformat()
-            active_sessions = self.db.query(func.count(DiagnosisSession.id)).filter(
+            active_sessions_q = self.db.query(func.count(DiagnosisSession.id)).filter(
                 text("diagnosis_sessions.updated_at >= :last_24h").bindparams(last_24h=last_24h)
-            ).scalar() or 0
-            
+            )
+            if user_ids:
+                active_sessions_q = active_sessions_q.filter(DiagnosisSession.user_id.in_(user_ids))
+            if exclude_user_ids:
+                active_sessions_q = active_sessions_q.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
+            active_sessions = active_sessions_q.scalar() or 0
+
             # Average session length (in messages)
-            session_lengths_q = self.db.query(
-                DiagnosisSession.id,
-                func.count(ChatMessage.id).label('message_count')
-            ).join(
-                ChatMessage, ChatMessage.session_id == DiagnosisSession.id
-            ).filter(
-                text("diagnosis_sessions.created_at >= :period_start AND diagnosis_sessions.created_at < :period_end").bindparams(period_start=period_start, period_end=period_end)
+            session_lengths_q = (
+                self.db.query(
+                    DiagnosisSession.id,
+                    func.count(ChatMessage.id).label("message_count"),
+                )
+                .join(ChatMessage, ChatMessage.session_id == DiagnosisSession.id)
+                .filter(
+                    text(
+                        "diagnosis_sessions.created_at >= :period_start "
+                        "AND diagnosis_sessions.created_at < :period_end"
+                    ).bindparams(period_start=period_start, period_end=period_end)
+                )
             )
             if user_ids:
                 session_lengths_q = session_lengths_q.filter(DiagnosisSession.user_id.in_(user_ids))
             if exclude_user_ids:
                 session_lengths_q = session_lengths_q.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
             session_lengths = session_lengths_q.group_by(DiagnosisSession.id).subquery()
-            
+
             avg_length_result = self.db.query(func.avg(session_lengths.c.message_count)).scalar()
             avg_session_length = float(avg_length_result) if avg_length_result is not None else 0.0
-            
+
             # Average session duration (time between first and last message)
             # This is approximate - we'll use created_at and updated_at
             sessions_with_duration_q = self.db.query(
                 DiagnosisSession.id,
                 DiagnosisSession.created_at,
-                DiagnosisSession.updated_at
+                DiagnosisSession.updated_at,
             ).filter(
-                text("diagnosis_sessions.created_at >= :period_start AND diagnosis_sessions.created_at < :period_end").bindparams(period_start=period_start, period_end=period_end)
+                text(
+                    "diagnosis_sessions.created_at >= :period_start "
+                    "AND diagnosis_sessions.created_at < :period_end"
+                ).bindparams(period_start=period_start, period_end=period_end)
             )
             if user_ids:
                 sessions_with_duration_q = sessions_with_duration_q.filter(DiagnosisSession.user_id.in_(user_ids))
             if exclude_user_ids:
-                sessions_with_duration_q = sessions_with_duration_q.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
+                sessions_with_duration_q = sessions_with_duration_q.filter(
+                    DiagnosisSession.user_id.notin_(exclude_user_ids)
+                )
             sessions_with_duration = sessions_with_duration_q.all()
-            
-            durations = []
+
+            durations: List[float] = []
             for session in sessions_with_duration:
                 try:
                     created = self.parse_datetime(session.created_at) if session.created_at else None
@@ -1410,20 +1428,266 @@ class AdminService:
                         duration_seconds = (updated - created).total_seconds()
                         if duration_seconds > 0:
                             durations.append(duration_seconds / 60)  # Convert to minutes
-                except:
+                except Exception:
                     continue
-            
+
             avg_duration_minutes = sum(durations) / len(durations) if durations else 0.0
-            
+
             return {
                 "total_sessions": total_sessions,
                 "active_sessions": active_sessions,
                 "avg_session_length": round(avg_session_length, 2),
-                "avg_duration_minutes": round(avg_duration_minutes, 2)
+                "avg_duration_minutes": round(avg_duration_minutes, 2),
+                "period_start": period_start,
+                "period_end": period_end,
             }
         except Exception as e:
             logger.error(f"Error getting session statistics: {e}")
-            raise
+            return {
+                "total_sessions": 0,
+                "active_sessions": 0,
+                "avg_session_length": 0.0,
+                "avg_duration_minutes": 0.0,
+                "period_start": None,
+                "period_end": None,
+            }
+
+    def get_user_session_activity(
+        self,
+        days: Optional[int] = 30,
+        period_start: Optional[str] = None,
+        period_end: Optional[str] = None,
+        user_ids: Optional[List[int]] = None,
+        exclude_user_ids: Optional[List[int]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Get per-user session activity for a period.
+
+        Returns per-user aggregates:
+        - user_id, email, full_name
+        - session_count in period
+        - first_session_at / last_session_at in period
+        """
+        try:
+            period_start_resolved, period_end_resolved = self._resolve_period(
+                days, period_start, period_end
+            )
+
+            q = (
+                self.db.query(
+                    User.id.label("user_id"),
+                    User.email,
+                    User.full_name,
+                    func.count(DiagnosisSession.id).label("session_count"),
+                    func.min(DiagnosisSession.created_at).label("first_session_at"),
+                    func.max(DiagnosisSession.created_at).label("last_session_at"),
+                )
+                .join(DiagnosisSession, DiagnosisSession.user_id == User.id)
+                .filter(
+                    text(
+                        "diagnosis_sessions.created_at >= :period_start "
+                        "AND diagnosis_sessions.created_at < :period_end"
+                    ).bindparams(period_start=period_start_resolved, period_end=period_end_resolved)
+                )
+            )
+
+            if user_ids:
+                q = q.filter(User.id.in_(user_ids))
+            if exclude_user_ids:
+                q = q.filter(User.id.notin_(exclude_user_ids))
+
+            q = q.group_by(User.id, User.email, User.full_name)
+
+            rows = q.all()
+
+            items: List[Dict[str, Any]] = []
+            total_sessions = 0
+            for row in rows:
+                count = int(row.session_count or 0)
+                total_sessions += count
+                items.append(
+                    {
+                        "user_id": row.user_id,
+                        "email": row.email,
+                        "full_name": row.full_name,
+                        "session_count": count,
+                        "first_session_at": row.first_session_at,
+                        "last_session_at": row.last_session_at,
+                    }
+                )
+
+            # Sort by most recent activity by default
+            items.sort(
+                key=lambda r: (r.get("last_session_at") or ""),
+                reverse=True,
+            )
+
+            return {
+                "items": items,
+                "total_users": len(items),
+                "total_sessions": total_sessions,
+                "period_start": period_start_resolved,
+                "period_end": period_end_resolved,
+            }
+        except Exception as e:
+            logger.error(f"Error getting user session activity: {e}")
+            return {
+                "items": [],
+                "total_users": 0,
+                "total_sessions": 0,
+                "period_start": None,
+                "period_end": None,
+            }
+
+    def get_session_details(
+        self,
+        days: Optional[int] = 30,
+        period_start: Optional[str] = None,
+        period_end: Optional[str] = None,
+        user_ids: Optional[List[int]] = None,
+        exclude_user_ids: Optional[List[int]] = None,
+        exclude_emails: Optional[List[str]] = None,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """
+        List session details (one row per session) for a period, newest first.
+
+        Includes user name/email and per-session message counts.
+        """
+        try:
+            period_start_resolved, period_end_resolved = self._resolve_period(
+                days, period_start, period_end
+            )
+
+            limit_int = max(1, min(1000, int(limit or 200)))
+            offset_int = max(0, int(offset or 0))
+            exclude_email_set = {e.strip().lower() for e in (exclude_emails or []) if e and e.strip()}
+
+            # Base query: sessions in range joined to users
+            q = (
+                self.db.query(
+                    DiagnosisSession.id.label("session_id"),
+                    DiagnosisSession.user_id,
+                    DiagnosisSession.session_name,
+                    DiagnosisSession.patient_summary,
+                    DiagnosisSession.created_at,
+                    DiagnosisSession.updated_at,
+                    User.email,
+                    User.full_name,
+                )
+                .join(User, User.id == DiagnosisSession.user_id)
+                .filter(
+                    text(
+                        "diagnosis_sessions.created_at >= :period_start "
+                        "AND diagnosis_sessions.created_at < :period_end"
+                    ).bindparams(period_start=period_start_resolved, period_end=period_end_resolved)
+                )
+            )
+
+            if user_ids:
+                q = q.filter(DiagnosisSession.user_id.in_(user_ids))
+            if exclude_user_ids:
+                q = q.filter(DiagnosisSession.user_id.notin_(exclude_user_ids))
+            if exclude_email_set:
+                # Emails are stored on users table
+                q = q.filter(func.lower(User.email).notin_(list(exclude_email_set)))
+
+            total = q.count()
+
+            # Pagination + sort
+            rows = (
+                q.order_by(desc(DiagnosisSession.created_at))
+                .offset(offset_int)
+                .limit(limit_int)
+                .all()
+            )
+
+            session_ids = [int(r.session_id) for r in rows]
+            message_counts: Dict[int, int] = {}
+            user_message_counts: Dict[int, int] = {}
+            assistant_message_counts: Dict[int, int] = {}
+
+            if session_ids:
+                # Total messages per session
+                counts = (
+                    self.db.query(
+                        ChatMessage.session_id,
+                        func.count(ChatMessage.id).label("cnt"),
+                    )
+                    .filter(ChatMessage.session_id.in_(session_ids))
+                    .group_by(ChatMessage.session_id)
+                    .all()
+                )
+                message_counts = {int(sid): int(cnt) for sid, cnt in counts}
+
+                # User messages per session
+                ucounts = (
+                    self.db.query(
+                        ChatMessage.session_id,
+                        func.count(ChatMessage.id).label("cnt"),
+                    )
+                    .filter(
+                        ChatMessage.session_id.in_(session_ids),
+                        ChatMessage.message_type == "user",
+                    )
+                    .group_by(ChatMessage.session_id)
+                    .all()
+                )
+                user_message_counts = {int(sid): int(cnt) for sid, cnt in ucounts}
+
+                # Assistant messages per session
+                acounts = (
+                    self.db.query(
+                        ChatMessage.session_id,
+                        func.count(ChatMessage.id).label("cnt"),
+                    )
+                    .filter(
+                        ChatMessage.session_id.in_(session_ids),
+                        ChatMessage.message_type == "assistant",
+                    )
+                    .group_by(ChatMessage.session_id)
+                    .all()
+                )
+                assistant_message_counts = {int(sid): int(cnt) for sid, cnt in acounts}
+
+            items: List[Dict[str, Any]] = []
+            for r in rows:
+                sid = int(r.session_id)
+                items.append(
+                    {
+                        "session_id": sid,
+                        "user_id": int(r.user_id),
+                        "email": r.email,
+                        "full_name": r.full_name,
+                        "session_name": r.session_name,
+                        "patient_summary": r.patient_summary,
+                        "created_at": r.created_at,
+                        "updated_at": r.updated_at,
+                        "message_count": message_counts.get(sid, 0),
+                        "user_message_count": user_message_counts.get(sid, 0),
+                        "assistant_message_count": assistant_message_counts.get(sid, 0),
+                    }
+                )
+
+            return {
+                "items": items,
+                "total": int(total),
+                "limit": limit_int,
+                "offset": offset_int,
+                "period_start": period_start_resolved,
+                "period_end": period_end_resolved,
+            }
+        except Exception as e:
+            logger.error(f"Error getting session details: {e}", exc_info=True)
+            return {
+                "items": [],
+                "total": 0,
+                "limit": 0,
+                "offset": 0,
+                "period_start": None,
+                "period_end": None,
+            }
     
     def get_ai_response_statistics(
         self,
