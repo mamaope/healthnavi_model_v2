@@ -118,6 +118,16 @@ export function Header({ onSignIn, onRegister, onHomeClick, onMenuToggle, showMe
                       className="header-menu-item"
                       onClick={() => {
                         setIsMenuOpen(false)
+                        navigate('/about')
+                      }}
+                    >
+                      <i className="fas fa-info-circle" />
+                      <span>About</span>
+                    </button>
+                    <button
+                      className="header-menu-item"
+                      onClick={() => {
+                        setIsMenuOpen(false)
                         window.open('https://play.google.com/apps/internaltest/4701007698232696065', '_blank', 'noopener,noreferrer')
                       }}
                     >
@@ -149,6 +159,16 @@ export function Header({ onSignIn, onRegister, onHomeClick, onMenuToggle, showMe
                       <ThemeToggle ariaLabel="Toggle light/dark theme" variant="header" />
                     </div>
                     <div className="header-menu-divider" />
+                    <button
+                      className="header-menu-item"
+                      onClick={() => {
+                        setIsMenuOpen(false)
+                        navigate('/about')
+                      }}
+                    >
+                      <i className="fas fa-info-circle" />
+                      <span>About</span>
+                    </button>
                     <button
                       className="header-menu-item"
                       onClick={() => {

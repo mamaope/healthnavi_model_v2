@@ -198,6 +198,25 @@ export default function HomePage() {
     [],
   )
 
+  const handleDeepSearch = useCallback(
+    async (userQuestion: string) => {
+      setFollowupQuestions([])
+      try {
+        const result = await sendMessage({
+          message: userQuestion,
+          sessionId: currentSession?.id,
+          deepSearch: true,
+        })
+        if (result && 'followupQuestions' in result && result.followupQuestions) {
+          setFollowupQuestions(result.followupQuestions)
+        }
+      } catch (error) {
+        console.error('Error sending deep search message:', error)
+      }
+    },
+    [sendMessage, currentSession?.id, setFollowupQuestions],
+  )
+
   const handleToggleSidebar = useCallback(() => {
     setMobileMenuOpen((prev) => !prev)
   }, [])
@@ -420,6 +439,10 @@ export default function HomePage() {
           <footer className="app-footer">
             <div className="footer-content">
               <div className="footer-links">
+                <Link to="/about" className="footer-link">
+                  About
+                </Link>
+                <span className="footer-divider">•</span>
                 <Link to="/terms" className="footer-link">
                   Terms
                 </Link>

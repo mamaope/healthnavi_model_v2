@@ -4,9 +4,8 @@ import { BrowserRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from './providers/ThemeProvider'
 import { AuthProvider } from './providers/AuthProvider'
-import './styles/app.css'
 
-// Lazy-load App so initial bundle is smaller; app chunk loads in parallel after first paint
+// Lazy-load App so initial bundle is smaller; app.css loads with App chunk app chunk loads in parallel after first paint
 const App = lazy(() => import('./App'))
 
 // Minimal fallback matching the HTML skeleton (same class names) so no extra CSS or component

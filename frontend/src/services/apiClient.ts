@@ -540,6 +540,29 @@ export type AdminMetricsParams = {
   excludeUserIds?: number[]
 }
 
+export type AdminUserSessionActivityItem = {
+  user_id: number
+  email: string
+  full_name?: string
+  session_count: number
+  first_session_at?: string | null
+  last_session_at?: string | null
+}
+
+export type AdminSessionDetailItem = {
+  session_id: number
+  user_id: number
+  email: string
+  full_name?: string
+  session_name?: string | null
+  patient_summary?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  message_count: number
+  user_message_count: number
+  assistant_message_count: number
+}
+
 export const adminApi = {
   getMetrics(params: number | AdminMetricsParams = 30) {
     const isObj = typeof params === 'object' && params !== null
@@ -647,6 +670,48 @@ export const adminApi = {
       `/admin/metrics/devices?days=${d}${debug ? '&debug=1' : ''}`,
       'GET',
     )
+  },
+  getUserSessionActivity(params: AdminMetricsParams = {}) {
+    const search = new URLSearchParams()
+    const days = params.days ?? 30
+    search.set('days', String(Math.max(1, Math.min(365, typeof days === 'number' && !Number.isNaN(days) ? Math.floor(days) : 30))))
+    if (params.startDate) search.set('start_date', params.startDate)
+    if (params.endDate) search.set('end_date', params.endDate)
+    if (params.userIds?.length) search.set('user_ids', params.userIds.join(','))
+    if (params.excludeUserIds?.length) search.set('exclude_user_ids', params.excludeUserIds.join(','))
+    return apiFetch<{
+      success: boolean
+      data: {
+        items: AdminUserSessionActivityItem[]
+        total_users: number
+        total_sessions: number
+        period_start: string | null
+        period_end: string | null
+      }
+    }>(`/admin/sessions/users?${search.toString()}`, 'GET')
+  },
+  getSessionDetails(params: AdminMetricsParams & { excludeEmails?: string[]; limit?: number; offset?: number } = {}) {
+    const search = new URLSearchParams()
+    const days = params.days ?? 30
+    search.set('days', String(Math.max(1, Math.min(365, typeof days === 'number' && !Number.isNaN(days) ? Math.floor(days) : 30))))
+    if (params.startDate) search.set('start_date', params.startDate)
+    if (params.endDate) search.set('end_date', params.endDate)
+    if (params.userIds?.length) search.set('user_ids', params.userIds.join(','))
+    if (params.excludeUserIds?.length) search.set('exclude_user_ids', params.excludeUserIds.join(','))
+    if (params.excludeEmails?.length) search.set('exclude_emails', params.excludeEmails.join(','))
+    search.set('limit', String(params.limit ?? 200))
+    search.set('offset', String(params.offset ?? 0))
+    return apiFetch<{
+      success: boolean
+      data: {
+        items: AdminSessionDetailItem[]
+        total: number
+        limit: number
+        offset: number
+        period_start: string | null
+        period_end: string | null
+      }
+    }>(`/admin/sessions/details?${search.toString()}`, 'GET')
   },
   seedTestDeviceActivity() {
     return apiFetch<{ success: boolean; data: { message: string } }>(

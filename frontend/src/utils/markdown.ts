@@ -507,8 +507,7 @@ function renderMarkdownWithEnhancements(markdown: string): string {
 }
 
 export function renderModelResponse(content: string): string {
-  if (!content) return ''
-
+  if (content == null || typeof content !== 'string') return ''
   const trimmed = content.trim()
 
   // Check if it's a JSON response

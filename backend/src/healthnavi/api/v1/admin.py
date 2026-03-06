@@ -1172,6 +1172,155 @@ async def get_session_statistics(
             )
 
 
+@router.get("/sessions/users", response_model=StandardResponse)
+async def get_user_session_activity(
+    days: str = Query("30", description="Number of days for statistics"),
+    start_date: Optional[str] = Query(
+        None, description="Start date (YYYY-MM-DD). Optional when days is provided."
+    ),
+    end_date: Optional[str] = Query(
+        None, description="End date (YYYY-MM-DD). Optional when days is provided."
+    ),
+    user_ids: Optional[str] = Query(
+        None, description="Comma-separated list of user IDs to include"
+    ),
+    exclude_user_ids: Optional[str] = Query(
+        None, description="Comma-separated list of user IDs to exclude"
+    ),
+    current_user: User = Depends(require_admin_role),
+    db: Session = Depends(get_db),
+):
+    """
+    Get per-user session activity for a period.
+
+    Example request:
+        GET /api/v2/admin/sessions/users?days=30
+        GET /api/v2/admin/sessions/users?start_date=2025-01-01&end_date=2025-01-31
+    """
+    with ResponseTimer() as timer:
+        try:
+            from healthnavi.core.query_utils import parse_days_parameter
+
+            days_int = parse_days_parameter(days, default=30, min_days=1, max_days=365)
+
+            def _parse_ids(raw: Optional[str]) -> Optional[list[int]]:
+                if not raw:
+                    return None
+                vals = []
+                for part in raw.split(","):
+                    part = part.strip()
+                    if not part:
+                        continue
+                    try:
+                        vals.append(int(part))
+                    except ValueError:
+                        continue
+                return vals or None
+
+            include_ids = _parse_ids(user_ids)
+            exclude_ids = _parse_ids(exclude_user_ids)
+
+            service = AdminService(db)
+            stats = service.get_user_session_activity(
+                days=days_int,
+                period_start=start_date,
+                period_end=end_date,
+                user_ids=include_ids,
+                exclude_user_ids=exclude_ids,
+            )
+            return create_success_response(
+                data=stats,
+                status_code=200,
+                execution_time=timer.get_execution_time(),
+            )
+        except Exception as e:
+            logger.error(f"Error getting user session activity: {e}", exc_info=True)
+            return create_error_response(
+                message="Failed to retrieve user session activity",
+                status_code=500,
+                execution_time=timer.get_execution_time(),
+            )
+
+
+@router.get("/sessions/details", response_model=StandardResponse)
+async def get_session_details(
+    days: str = Query("30", description="Number of days for statistics"),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD). Optional when days is provided."),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD). Optional when days is provided."),
+    user_ids: Optional[str] = Query(None, description="Comma-separated list of user IDs to include"),
+    exclude_user_ids: Optional[str] = Query(None, description="Comma-separated list of user IDs to exclude"),
+    exclude_emails: Optional[str] = Query(None, description="Comma-separated list of emails to exclude (case-insensitive)"),
+    limit: int = Query(200, description="Max rows (1-1000)", ge=1, le=1000),
+    offset: int = Query(0, description="Pagination offset", ge=0),
+    current_user: User = Depends(require_admin_role),
+    db: Session = Depends(get_db),
+):
+    """
+    List session details (one row per session) for a period, newest first.
+
+    Example:
+      GET /api/v2/admin/sessions/details?days=30
+      GET /api/v2/admin/sessions/details?start_date=2026-02-01&end_date=2026-02-24&exclude_emails=test@example.com,foo@bar.com
+    """
+    with ResponseTimer() as timer:
+        try:
+            from healthnavi.core.query_utils import parse_days_parameter
+
+            days_int = parse_days_parameter(days, default=30, min_days=1, max_days=365)
+
+            def _parse_ids(raw: Optional[str]) -> Optional[list[int]]:
+                if not raw:
+                    return None
+                vals: list[int] = []
+                for part in raw.split(","):
+                    part = part.strip()
+                    if not part:
+                        continue
+                    try:
+                        vals.append(int(part))
+                    except ValueError:
+                        continue
+                return vals or None
+
+            def _parse_emails(raw: Optional[str]) -> Optional[list[str]]:
+                if not raw:
+                    return None
+                vals: list[str] = []
+                for part in raw.split(","):
+                    part = part.strip()
+                    if part:
+                        vals.append(part)
+                return vals or None
+
+            include_ids = _parse_ids(user_ids)
+            exclude_ids = _parse_ids(exclude_user_ids)
+            excluded_emails_list = _parse_emails(exclude_emails)
+
+            service = AdminService(db)
+            data = service.get_session_details(
+                days=days_int,
+                period_start=start_date,
+                period_end=end_date,
+                user_ids=include_ids,
+                exclude_user_ids=exclude_ids,
+                exclude_emails=excluded_emails_list,
+                limit=limit,
+                offset=offset,
+            )
+            return create_success_response(
+                data=data,
+                status_code=200,
+                execution_time=timer.get_execution_time(),
+            )
+        except Exception as e:
+            logger.error(f"Error getting session details: {e}", exc_info=True)
+            return create_error_response(
+                message="Failed to retrieve session details",
+                status_code=500,
+                execution_time=timer.get_execution_time(),
+            )
+
+
 @router.get("/ai-responses/statistics", response_model=StandardResponse)
 async def get_ai_response_statistics(
     days: str = Query("30", description="Number of days for statistics"),

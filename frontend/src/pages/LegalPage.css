@@ -29,10 +29,16 @@
   font-weight: 700;
 }
 
-.last-updated {
+.last-updated,
+.about-intro {
   color: var(--text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
   margin-bottom: var(--space-8);
+  line-height: 1.8;
+}
+
+.last-updated {
+  font-size: var(--font-size-sm);
   font-style: italic;
 }
 
