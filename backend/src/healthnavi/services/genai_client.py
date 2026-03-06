@@ -1,6 +1,7 @@
 """
 GenAI client initialization module.
 This module handles the initialization of the Google GenAI client once at startup.
+Configures HTTP retry options for 429 (rate limit) and 5xx errors per Vertex AI best practices.
 """
 import os
 import logging
@@ -9,6 +10,22 @@ from google import genai
 from google.auth import load_credentials_from_file
 import vertexai
 from dotenv import load_dotenv
+
+_http_options = None
+try:
+    from google.genai import types
+    if hasattr(types, "HttpOptions") and hasattr(types, "HttpRetryOptions"):
+        _http_options = types.HttpOptions(
+            retry_options=types.HttpRetryOptions(
+                initial_delay=1.0,
+                max_delay=60.0,
+                attempts=5,
+                http_status_codes=[408, 429, 500, 502, 503, 504],
+            ),
+            timeout=120_000,
+        )
+except (ImportError, AttributeError):
+    pass
 
 # Load environment variables
 load_dotenv()
@@ -81,13 +98,18 @@ def initialize_genai_client():
         if service_account_file and os.path.exists(service_account_file):
             credentials, _ = load_credentials_from_file(service_account_file)
         
-        # Initialize the GenAI client with Vertex AI configuration
-        _genai_client = genai.Client(
+        # Initialize the GenAI client with Vertex AI configuration.
+        # HttpOptions with retry for 429/5xx reduces rate-limit failures (Vertex AI retry strategy).
+        client_kwargs = dict(
             vertexai=True,
             project=project_id,
-            location=effective_location
+            location=effective_location,
         )
-        
+        if _http_options is not None:
+            client_kwargs["http_options"] = _http_options
+            logger.info("GenAI client using HttpRetryOptions for 429/5xx (initial_delay=1s, max_delay=60s, attempts=5)")
+        _genai_client = genai.Client(**client_kwargs)
+
         logger.info(f"GenAI client initialized successfully for project {project_id} in {effective_location}")
         
     except Exception as e:

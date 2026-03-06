@@ -6,7 +6,13 @@ import hashlib
 from fastapi import HTTPException
 from healthnavi.services.genai_client import get_genai_client
 from healthnavi.services.vectorstore_manager import search_all_collections
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_not_exception_type
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_random_exponential,
+    retry_if_exception,
+    before_sleep_log,
+)
 from dotenv import load_dotenv
 from typing import Dict, Tuple, AsyncGenerator
 from google.api_core import exceptions
@@ -14,13 +20,30 @@ from enum import Enum
 from datetime import datetime, timedelta
 
 from healthnavi.core.constants import (
-    MODEL_NAME, PROMPT_TOKEN_LIMIT, CACHE_TTL_MINUTES, MAX_CACHE_SIZE,
-    DEFAULT_CONTEXT_MAX_CHARS, BALANCED_CONTEXT_MAX_CHARS,
-    MAX_RETRY_ATTEMPTS, RETRY_MULTIPLIER, RETRY_MIN_WAIT, RETRY_MAX_WAIT,
-    QUICK_SEARCH_PROMPT, DEEP_SEARCH_PROMPT,
-    QUICK_SEARCH_MAX_OUTPUT_TOKENS, DEEP_SEARCH_MAX_OUTPUT_TOKENS,
-    CHARS_PER_TOKEN, MAX_CONTEXT_WINDOW, ROLE_INSTRUCTIONS,
-    BOLDING_RULES, EXAM_HANDLING, GLOBAL_CONDUCT_RULES
+    MODEL_NAME,
+    PROMPT_TOKEN_LIMIT,
+    CACHE_TTL_MINUTES,
+    MAX_CACHE_SIZE,
+    DEFAULT_CONTEXT_MAX_CHARS,
+    BALANCED_CONTEXT_MAX_CHARS,
+    MAX_RETRY_ATTEMPTS,
+    RETRY_MULTIPLIER,
+    RETRY_MIN_WAIT,
+    RETRY_MAX_WAIT,
+    QUICK_SEARCH_PROMPT,
+    DEEP_SEARCH_PROMPT,
+    QUICK_SEARCH_MAX_OUTPUT_TOKENS,
+    DEEP_SEARCH_MAX_OUTPUT_TOKENS,
+    CHARS_PER_TOKEN,
+    MAX_CONTEXT_WINDOW,
+    ROLE_INSTRUCTIONS,
+    BOLDING_RULES,
+    EXAM_HANDLING,
+    GLOBAL_CONDUCT_RULES,
+    QUERY_CLASSIFICATION_RULES,
+    PREEMPTIVE_REASONING_RULES,
+    PHARMACOLOGY_RULES,
+    REFERENCES_RULES,
 )
 
 logging.basicConfig(
@@ -33,6 +56,63 @@ load_dotenv()
 
 # Simple in-memory cache for responses
 RESPONSE_CACHE: Dict[str, Tuple[str, datetime]] = {}
+
+
+def _is_retryable_genai_error(exception: BaseException) -> bool:
+    """
+    Return True for 429 (rate limit), 503 (unavailable), and 5xx-style errors
+    that are safe to retry per Vertex AI retry strategy.
+    """
+    if isinstance(exception, exceptions.ResourceExhausted):
+        return True
+    if isinstance(exception, (exceptions.ServiceUnavailable, exceptions.InternalServerError)):
+        return True
+    msg = str(exception).upper()
+    return (
+        "429" in msg
+        or "RESOURCE_EXHAUSTED" in msg
+        or "503" in msg
+        or "UNAVAILABLE" in msg
+        or "TOO_MANY_REQUESTS" in msg
+    )
+
+
+@retry(
+    stop=stop_after_attempt(MAX_RETRY_ATTEMPTS),
+    wait=wait_random_exponential(multiplier=RETRY_MULTIPLIER, min=RETRY_MIN_WAIT, max=RETRY_MAX_WAIT),
+    retry=retry_if_exception(_is_retryable_genai_error),
+    reraise=True,
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+)
+def _generate_content_with_retry(client, model: str, contents, config: dict):
+    """
+    Call client.models.generate_content with retries on 429/503/5xx only.
+    Uses exponential backoff with jitter per Google Cloud recommendations.
+    """
+    return client.models.generate_content(
+        model=model,
+        contents=contents,
+        config=config,
+    )
+
+
+@retry(
+    stop=stop_after_attempt(MAX_RETRY_ATTEMPTS),
+    wait=wait_random_exponential(multiplier=RETRY_MULTIPLIER, min=RETRY_MIN_WAIT, max=RETRY_MAX_WAIT),
+    retry=retry_if_exception(_is_retryable_genai_error),
+    reraise=True,
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+)
+def _generate_content_stream_with_retry(client, model: str, contents, config: dict):
+    """
+    Call client.models.generate_content_stream with retries on 429/503/5xx.
+    Rate limits typically occur when opening the stream; retrying the call is safe.
+    """
+    return client.models.generate_content_stream(
+        model=model,
+        contents=contents,
+        config=config,
+    )
 
 
 def estimate_tokens(text: str) -> int:
@@ -117,16 +197,18 @@ def generate_followup_questions_sync(original_query: str, response: str) -> list
         2. [Second question?]
         3. [Third question?]"""
         
-        followup_response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=[{"role": "user", "parts": [{"text": followup_prompt}]}],
-            config={
-                "temperature": 0.7,
-                "max_output_tokens": 2000,  # Increased to prevent MAX_TOKENS cutoff
-                "top_p": 0.9,
-                "top_k": 40,
-                "candidate_count": 1
-            }
+        followup_config = {
+            "temperature": 0.7,
+            "max_output_tokens": 2000,  # Increased to prevent MAX_TOKENS cutoff
+            "top_p": 0.9,
+            "top_k": 40,
+            "candidate_count": 1
+        }
+        followup_response = _generate_content_with_retry(
+            client,
+            MODEL_NAME,
+            [{"role": "user", "parts": [{"text": followup_prompt}]}],
+            followup_config,
         )
         
         if followup_response and hasattr(followup_response, 'candidates') and followup_response.candidates:
@@ -207,12 +289,6 @@ def _cache_response(cache_key: str, response: str):
             del RESPONSE_CACHE[key]
 
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=4, max=10),
-    reraise=True,
-    retry=retry_if_not_exception_type(HTTPException)
-)
 async def generate_response(query: str, chat_history: str, patient_data: str, deep_search: bool = False, user_role_from_db: str = None) -> tuple[str, bool, str, list[str]]:
     total_start_time = time.time()
     full_response_text = ""
@@ -253,17 +329,18 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
             prompt_type = "quick_search"
         
         context, actual_sources = search_all_collections(
-            query, 
-            patient_data, 
+            query,
+            patient_data,
             max_chunks=max_chunks,
             max_books=max_books,
             min_chunks=min_chunks,
-            min_books=min_books
+            min_books=min_books,
+            enforce_diversity=deep_search, 
         )
         optimized_context = optimize_context_for_llm(context, max_chunks=max_chunks)
 
         # Truncate context for quick search to reduce prompt size and improve speed
-        if not deep_search and len(optimized_context) > 5000:  # Limit quick search context to 5000 chars
+        if not deep_search and len(optimized_context) > 5000:  
             optimized_context = optimized_context[:5000]
 
         # Format sources - should always have sources from knowledge base
@@ -286,7 +363,11 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
             role_instruction=role_text,
             bolding_rules=BOLDING_RULES,
             exam_handling=EXAM_HANDLING,
-            global_conduct_rules=GLOBAL_CONDUCT_RULES
+            global_conduct_rules=GLOBAL_CONDUCT_RULES,
+            query_classification_rules=QUERY_CLASSIFICATION_RULES,
+            preemptive_reasoning_rules=PREEMPTIVE_REASONING_RULES,
+            pharmacology_rules=PHARMACOLOGY_RULES,
+            references_rules=REFERENCES_RULES,
         )
         user_context_block = f"""
             ### USER QUESTION:
@@ -314,20 +395,28 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
         llm_start = time.time()
 
         try:
-            response = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=[{"role": "user", "parts": [{"text": full_prompt}]}],
-                config={
+            response = _generate_content_with_retry(
+                client,
+                MODEL_NAME,
+                [{"role": "user", "parts": [{"text": full_prompt}]}],
+                {
                     "temperature": 0.2,
                     "max_output_tokens": max_output_tokens,
                     "top_p": 0.95,
                     "top_k": 20,
                     "candidate_count": 1
-                }
+                },
             )
         except Exception as e:
-            logger.error(f"Failed to generate content: {e}", exc_info=True)
+            logger.error(f"Failed to generate content after retries: {e}", exc_info=True)
             prompt_type = "deep_search" if deep_search else "quick_search"
+            if _is_retryable_genai_error(e):
+                return (
+                    "⚠️ The service is temporarily busy (rate limit). Please wait a moment and try again.",
+                    False,
+                    prompt_type,
+                    [],
+                )
             return f"⚠️ Failed to generate content: {str(e)}", False, prompt_type, []
 
         try:
@@ -504,7 +593,11 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
             role_instruction=role_text,
             bolding_rules=BOLDING_RULES,
             exam_handling=EXAM_HANDLING,
-            global_conduct_rules=GLOBAL_CONDUCT_RULES
+            global_conduct_rules=GLOBAL_CONDUCT_RULES,
+            query_classification_rules=QUERY_CLASSIFICATION_RULES,
+            preemptive_reasoning_rules=PREEMPTIVE_REASONING_RULES,
+            pharmacology_rules=PHARMACOLOGY_RULES,
+            references_rules=REFERENCES_RULES,
         )
         user_context_block = f"""
             ### USER QUESTION:
@@ -532,16 +625,18 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
         llm_start = time.time()
 
         try:
-            response_stream = client.models.generate_content_stream(
-                model=MODEL_NAME,
-                contents=[{"role": "user", "parts": [{"text": full_prompt}]}],
-                config={
-                    "temperature": 0.2,
-                    "max_output_tokens": max_output_tokens,
-                    "top_p": 0.95,
-                    "top_k": 20,
-                    "candidate_count": 1
-                }
+            stream_config = {
+                "temperature": 0.2,
+                "max_output_tokens": max_output_tokens,
+                "top_p": 0.95,
+                "top_k": 20,
+                "candidate_count": 1
+            }
+            response_stream = _generate_content_stream_with_retry(
+                client,
+                MODEL_NAME,
+                [{"role": "user", "parts": [{"text": full_prompt}]}],
+                stream_config,
             )
 
             first_token_received = False
@@ -628,8 +723,10 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
 
         except Exception as e:
             logger.error(f"Error during streaming: {e}", exc_info=True)
-            # Yield error marker that frontend can detect
-            yield f"\n\n[STREAM_ERROR]: {str(e)}"
+            if _is_retryable_genai_error(e):
+                yield "\n\n[STREAM_ERROR]: The service is temporarily busy (rate limit). Please wait a moment and try again."
+            else:
+                yield f"\n\n[STREAM_ERROR]: {str(e)}"
 
     except Exception as e:
         logger.error(f"FATAL error in generate_response_stream: {e}", exc_info=True)

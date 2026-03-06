@@ -275,6 +275,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           initializing: false,
           isAuthenticated: true,
         })
+        // Start fresh conversation after login: clear any persisted guest chat so user sees new conversation UI
+        try {
+          const { useChatStore } = require('../store/useChatStore')
+          const chat = useChatStore.getState()
+          chat.reset()
+          chat.setSessions([])
+          chat.setFollowupQuestions([])
+          if (typeof window !== 'undefined') {
+            window.localStorage.removeItem('empirico.chat')
+          }
+        } catch (err) {
+          if (typeof window !== 'undefined') {
+            window.localStorage.removeItem('empirico.chat')
+          }
+        }
       } catch (error) {
         if (error instanceof Error) {
           throw error
@@ -347,11 +362,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: false,
     })
     
+    // Fully clear chat from memory and storage so after reload user sees clean home
     if (typeof window !== 'undefined') {
-      useChatStore.getState().reset()
+      try {
+        const { useChatStore } = require('../store/useChatStore')
+        const chat = useChatStore.getState()
+        chat.reset()
+        chat.setSessions([])
+        chat.setFollowupQuestions([])
+      } catch (error) {
+        console.warn('Failed to clear chat state on logout:', error)
+      }
+      // Remove persisted chat so next load has no chat data (must do before navigation)
       window.localStorage.removeItem('empirico.chat')
       window.dispatchEvent(new Event('logout'))
-      window.location.href = '/'
+      // Full navigation to home so user sees landing UI (nav + login/signup). Reload when already on / so chat is gone.
+      const path = window.location.pathname
+      const onHome = path === '/' || path === '' || path === '/index.html'
+      if (onHome) {
+        window.location.reload()
+      } else {
+        window.location.assign(window.location.origin + '/')
+      }
     }
   }, [clearPersistedAuth])
 

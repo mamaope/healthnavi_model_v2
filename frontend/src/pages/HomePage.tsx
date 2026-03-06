@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AuthModal, type AuthMode } from '../components/auth/AuthModal'
 import { ForgotPasswordModal } from '../components/auth/ForgotPasswordModal'
 import { ResetPasswordModal } from '../components/auth/ResetPasswordModal'
@@ -43,6 +43,7 @@ export default function HomePage() {
   const followupQuestions = useChatStore((state) => state.followupQuestions)
   const setFollowupQuestions = useChatStore((state) => state.setFollowupQuestions)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
 
   // Check for reset token or OAuth callback in URL on mount
   useEffect(() => {
@@ -74,6 +75,21 @@ export default function HomePage() {
         
         // Clear URL parameters
         window.history.replaceState({}, document.title, '/')
+        
+        // Start fresh conversation after login: clear persisted guest chat so user sees new conversation UI
+        try {
+          const chat = useChatStore.getState()
+          chat.reset()
+          chat.setSessions([])
+          chat.setFollowupQuestions([])
+          if (typeof window !== 'undefined') {
+            window.localStorage.removeItem('empirico.chat')
+          }
+        } catch (e) {
+          if (typeof window !== 'undefined') {
+            window.localStorage.removeItem('empirico.chat')
+          }
+        }
         
         // Refresh profile with retry logic
         const refreshWithRetry = async (retries = 3, delay = 500) => {
@@ -164,7 +180,6 @@ export default function HomePage() {
     try {
       const result = await sendMessage({
         message,
-        sessionId: currentSession?.id,
         deepSearch: isDeepSearchEnabled,
       })
       if (result && 'followupQuestions' in result && result.followupQuestions) {
@@ -213,12 +228,42 @@ export default function HomePage() {
   const hasMessages = messages.length > 0
   const showSamplePrompts = !hasMessages && !isSending
   const [hasStartedChat, setHasStartedChat] = useState(false)
+  const wasAuthenticatedRef = useRef(isAuthenticated)
+
+  useEffect(() => {
+    if (wasAuthenticatedRef.current && !initializing && !isAuthenticated) {
+      wasAuthenticatedRef.current = false
+      const chat = useChatStore.getState()
+      chat.reset()
+      chat.setSessions([])
+      chat.setFollowupQuestions([])
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem('empirico.chat')
+      }
+      setHasStartedChat(false)
+      setInputValue('')
+    }
+    if (isAuthenticated) {
+      wasAuthenticatedRef.current = true
+    }
+  }, [initializing, isAuthenticated])
 
   useEffect(() => {
     if (hasMessages && !hasStartedChat) {
       setHasStartedChat(true)
     }
   }, [hasMessages, hasStartedChat])
+
+  // Auto-scroll to bottom when user sends a message or when a new response arrives
+  useEffect(() => {
+    const el = messagesContainerRef.current
+    if (!el) return
+    // Use requestAnimationFrame so scroll runs after layout (new messages rendered)
+    const id = requestAnimationFrame(() => {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    })
+    return () => cancelAnimationFrame(id)
+  }, [messages.length, isSending])
 
   const showSidebar = isAuthenticated || (hasStartedChat && hasMessages)
   const showSidebarForGuest = !isAuthenticated && hasStartedChat && hasMessages
@@ -280,10 +325,24 @@ export default function HomePage() {
         <main className="chat-main">
           <div className={`chat-wrapper ${hasMessages ? 'has-messages' : 'empty'}`}>
             {/* Messages Area */}
-            <div className="messages-container">
-              <MessageList
-                messages={messages}
-                onDeepSearch={handleDeepSearch}
+            <div className="messages-container" ref={messagesContainerRef}>
+              <MessageList 
+                messages={messages} 
+                onDeepSearch={async (userQuestion: string) => {
+                  // Send the user's question again with deep search enabled
+                  setFollowupQuestions([])
+                  try {
+                    const result = await sendMessage({
+                      message: userQuestion,
+                      deepSearch: true,
+                    })
+                    if (result && 'followupQuestions' in result && result.followupQuestions) {
+                      setFollowupQuestions(result.followupQuestions)
+                    }
+                  } catch (error) {
+                    console.error('Error sending deep search message:', error)
+                  }
+                }}
               />
               <LoadingIndicator isVisible={isSending || isFetchingFollowup} />
               
