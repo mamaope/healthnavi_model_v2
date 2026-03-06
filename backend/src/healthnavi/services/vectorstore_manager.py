@@ -31,16 +31,20 @@ def initialize_vectorstore():
             raise RuntimeError(error_message)
 
 def search_all_collections(
-    query: str, 
-    patient_data: str, 
-    max_chunks: int = 20, 
+    query: str,
+    patient_data: str,
+    max_chunks: int = 20,
     max_books: int = 8,
     min_chunks: int = 5,
-    min_books: int = 3
+    min_books: int = 3,
+    enforce_diversity: bool = False,  
 ) -> Tuple[List, List[str]]:
     """
     Perform semantic retrieval and return optimized context for LLM.
-    - Retrieves chunks with diversity across multiple sources.
+
+    Key change:
+      - Quick search (enforce_diversity=False): prioritize topic accuracy (no round-robin across books)
+      - Deep search  (enforce_diversity=True): apply book diversity AFTER retrieval to broaden references
     """
     vectordb_service = get_vectordb_service()
     client = vectordb_service.client
@@ -53,37 +57,42 @@ def search_all_collections(
     full_search_query = f"{query.strip()}\n{patient_data.strip()}".strip()
 
     try:
-        # Retrieve more chunks to ensure diversity across multiple sources
-        # For quick search, retrieve fewer chunks initially (2x instead of 3x)
+        # Retrieve more chunks than needed so post-filtering can still return max_chunks
         retrieval_multiplier = 2 if max_chunks <= 8 else 3
-        raw_chunks, all_sources = vectordb_service.search_medical_knowledge(full_search_query, k=max_chunks * retrieval_multiplier)
-
-        if not raw_chunks or not all_sources:
-            logger.warning("No relevant context found by vectordb_service.")
-            return [], []
-        
-        # Apply source diversity: ensure we get chunks from multiple different sources
-        top_chunks = _apply_book_diversity(
-            raw_chunks, 
-            max_chunks=max_chunks,
-            max_books=max_books,
-            min_chunks=min_chunks,
-            min_books=min_books
+        raw_chunks, all_sources = vectordb_service.search_medical_knowledge(
+            full_search_query,
+            k=max_chunks * retrieval_multiplier
         )
 
+        if not raw_chunks:
+            logger.warning("No relevant context found by vectordb_service.")
+            return [], []
+
+        # only apply book diversity for deep search
+        if enforce_diversity:
+            top_chunks = _apply_book_diversity(
+                raw_chunks,
+                max_chunks=max_chunks,
+                max_books=max_books,
+                min_chunks=min_chunks,
+                min_books=min_books
+            )
+        else:
+            # Quick mode: strict relevance first (top-k only)
+            top_chunks = raw_chunks[:max_chunks]
+
+        # Build unique sources
         unique_top_sources = set()
         for chunk in top_chunks:
             file_name = os.path.basename(chunk.get("file_path", "Unknown document"))
-            # Clean up source name: remove .pdf extension and clean formatting
-            file_name = file_name.replace('.pdf', '').replace('_', ' ').replace('-', ' ')
+            file_name = file_name.replace(".pdf", "").replace("_", " ").replace("-", " ")
             unique_top_sources.add(file_name)
 
-        return top_chunks, list(unique_top_sources)
+        return top_chunks, sorted(list(unique_top_sources))
 
     except Exception as e:
         logger.error(f"❌ Error during search_all_collections: {e}", exc_info=True)
         return [], []
-
 
 def _apply_book_diversity(
     chunks: List, 

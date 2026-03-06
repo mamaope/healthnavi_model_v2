@@ -142,24 +142,60 @@ class ZillizService:
             logger.error(f"Failed to generate query embedding: {e}")
             raise
 
-    def _apply_mmr_diversity_reranking(self, search_results: list, k: int, lambda_param: float = 0.5) -> list:
+    def _apply_mmr_diversity_reranking(self, search_results: list, k: int, lambda_param: float = 0.85) -> list:
         """
-        Apply Maximal Marginal Relevance (MMR) diversity reranking to the search results.
-        
-        Args:
-            search_results (list): List of search results to rerank.
-            k (int): Number of results to return.
-            lambda_param (float): Trade-off parameter between relevance and diversity (0 to 1).
-            
-        Returns:
-            list: Reranked list of results.
+        - Prioritize relevance strongly (lambda high)
+        - Deduplicate near-identical chunks
+        - Soft-limit per-document to avoid one doc dominating
         """
-
         if not search_results:
             return []
-            
-        search_results.sort(key=lambda x: x.get('distance', 0), reverse=True)
-        return search_results[:k]
+
+        #    Keep top window so we can prune long tail noise
+        search_results.sort(key=lambda x: x.get("distance", 0.0), reverse=True)
+        window = search_results[: max(k * 6, 30)]
+
+        top_score = window[0].get("distance", 0.0) or 0.0
+        min_score = top_score * 0.70
+        window = [h for h in window if (h.get("distance", 0.0) or 0.0) >= min_score]
+
+        # Dedup by (doc + normalized text fingerprint)
+        import re, hashlib, json, os
+        seen = set()
+        per_doc = {}
+        picked = []
+
+        def fingerprint(payload: dict) -> str:
+            txt = (payload.get("chunk_text") or payload.get("content") or "").lower()
+            txt = re.sub(r"\s+", " ", txt).strip()
+            txt = txt[:800]  
+            return hashlib.md5(txt.encode("utf-8")).hexdigest()
+
+        for hit in window:
+            ent = hit.get("entity", {}) or {}
+            payload_raw = ent.get("payload", {}) or {}
+            payload = json.loads(payload_raw) if isinstance(payload_raw, str) else payload_raw
+
+            # doc id / file path
+            file_path = payload.get("file_path") or payload.get("filename") or payload.get("source") or "Unknown"
+            doc = os.path.basename(file_path)
+
+            fp = (doc, fingerprint(payload))
+            if fp in seen:
+                continue
+            seen.add(fp)
+
+            per_doc[doc] = per_doc.get(doc, 0) + 1
+
+            # soft cap per doc for quick mode; deep mode can pass bigger k 
+            if per_doc[doc] > 3:
+                continue
+
+            picked.append(hit)
+            if len(picked) >= k:
+                break
+
+        return picked
 
     def search_medical_knowledge(self, query: str, k: int = 8) -> Tuple[List[Dict[str, Any]], List[str]]:
         """
@@ -179,16 +215,10 @@ class ZillizService:
             query_embedding = self.generate_query_embedding(query)
             query_sparse = _sparse_embed_query(query)
 
-            # Dense: quality candidates — moderate cap to keep latency low.
-            # Sparse: cast a wide net so exact drug name tokens are never truncated off
-            # the candidate list. Sparse IP search is cheap, so a higher limit is fine.
             dense_limit = min(k * 3, 120)
             sparse_limit = min(k * 8, 500)
-            # Final output after RRF fusion — at most dense_limit results returned
             fusion_limit = dense_limit
 
-            # Hybrid search: dense (semantic) + sparse (keyword/exact-match) fused with RRF.
-            # Dense finds semantically similar content; sparse ensures exact drug brand names
             dense_req = AnnSearchRequest(
                 data=[query_embedding],
                 anns_field="vector",
@@ -214,52 +244,51 @@ class ZillizService:
                 return "No relevant medical information found in the knowledge base.", []
 
             reranked_results = self._apply_mmr_diversity_reranking(
-                search_results[0], 
-                k, 
+                search_results[0],
+                k,
                 lambda_param=0.5
             )
 
             reranked_entities = []
             sources = set()
             total_content_length = 0
-            
+
             import json
-            
+
             for idx, hit in enumerate(reranked_results):
                 entity = hit.get('entity', {})
                 payload_str = entity.get('payload', '{}')
-                
-                # Parse the payload JSON string
+
                 try:
                     payload = json.loads(payload_str) if isinstance(payload_str, str) else payload_str
-                    
-                    # Handle both new format (with chunk_text) and old format (without)
-                    # New format: has 'chunk_text' field
-                    # Old format: doesn't have chunk_text, we need to skip it OR show warning
-                    content = payload.get('chunk_text', '')
-                    
-                    # If no chunk_text, this is old format data - log a warning
-                    if not content:
+
+                    content = (
+                        payload.get("chunk_text")
+                        or payload.get("content")
+                        or payload.get("text")
+                        or payload.get("chunk")
+                        or ""
+                    )
+                    if not content.strip():
                         if idx == 0:
-                            logger.warning(f"⚠️  Old format detected: payload missing 'chunk_text' field. Data needs re-ingestion.")
-                            logger.warning(f"⚠️  Available fields: {list(payload.keys())}")
+                            logger.warning("Payload missing expected text fields; skipping empty payload.")
+                            logger.warning(f"Available fields: {list(payload.keys())}")
                         continue
-                    
-                    # Extract other fields with fallbacks
+
                     file_path = payload.get('file_path') or payload.get('filename') or payload.get('source', 'Unknown document')
                     display_page_number = payload.get('display_page_number') or payload.get('page', '?')
-                    
-                    # Create a normalized entity structure
+
                     normalized_entity = {
                         'content': content,
                         'file_path': file_path,
                         'display_page_number': display_page_number
                     }
                     reranked_entities.append(normalized_entity)
-                    document_name = os.path.basename(file_path)                    
+
+                    document_name = os.path.basename(file_path)
                     sources.add(document_name)
                     total_content_length += len(content)
-                        
+
                 except json.JSONDecodeError as e:
                     logger.warning(f"Failed to parse payload JSON: {str(e)} - {payload_str[:100]}...")
                     continue
@@ -275,7 +304,7 @@ class ZillizService:
 
         except Exception as e:
             logger.error(f"Error during search in '{self.collection_name}': {e}")
-            return f"An error occurred during search: {str(e)}", []
+            return f"An error occurred during search: {str(e)}", []        
 
     def load_collection(self):
         """Loads the collection into memory for faster searches."""
