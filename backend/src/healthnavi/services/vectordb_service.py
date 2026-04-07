@@ -84,8 +84,16 @@ class ZillizService:
         the token is wrong/expired or not set in the environment (e.g. in Docker).
         """
         try:
+            raw_uri = os.getenv('MILVUS_URI', '')
+            # Zilliz serverless endpoints may hang in pymilvus when port is omitted.
+            # Normalize to :443 for https URIs without an explicit port.
+            milvus_uri = raw_uri
+            if raw_uri.startswith("https://") and ":" not in raw_uri.split("://", 1)[1]:
+                milvus_uri = f"{raw_uri}:443"
+                logger.info(f"Normalized MILVUS_URI to include port 443: {milvus_uri}")
+
             self.client = MilvusClient(
-                uri=os.getenv('MILVUS_URI'),
+                uri=milvus_uri,
                 token=os.getenv('MILVUS_TOKEN')
             )
             self.collection_name = os.getenv('MILVUS_COLLECTION_NAME', 'medical_knowledge')
