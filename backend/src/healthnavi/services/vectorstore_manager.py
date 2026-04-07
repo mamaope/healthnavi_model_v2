@@ -2,6 +2,7 @@ from healthnavi.services.vectordb_service import get_vectordb_service
 from typing import Tuple, List
 import logging
 import os
+import re
 from collections import defaultdict
 
 logging.basicConfig(
@@ -13,6 +14,96 @@ logger = logging.getLogger(__name__)
 
 # get_vectordb_service() is lazy; connection happens on first use
 vectorstore_initialized = False
+
+
+def _extract_jurisdiction_terms(query: str, patient_data: str) -> set[str]:
+    """
+    Extract explicit jurisdiction-like mentions without hardcoded country/stopword lists.
+    Strategy:
+    - look for named entities after in/for/from/within (title case or ALL CAPS)
+    - keep short phrase + token forms for flexible source-name matching
+    """
+    text = f"{query or ''} {patient_data or ''}".strip()
+    if not text:
+        return set()
+
+    terms: set[str] = set()
+    named_loc_pattern = (
+        r"(?i)\b(?:in|for|from|within)\s+"
+        r"([A-Z][A-Za-z-]+(?:\s+[A-Z][A-Za-z-]+){0,2}|[A-Z]{2,}(?:\s+[A-Z]{2,}){0,2})"
+    )
+    for match in re.finditer(named_loc_pattern, text):
+        phrase = re.sub(r"\s+", " ", match.group(1)).strip()
+        if not phrase:
+            continue
+        terms.add(phrase.lower())
+        for token in phrase.split():
+            if len(token) >= 3:
+                terms.add(token.lower())
+
+    return terms
+
+
+def _source_priority_score(chunk: dict, query: str, patient_data: str) -> int:
+    """
+    Score chunks for guideline authority relevance and jurisdiction fit.
+    """
+    source_path_text = f"{chunk.get('file_path', '')}".lower()
+    source_text = f"{chunk.get('file_path', '')} {chunk.get('content', '')}".lower()
+    query_text = f"{query or ''} {patient_data or ''}".lower()
+    score = 0
+
+    jurisdiction_terms = _extract_jurisdiction_terms(query, patient_data)
+    if jurisdiction_terms:
+        if any(term in source_path_text for term in jurisdiction_terms):
+            score += 12
+
+    # Prefer official and guideline-like documents when query asks policy/guideline questions.
+    asks_for_guidance = any(
+        k in query_text
+        for k in ("guidelines", "protocol", "best practice", "recommendation", "policy")
+    )
+    if asks_for_guidance:
+        if any(k in source_text for k in ("guidelines", "protocol", "standard treatment", "clinical policy")):
+            score += 5
+        if any(k in source_text for k in ("ministry of health", "department of health", "national")):
+            score += 4
+
+    # Trusted global institutions are useful fallback when local guidance is not present.
+    if any(k in source_text for k in ("who", "nice", "cdc", "idsa", "ema", "fda")):
+        score += 2
+
+    return score
+
+
+def _build_enriched_retrieval_query(query: str, patient_data: str) -> str:
+    """
+    Build a single retrieval query 
+    """
+    base_query = f"{(query or '').strip()}\n{(patient_data or '').strip()}".strip()
+    query_text = f"{query or ''} {patient_data or ''}".lower()
+    jurisdiction_terms = _extract_jurisdiction_terms(query, patient_data)
+    asks_for_guidance = any(
+        k in query_text
+        for k in ("guideline", "protocol", "best practice", "recommendation", "policy")
+    )
+
+    enrichment_terms: list[str] = []
+    if jurisdiction_terms:
+        enrichment_terms.extend(sorted(jurisdiction_terms))
+        # Repeat jurisdiction terms to increase sparse retrieval weight without extra calls.
+        enrichment_terms.extend(sorted(jurisdiction_terms))
+        enrichment_terms.extend(["country-specific", "national treatment guideline", "local protocol"])
+    if asks_for_guidance:
+        enrichment_terms.extend(
+            ["national guideline", "ministry of health", "department of health", "clinical protocol"]
+        )
+
+    if not enrichment_terms:
+        return base_query
+
+    enrichment = " ".join(enrichment_terms)
+    return f"{base_query}\n{enrichment}".strip()
 
 def initialize_vectorstore():
     """Initializes and loads the Zilliz collection at startup. Connects to Zilliz on first use (lazy)."""
@@ -54,14 +145,20 @@ def search_all_collections(
         logger.error("Vector store not initialized.")
         raise RuntimeError("Vector store not initialized. Call initialize_vectorstore() first.")
 
-    full_search_query = f"{query.strip()}\n{patient_data.strip()}".strip()
+    full_search_query = _build_enriched_retrieval_query(query, patient_data)
 
     try:
         # Retrieve more chunks than needed so post-filtering can still return max_chunks
         retrieval_multiplier = 2 if max_chunks <= 8 else 3
+        if _extract_jurisdiction_terms(query, patient_data):
+            # Expand candidate recall for country-specific questions;
+            # still a single retrieval call, just broader top-k.
+            retrieval_multiplier = max(retrieval_multiplier, 5)
+        retrieval_k = max_chunks * retrieval_multiplier
+
         raw_chunks, all_sources = vectordb_service.search_medical_knowledge(
             full_search_query,
-            k=max_chunks * retrieval_multiplier
+            k=retrieval_k
         )
 
         if not raw_chunks:
@@ -79,7 +176,26 @@ def search_all_collections(
             )
         else:
             # Quick mode: strict relevance first (top-k only)
-            top_chunks = raw_chunks[:max_chunks]
+            # Re-rank by authority/jurisdiction fit, then keep retrieval relevance order as tiebreaker.
+            scored_chunks = sorted(
+                enumerate(raw_chunks),
+                key=lambda it: (-_source_priority_score(it[1], query, patient_data), it[0]),
+            )
+            top_chunks = [raw_chunks[idx] for idx, _ in scored_chunks[:max_chunks]]
+
+        jurisdiction_terms = _extract_jurisdiction_terms(query, patient_data)
+        if jurisdiction_terms:
+            matched_local = 0
+            for chunk in top_chunks:
+                src = f"{chunk.get('file_path', '')} {chunk.get('content', '')}".lower()
+                if any(term in src for term in jurisdiction_terms):
+                    matched_local += 1
+            logger.info(
+                "Jurisdiction-aware retrieval: terms=%s, candidates=%s, local_matches_in_top=%s",
+                sorted(jurisdiction_terms),
+                len(raw_chunks),
+                matched_local,
+            )
 
         # Build unique sources
         unique_top_sources = set()
