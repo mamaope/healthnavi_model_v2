@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import logging
 import asyncio
@@ -44,6 +45,7 @@ from healthnavi.core.constants import (
     PREEMPTIVE_REASONING_RULES,
     PHARMACOLOGY_RULES,
     REFERENCES_RULES,
+    SECURITY_AND_EVIDENCE_RULES,
 )
 
 logging.basicConfig(
@@ -56,6 +58,36 @@ load_dotenv()
 
 # Simple in-memory cache for responses
 RESPONSE_CACHE: Dict[str, Tuple[str, datetime]] = {}
+
+
+def user_friendly_genai_error(exception: BaseException) -> str:
+    """
+    Map provider/SDK errors to a short, safe message for end users.
+    Full details stay in server logs only.
+    """
+    msg = str(exception)
+    upper = msg.upper()
+    if "BILLING_DISABLED" in upper or ("BILLING" in upper and "ENABLE" in upper):
+        return (
+            "The assistant is temporarily unavailable because the AI service billing or permissions need to be "
+            "updated on our side. Please try again later or contact support if this continues."
+        )
+    if "PERMISSION_DENIED" in upper or "403" in upper:
+        if "BILLING" in upper or "API" in upper:
+            return (
+                "The assistant could not reach the AI service (permission or billing). "
+                "Please try again later or contact support."
+            )
+        return "The assistant could not complete this request due to a permissions issue. Please try again later."
+    if "RESOURCE_EXHAUSTED" in upper or "429" in upper or "RATE" in upper:
+        return "The service is temporarily busy. Please wait a moment and try again."
+    if "SAFETY" in upper or "BLOCKED" in upper:
+        return "This response could not be completed. Try rephrasing your question."
+    # Avoid leaking raw JSON or internal IDs to the client
+    lower = msg.lower()
+    if len(msg) > 280 or "{" in msg or "googleapis" in lower:
+        return "Something went wrong while generating a response. Please try again in a moment."
+    return "Something went wrong while generating a response. Please try again in a moment."
 
 
 def _is_retryable_genai_error(exception: BaseException) -> bool:
@@ -145,11 +177,38 @@ def validate_prompt_size(prompt: str, max_output_tokens: int, max_input_tokens: 
     return True, "", estimated_input_tokens
 
 
+def _looks_like_uganda_guideline_path(file_path: str) -> bool:
+    low = (file_path or "").lower()
+    return "ucg" in low or "uganda clinical" in low or "ug_clinical" in low
+
+
+def _edition_year_from_path(file_path: str) -> int:
+    base = os.path.basename(file_path or "")
+    m = re.search(r"(20\d{2})", base)
+    return int(m.group(1)) if m else 0
+
+
 def optimize_context_for_llm(chunks: list[dict], max_chunks: int = 3) -> str:
     """
     Take all relevant chunks and bind them structurally to sources.
     Each chunk is numbered and tagged with its source for mechanical grounding.
     """
+    if isinstance(chunks, list) and len(chunks) > 1:
+        # When multiple UCG-era hits are present, assign newer editions to earlier slots in this
+        # bundle so the model reads the most recent guidance first, without reordering non-UCG hits.
+        ucg_positions = [
+            i
+            for i, c in enumerate(chunks)
+            if _looks_like_uganda_guideline_path(c.get("file_path", ""))
+        ]
+        if len(ucg_positions) >= 2:
+            ucg_sorted = sorted(
+                (chunks[i] for i in ucg_positions),
+                key=lambda c: -_edition_year_from_path(c.get("file_path", "")),
+            )
+            for j, pos in enumerate(ucg_positions):
+                chunks[pos] = ucg_sorted[j]
+
     context_parts = []
     
     for idx, chunk in enumerate(chunks, 1):
@@ -368,6 +427,7 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
             preemptive_reasoning_rules=PREEMPTIVE_REASONING_RULES,
             pharmacology_rules=PHARMACOLOGY_RULES,
             references_rules=REFERENCES_RULES,
+            security_and_evidence_rules=SECURITY_AND_EVIDENCE_RULES,
         )
         user_context_block = f"""
             ### USER QUESTION:
@@ -417,7 +477,7 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
                     prompt_type,
                     [],
                 )
-            return f"⚠️ Failed to generate content: {str(e)}", False, prompt_type, []
+            return f"⚠️ {user_friendly_genai_error(e)}", False, prompt_type, []
 
         try:
             if response and hasattr(response, 'candidates') and response.candidates:
@@ -434,10 +494,8 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
                 if finish_reason == 'MAX_TOKENS':
                     truncation_note = (
                         f"\n\n---\n"
-                        f"**📝 Note:** This response was cut short to keep it concise. "
-                        f"If you'd like more detailed information, you can:\n"
-                        f"- Ask a follow-up question about a specific part, or\n"
-                        f"- Enable **Deep Search** mode for a more comprehensive answer"
+                        f"**Note:** This answer hit the length limit and may stop mid-sentence. "
+                        f"Try a narrower follow-up question, or use **Deep Search** for a longer, more complete reply."
                     )
                     full_response_text += truncation_note
                     logger.warning(f"⚠️ Response truncated at {max_output_tokens} tokens. Consider increasing limit or using deep search.")
@@ -452,7 +510,7 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
         except Exception as e:
             logger.error(f"Error processing model output: {e}", exc_info=True)
             prompt_type = "deep_search" if deep_search else "quick_search"
-            return f"An error occurred while processing the response: {str(e)}", False, prompt_type, []
+            return f"⚠️ {user_friendly_genai_error(e)}", False, prompt_type, []
 
         # Cache the response for future use
         if cache_key and full_response_text:
@@ -473,7 +531,7 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
     except Exception as e:
         logger.error(f"FATAL error in generate_response: {e}", exc_info=True)
         prompt_type = "deep_search" if deep_search else "quick_search"
-        return f"🚨 Unexpected error: {str(e)}", False, prompt_type, []
+        return f"⚠️ {user_friendly_genai_error(e)}", False, prompt_type, []
 
 
 def get_role_instruction(user_role_from_db: str) -> str:
@@ -598,6 +656,7 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
             preemptive_reasoning_rules=PREEMPTIVE_REASONING_RULES,
             pharmacology_rules=PHARMACOLOGY_RULES,
             references_rules=REFERENCES_RULES,
+            security_and_evidence_rules=SECURITY_AND_EVIDENCE_RULES,
         )
         user_context_block = f"""
             ### USER QUESTION:
@@ -695,10 +754,8 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
                 if finish_reason == 'MAX_TOKENS':
                     truncation_note = (
                         f"\n\n---\n"
-                        f"**📝 Note:** This response was cut short to keep it concise. "
-                        f"If you'd like more detailed information, you can:\n"
-                        f"- Ask a follow-up question about a specific part, or\n"
-                        f"- Enable **Deep Search** mode for a more comprehensive answer"
+                        f"**Note:** This answer hit the length limit and may stop mid-sentence. "
+                        f"Try a narrower follow-up question, or use **Deep Search** for a longer, more complete reply."
                     )
                     full_response_text += truncation_note
                     yield truncation_note
@@ -726,8 +783,8 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
             if _is_retryable_genai_error(e):
                 yield "\n\n[STREAM_ERROR]: The service is temporarily busy (rate limit). Please wait a moment and try again."
             else:
-                yield f"\n\n[STREAM_ERROR]: {str(e)}"
+                yield f"\n\n[STREAM_ERROR]: {user_friendly_genai_error(e)}"
 
     except Exception as e:
         logger.error(f"FATAL error in generate_response_stream: {e}", exc_info=True)
-        yield f"[STREAM_ERROR]: {str(e)}"
+        yield f"[STREAM_ERROR]: {user_friendly_genai_error(e)}"
