@@ -51,8 +51,8 @@ def search_all_collections(
     collection_name = vectordb_service.collection_name
 
     if not vectorstore_initialized or not client:
-        logger.warning("Vector store not ready yet (still warming up).")
-        raise RuntimeError("Knowledge base is still starting up. Please try again in a moment.")
+        logger.error("Vector store not initialized.")
+        raise RuntimeError("Vector store not initialized. Call initialize_vectorstore() first.")
 
     full_search_query = f"{query.strip()}\n{patient_data.strip()}".strip()
 

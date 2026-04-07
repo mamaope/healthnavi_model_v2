@@ -57,26 +57,13 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Database initialization failed during startup: {e}")
         logger.info("Application will continue - database will be initialized on first access")
     
-    # Vector store warm-up should never block server startup.
-    # If Zilliz is slow/unreachable, we continue and let it finish in background.
     try:
         from healthnavi.services.vectorstore_manager import initialize_vectorstore
-
-        async def _warm_vectorstore():
-            await asyncio.to_thread(initialize_vectorstore)
-
-        warm_task = asyncio.create_task(_warm_vectorstore())
-        try:
-            await asyncio.wait_for(asyncio.shield(warm_task), timeout=8)
-            logger.info("Vector store initialization completed")
-        except asyncio.TimeoutError:
-            logger.warning("Vector store initialization is taking longer than expected; continuing startup.")
-        except Exception as e:
-            logger.warning(f"Vector store initialization failed during startup: {e}")
-            logger.info("Application will continue - AI knowledge base may be unavailable temporarily")
+        initialize_vectorstore()
+        logger.info("Vector store initialization completed")
     except Exception as e:
-        logger.warning(f"Vector store warm-up setup failed during startup: {e}")
-        logger.info("Application will continue - AI knowledge base may be unavailable temporarily")
+        logger.warning(f"Vector store initialization failed during startup: {e}")
+        logger.info("Application will continue - AI will work without RAG context")
     
     try:
         from healthnavi.services.genai_client import initialize_genai_client
