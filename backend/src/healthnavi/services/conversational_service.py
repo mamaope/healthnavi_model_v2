@@ -4,6 +4,7 @@ import time
 import logging
 import asyncio
 import hashlib
+from collections import defaultdict
 from fastapi import HTTPException
 from healthnavi.services.genai_client import get_genai_client
 from healthnavi.services.vectorstore_manager import search_all_collections
@@ -67,22 +68,23 @@ def user_friendly_genai_error(exception: BaseException) -> str:
     """
     msg = str(exception)
     upper = msg.upper()
+    if "KNOWLEDGE BASE" in upper or "VECTOR STORE" in upper or "ZILLIZ" in upper or "MILVUS" in upper:
+        return "The medical knowledge base is still starting up. Please try again in a moment."
     if "BILLING_DISABLED" in upper or ("BILLING" in upper and "ENABLE" in upper):
         return (
-            "The assistant is temporarily unavailable because the AI service billing or permissions need to be "
-            "updated on our side. Please try again later or contact support if this continues."
+            "Empirico is temporarily unavailable. Please try again later or contact support if this continues."
         )
     if "PERMISSION_DENIED" in upper or "403" in upper:
         if "BILLING" in upper or "API" in upper:
             return (
-                "The assistant could not reach the AI service (permission or billing). "
+                "Empirico could not be reached."
                 "Please try again later or contact support."
             )
-        return "The assistant could not complete this request due to a permissions issue. Please try again later."
+        return "Empirico could not complete this request due to a permissions issue. Please try again later."
     if "RESOURCE_EXHAUSTED" in upper or "429" in upper or "RATE" in upper:
-        return "The service is temporarily busy. Please wait a moment and try again."
+        return "Empirico is temporarily busy. Please wait a moment and try again."
     if "SAFETY" in upper or "BLOCKED" in upper:
-        return "This response could not be completed. Try rephrasing your question."
+        return "Empirico could not complete this request. Try rephrasing your question."
     # Avoid leaking raw JSON or internal IDs to the client
     lower = msg.lower()
     if len(msg) > 280 or "{" in msg or "googleapis" in lower:
@@ -177,15 +179,27 @@ def validate_prompt_size(prompt: str, max_output_tokens: int, max_input_tokens: 
     return True, "", estimated_input_tokens
 
 
-def _looks_like_uganda_guideline_path(file_path: str) -> bool:
-    low = (file_path or "").lower()
-    return "ucg" in low or "uganda clinical" in low or "ug_clinical" in low
-
-
-def _edition_year_from_path(file_path: str) -> int:
+def _extract_edition_year_from_filename(file_path: str) -> int | None:
     base = os.path.basename(file_path or "")
     m = re.search(r"(20\d{2})", base)
-    return int(m.group(1)) if m else 0
+    if not m:
+        return None
+    y = int(m.group(1))
+    if 1990 <= y <= 2100:
+        return y
+    return None
+
+
+def _source_document_family_key(file_path: str) -> str | None:
+    """
+    Group chunks that belong to the same logical document across editions.
+    """
+    base = os.path.basename(file_path or "")
+    if not base:
+        return None
+    stem = re.sub(r"\b20\d{2}\b", "", base)
+    stem = re.sub(r"[\s._-]+", " ", stem).strip().lower()
+    return stem if len(stem) >= 2 else None
 
 
 def optimize_context_for_llm(chunks: list[dict], max_chunks: int = 3) -> str:
@@ -194,20 +208,32 @@ def optimize_context_for_llm(chunks: list[dict], max_chunks: int = 3) -> str:
     Each chunk is numbered and tagged with its source for mechanical grounding.
     """
     if isinstance(chunks, list) and len(chunks) > 1:
-        # When multiple UCG-era hits are present, assign newer editions to earlier slots in this
-        # bundle so the model reads the most recent guidance first, without reordering non-UCG hits.
-        ucg_positions = [
-            i
-            for i, c in enumerate(chunks)
-            if _looks_like_uganda_guideline_path(c.get("file_path", ""))
-        ]
-        if len(ucg_positions) >= 2:
-            ucg_sorted = sorted(
-                (chunks[i] for i in ucg_positions),
-                key=lambda c: -_edition_year_from_path(c.get("file_path", "")),
+        chunks = list(chunks)
+        # When multiple editions of the same source appear in this bundle, put newer
+        # editions in earlier chunk slots so the model reads the latest guidance first.
+        family_to_indices: dict[str, list[int]] = defaultdict(list)
+        for i, c in enumerate(chunks):
+            fp = c.get("file_path", "") or ""
+            if _extract_edition_year_from_filename(fp) is None:
+                continue
+            fk = _source_document_family_key(fp)
+            if not fk:
+                continue
+            family_to_indices[fk].append(i)
+
+        for _family_key, indices in family_to_indices.items():
+            if len(indices) < 2:
+                continue
+            ordered = sorted(indices)
+            group_chunks = [chunks[i] for i in ordered]
+            sorted_by_year = sorted(
+                group_chunks,
+                key=lambda ch: -(
+                    _extract_edition_year_from_filename(ch.get("file_path", "") or "") or 0
+                ),
             )
-            for j, pos in enumerate(ucg_positions):
-                chunks[pos] = ucg_sorted[j]
+            for j, pos in enumerate(ordered):
+                chunks[pos] = sorted_by_year[j]
 
     context_parts = []
     
@@ -444,11 +470,11 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
         # Validate prompt size before sending
         is_valid, warning_msg, estimated_input_tokens = validate_prompt_size(full_prompt, max_output_tokens)
         if not is_valid:
-            logger.error(f"❌ Token limit error: {warning_msg}")
+            logger.error(f" Token limit error: {warning_msg}")
             prompt_type = "deep_search" if deep_search else "quick_search"
-            return f"⚠️ Request too large: {warning_msg}. Please try a shorter query or enable deep search.", False, prompt_type, []
+            return f"Request too large: {warning_msg}. Please try a shorter query or enable deep search.", False, prompt_type, []
         elif warning_msg:
-            logger.warning(f"⚠️ {warning_msg}")
+            logger.warning(f" {warning_msg}")
 
         client = get_genai_client()
 
@@ -477,7 +503,7 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
                     prompt_type,
                     [],
                 )
-            return f"⚠️ {user_friendly_genai_error(e)}", False, prompt_type, []
+            return f" {user_friendly_genai_error(e)}", False, prompt_type, []
 
         try:
             if response and hasattr(response, 'candidates') and response.candidates:
@@ -486,7 +512,7 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
                 if not (hasattr(candidate, 'content') and hasattr(candidate.content, 'parts') and candidate.content.parts):
                     logger.error("Empty or blocked response (no content parts).")
                     prompt_type = "deep_search" if deep_search else "quick_search"
-                    return "⚠️ The content was blocked. Please rephrase your question.", False, prompt_type, []
+                    return "The content was blocked. Please rephrase your question.", False, prompt_type, []
 
                 full_response_text = candidate.content.parts[0].text.strip()
                 finish_reason = getattr(candidate, 'finish_reason', 'UNKNOWN')
@@ -498,19 +524,19 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
                         f"Try a narrower follow-up question, or use **Deep Search** for a longer, more complete reply."
                     )
                     full_response_text += truncation_note
-                    logger.warning(f"⚠️ Response truncated at {max_output_tokens} tokens. Consider increasing limit or using deep search.")
+                    logger.warning(f" Response truncated at {max_output_tokens} tokens. Consider increasing limit or using deep search.")
                 elif finish_reason in ['SAFETY', 'RECITATION']:
                     full_response_text += "\n\n**[Note: Some content was filtered for safety or duplication.]**"
 
             else:
                 logger.error("Model returned no candidates or empty response.")
                 prompt_type = "deep_search" if deep_search else "quick_search"
-                return "⚠️ No valid response was generated. Please try again.", False, prompt_type, []
+                return "No valid response was generated. Please try again.", False, prompt_type, []
 
         except Exception as e:
             logger.error(f"Error processing model output: {e}", exc_info=True)
             prompt_type = "deep_search" if deep_search else "quick_search"
-            return f"⚠️ {user_friendly_genai_error(e)}", False, prompt_type, []
+            return f" {user_friendly_genai_error(e)}", False, prompt_type, []
 
         # Cache the response for future use
         if cache_key and full_response_text:
