@@ -50,7 +50,14 @@ export default defineConfig({
       },
     },
     watch: {
-      ignored: ['**/node_modules/**', '**/.git/**', '**/dist/**', '**/.next/**', '**/.turbo/**'],
+      ignored: [
+        '**/node_modules/**',
+        '**/.pnpm-store/**',
+        '**/.git/**',
+        '**/dist/**',
+        '**/.next/**',
+        '**/.turbo/**',
+      ],
       usePolling: false,
     },
   },

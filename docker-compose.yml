@@ -66,15 +66,21 @@ services:
       - "3000:5173"
     volumes:
       - ./frontend:/app
+      - pnpm_store:/pnpm-store
     environment:
       - NODE_ENV=development
       - VITE_PROXY_TARGET=http://api:8050
       - CI=true
       - PNPM_CONFIG_CONFIRM_MODULES_PURGE=false
-    command: sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm dev --host 0.0.0.0"
+      - PNPM_STORE_DIR=/pnpm-store
+      - PNPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS=true
+      - CHOKIDAR_USEPOLLING=true
+      - CHOKIDAR_INTERVAL=1000
+    command: sh -c "corepack enable && pnpm install --frozen-lockfile --config.confirmModulesPurge=false && pnpm run dev -- --host 0.0.0.0"
     restart: unless-stopped
     depends_on:
       - api
 
 volumes:
   postgres_data:
+  pnpm_store:
