@@ -69,7 +69,9 @@ services:
     environment:
       - NODE_ENV=development
       - VITE_PROXY_TARGET=http://api:8050
-    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
+      - CI=true
+      - PNPM_CONFIG_CONFIRM_MODULES_PURGE=false
+    command: sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm dev --host 0.0.0.0"
     restart: unless-stopped
     depends_on:
       - api

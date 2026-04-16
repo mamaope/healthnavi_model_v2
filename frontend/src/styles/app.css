@@ -6558,7 +6558,11 @@ textarea {
 .sample-dropdown-trigger i:first-child {
     font-size: 12px;
     color: var(--primary-500);
-    opacity: 0.8;
+    line-height: 1;
+    opacity: 0.9;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .sample-dropdown-title {
@@ -6578,14 +6582,14 @@ textarea {
     color: #ffffff;
 }
 
-.sample-dropdown-trigger.expanded i {
-    color: #ffffff;
-    opacity: 1;
-}
-
 .sample-dropdown-trigger.expanded .sample-dropdown-chevron {
     transform: rotate(180deg);
     color: #ffffff;
+}
+
+.sample-dropdown-trigger.expanded i {
+    color: #ffffff;
+    opacity: 1;
 }
 
 .sample-dropdown-trigger:hover {
@@ -6613,10 +6617,26 @@ textarea {
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15), 0 4px 12px rgba(0, 0, 0, 0.1);
     padding: 10px;
     z-index: 9999999 !important; /* Very high z-index to appear above everything */
-    animation: slideDownCentered 0.2s ease-out;
+    animation: sampleDropdownFadeIn 0.2s ease-out;
     overflow: visible !important;
     height: auto !important;
     isolation: isolate;
+}
+
+.sample-dropdown-menu--left {
+    left: 0;
+    transform: translateX(0) translateY(0);
+}
+
+.sample-dropdown-menu--right {
+    left: auto;
+    right: 0;
+    transform: translateX(0) translateY(0);
+}
+
+.sample-dropdown-menu--center {
+    left: 50%;
+    transform: translateX(-50%) translateY(0);
 }
 
 @keyframes slideDownCentered {
@@ -6627,6 +6647,17 @@ textarea {
     to {
         opacity: 1;
         transform: translateX(-50%) translateY(0);
+    }
+}
+
+@keyframes sampleDropdownFadeIn {
+    from {
+        opacity: 0;
+        margin-top: -4px;
+    }
+    to {
+        opacity: 1;
+        margin-top: 0;
     }
 }
 
@@ -7665,6 +7696,36 @@ textarea {
     transform: translateY(-1px);
 }
 
+.header-auth-btn {
+    width: 88px !important;
+    min-width: 88px !important;
+    height: 40px !important;
+    padding: 0 !important;
+    border-radius: 999px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-sizing: border-box !important;
+}
+
+.btn-outline.header-auth-btn,
+.btn-primary.header-auth-btn {
+    width: 88px !important;
+    min-width: 88px !important;
+    height: 40px !important;
+    padding: 0 !important;
+    border-radius: 999px !important;
+    box-sizing: border-box !important;
+}
+
+.btn-outline.header-auth-btn {
+    border-width: 1.5px !important;
+}
+
+.btn-primary.header-auth-btn {
+    border: 1.5px solid transparent !important;
+}
+
 .header-menu-container {
     position: relative;
 }
@@ -7819,6 +7880,15 @@ textarea {
         border-radius: var(--radius-lg) !important;
         box-sizing: border-box !important;
         justify-content: center !important;
+    }
+    
+    .header-auth-btn {
+        width: 74px !important;
+        min-width: 74px !important;
+        height: 36px !important;
+        padding: 0 !important;
+        border-radius: 999px !important;
+        box-sizing: border-box !important;
     }
     
     .header-logo .logo-image {

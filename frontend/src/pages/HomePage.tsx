@@ -204,7 +204,6 @@ export default function HomePage() {
       try {
         const result = await sendMessage({
           message: userQuestion,
-          sessionId: currentSession?.id,
           deepSearch: true,
         })
         if (result && 'followupQuestions' in result && result.followupQuestions) {
@@ -214,7 +213,7 @@ export default function HomePage() {
         console.error('Error sending deep search message:', error)
       }
     },
-    [sendMessage, currentSession?.id, setFollowupQuestions],
+    [sendMessage, setFollowupQuestions],
   )
 
   const handleToggleSidebar = useCallback(() => {
@@ -328,21 +327,7 @@ export default function HomePage() {
             <div className="messages-container" ref={messagesContainerRef}>
               <MessageList 
                 messages={messages} 
-                onDeepSearch={async (userQuestion: string) => {
-                  // Send the user's question again with deep search enabled
-                  setFollowupQuestions([])
-                  try {
-                    const result = await sendMessage({
-                      message: userQuestion,
-                      deepSearch: true,
-                    })
-                    if (result && 'followupQuestions' in result && result.followupQuestions) {
-                      setFollowupQuestions(result.followupQuestions)
-                    }
-                  } catch (error) {
-                    console.error('Error sending deep search message:', error)
-                  }
-                }}
+                onDeepSearch={handleDeepSearch}
               />
               <LoadingIndicator isVisible={isSending || isFetchingFollowup} />
               
@@ -377,7 +362,7 @@ export default function HomePage() {
             <div className="input-section">
               {showSamplePrompts && (
                 <div className="homepage-logo">
-                  <img src="/logo.png" alt="Empirico" />
+                  <img src="/logo.png" alt="Empirico" loading="eager" />
                 </div>
               )}
               <ChatInput

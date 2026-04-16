@@ -1,37 +1,12 @@
-import React, { lazy, Suspense } from 'react'
+import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from './providers/ThemeProvider'
 import { AuthProvider } from './providers/AuthProvider'
+import App from './App'
 
-// Lazy-load App so initial bundle is smaller; app.css loads with App chunk app chunk loads in parallel after first paint
-const App = lazy(() => import('./App'))
-
-// Minimal fallback matching the HTML skeleton (same class names) so no extra CSS or component
-function ShellFallback() {
-  return (
-    <div className="app-loading-skeleton" aria-hidden="true">
-      <div className="skeleton-header" />
-      <div className="skeleton-chat">
-        <div className="skeleton-logo" />
-        <div className="skeleton-input" />
-        <div className="skeleton-dots">
-          <span className="skeleton-dot" />
-          <span className="skeleton-dot" />
-          <span className="skeleton-dot" />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// Preload home page chunk so it’s ready as soon as the user sees the app
-if (typeof window !== 'undefined') {
-  if ('requestIdleCallback' in window) {
-    (window as any).requestIdleCallback(() => import('./pages/HomePage').catch(() => {}), { timeout: 2000 })
-  }
-}
+import '@fortawesome/fontawesome-free/css/all.min.css'
 
 // Error boundary component
 class ErrorBoundary extends React.Component<
@@ -95,9 +70,7 @@ try {
           <QueryClientProvider client={queryClient}>
             <ThemeProvider>
               <AuthProvider>
-                <Suspense fallback={<ShellFallback />}>
-                  <App />
-                </Suspense>
+                <App />
               </AuthProvider>
             </ThemeProvider>
           </QueryClientProvider>

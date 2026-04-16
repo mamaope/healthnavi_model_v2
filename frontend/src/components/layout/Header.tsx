@@ -73,6 +73,7 @@ export function Header({ onSignIn, onRegister, onHomeClick, onMenuToggle, showMe
               src="/logo.png" 
               alt="Empirico" 
               className="logo-image"
+              loading="eager"
               onError={(e) => {
                 const target = e.target as HTMLImageElement
                 target.style.display = 'none'
@@ -91,10 +92,10 @@ export function Header({ onSignIn, onRegister, onHomeClick, onMenuToggle, showMe
         <div className="header-actions-wrapper">
           {!isAuthenticated && (
             <div className="header-actions">
-              <button className="btn btn-outline" onClick={onSignIn}>
+              <button className="btn btn-outline header-auth-btn" onClick={onSignIn}>
                 Log In
               </button>
-              <button className="btn btn-primary" onClick={onRegister}>
+              <button className="btn btn-primary header-auth-btn" onClick={onRegister}>
                 Sign Up
               </button>
               <div className="header-menu-container" ref={menuRef}>
