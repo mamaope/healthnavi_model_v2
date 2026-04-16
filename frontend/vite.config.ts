@@ -19,6 +19,9 @@ const useCustomHMR = !!process.env.VITE_HMR_HOST
 
 export default defineConfig({
   plugins: [react()],
+  esbuild: {
+    drop: isProduction ? ['console', 'debugger'] : [],
+  },
   server: {
     host: '0.0.0.0',
     allowedHosts: [
@@ -27,16 +30,16 @@ export default defineConfig({
       'empirico.ai',
       '.empirico.ai',
     ],
-    hmr: disableHMR ? false : useCustomHMR ? {
-      // Use custom HMR config if provided via env vars (for production)
-      host: process.env.VITE_HMR_HOST,
-      clientPort: process.env.VITE_HMR_PORT ? parseInt(process.env.VITE_HMR_PORT) : undefined,
-      protocol: process.env.VITE_HMR_PROTOCOL || 'wss',
-    } : {
-      // Default to localhost for local development (no custom config)
-      host: 'localhost',
-      protocol: 'ws',
-    },
+    hmr: disableHMR
+      ? false
+      : useCustomHMR
+        ? {
+            // Explicit override for proxied/cloud dev environments.
+            host: process.env.VITE_HMR_HOST,
+            clientPort: process.env.VITE_HMR_PORT ? parseInt(process.env.VITE_HMR_PORT) : undefined,
+            protocol: process.env.VITE_HMR_PROTOCOL || 'wss',
+          }
+        : undefined,
     proxy: {
       '/api/v2': {
         target: proxyTarget,
@@ -75,9 +78,6 @@ export default defineConfig({
     minify: 'esbuild',
     cssMinify: false, /* PostCSS + cssnano minifies CSS in production */
     target: 'esnext',
-    esbuild: {
-      drop: isProduction ? ['console', 'debugger'] : [],
-    },
   },
 })
 
