@@ -1,0 +1,70 @@
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: empirico_cdss_api
+    ports:
+      - "8050:8050"
+    env_file:
+      - .env
+    volumes:
+      - ./backend:/backend
+      - ./logs:/backend/logs
+      - ./regal-autonomy-454806-d1-edf68610c57a.json:/backend/regal-autonomy-454806-d1-edf68610c57a.json
+    command: sh -c "python3 /backend/scripts/fix_line_endings.py /backend/scripts/startup.sh && chmod +x /backend/scripts/startup.sh && bash /backend/scripts/startup.sh"
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8050/api/v2/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  db:
+    image: postgres:15-alpine
+    container_name: empirico_cdss_postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    command:
+      - "postgres"
+      - "-c"
+      - "log_min_messages=error"
+      - "-c"
+      - "log_statement=none"
+      - "-c"
+      - "log_connections=off"
+      - "-c"
+      - "log_disconnections=off"
+      - "-c"
+      - "log_checkpoints=off"
+    ports:
+      - "5437:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: empirico_cdss_frontend
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
