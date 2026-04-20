@@ -6,8 +6,6 @@ import { ThemeProvider } from './providers/ThemeProvider'
 import { AuthProvider } from './providers/AuthProvider'
 import App from './App'
 
-import '@fortawesome/fontawesome-free/css/all.min.css'
-
 // Error boundary component
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -78,6 +76,20 @@ try {
       </ErrorBoundary>
     </React.StrictMode>,
   )
+
+  // Load non-critical icon styles after first paint.
+  // This keeps initial render focused on core layout/content CSS.
+  const loadIconStyles = () => {
+    void import('@fortawesome/fontawesome-free/css/all.min.css').catch((error) => {
+      console.error('Failed to load Font Awesome styles', error)
+    })
+  }
+
+  if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+    ;(window as any).requestIdleCallback(loadIconStyles, { timeout: 2000 })
+  } else {
+    globalThis.setTimeout(loadIconStyles, 0)
+  }
 } catch (error) {
   console.error('Failed to render app:', error)
   rootElement.innerHTML = `

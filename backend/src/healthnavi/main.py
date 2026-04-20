@@ -73,14 +73,23 @@ async def lifespan(app: FastAPI):
         logger.warning(f"GenAI client initialization failed during startup: {e}")
         logger.info("Application will continue - AI functionality may be limited")
     
+    _whisper_task = None
     try:
         from healthnavi.services.transcription_service import preload_model
-        # Run in background or just log that it's loading
-        logger.info("Preloading Whisper model...")
-        preload_model()
-        logger.info("Whisper model preloading completed")
+
+        async def _preload_whisper_in_background():
+            try:
+                logger.info("Preloading Whisper model in background...")
+                await asyncio.to_thread(preload_model)
+                logger.info("Whisper model preloading completed")
+            except Exception as e:
+                logger.warning(f"Whisper model preloading failed: {e}")
+                logger.info("Application will continue - Transcription will load on first use")
+
+        # Don't block API readiness on model download/preload.
+        _whisper_task = asyncio.create_task(_preload_whisper_in_background())
     except Exception as e:
-        logger.warning(f"Whisper model preloading failed: {e}")
+        logger.warning(f"Whisper preload task setup failed: {e}")
         logger.info("Application will continue - Transcription will load on first use")
 
     logger.info("Application startup completed successfully")
@@ -114,6 +123,12 @@ async def lifespan(app: FastAPI):
         await _deletion_task
     except asyncio.CancelledError:
         pass
+    if _whisper_task is not None:
+        _whisper_task.cancel()
+        try:
+            await _whisper_task
+        except asyncio.CancelledError:
+            pass
     logger.info("Shutting down Empirico AI CDSS application...")
 
 

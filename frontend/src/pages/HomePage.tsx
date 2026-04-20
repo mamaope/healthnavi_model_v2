@@ -1,8 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { AuthModal, type AuthMode } from '../components/auth/AuthModal'
-import { ForgotPasswordModal } from '../components/auth/ForgotPasswordModal'
-import { ResetPasswordModal } from '../components/auth/ResetPasswordModal'
-import { ProfessionalTypeModal } from '../components/ProfessionalTypeModal'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import type { AuthMode } from '../components/auth/AuthModal'
 import { ChatInput } from '../components/chat/ChatInput'
 import { LoadingIndicator } from '../components/chat/LoadingIndicator'
 import { MessageList } from '../components/chat/MessageList'
@@ -14,6 +11,27 @@ import { useAuth } from '../providers/AuthProvider'
 import { useChatStore } from '../store/useChatStore'
 import { APP_METADATA, STORAGE_KEYS } from '../config'
 import { Link } from 'react-router-dom'
+
+const AuthModal = lazy(() =>
+  import('../components/auth/AuthModal').then((module) => ({
+    default: module.AuthModal,
+  })),
+)
+const ForgotPasswordModal = lazy(() =>
+  import('../components/auth/ForgotPasswordModal').then((module) => ({
+    default: module.ForgotPasswordModal,
+  })),
+)
+const ResetPasswordModal = lazy(() =>
+  import('../components/auth/ResetPasswordModal').then((module) => ({
+    default: module.ResetPasswordModal,
+  })),
+)
+const ProfessionalTypeModal = lazy(() =>
+  import('../components/ProfessionalTypeModal').then((module) => ({
+    default: module.ProfessionalTypeModal,
+  })),
+)
 
 export default function HomePage() {
   const { isAuthenticated, initializing, refreshProfile, user } = useAuth()
@@ -456,51 +474,53 @@ export default function HomePage() {
         )}
       </div>
 
-      {/* Auth Modals */}
-      <AuthModal
-        isOpen={authModalOpen}
-        mode={authMode}
-        onClose={() => setAuthModalOpen(false)}
-        onSwitchMode={(mode) => setAuthMode(mode)}
-        onForgotPassword={() => {
-          setAuthModalOpen(false)
-          setForgotPasswordModalOpen(true)
-        }}
-      />
-
-      <ForgotPasswordModal
-        isOpen={forgotPasswordModalOpen}
-        onClose={() => setForgotPasswordModalOpen(false)}
-        onBackToLogin={() => {
-          setForgotPasswordModalOpen(false)
-          setAuthMode('login')
-          setAuthModalOpen(true)
-        }}
-      />
-
-      {resetToken && (
-        <ResetPasswordModal
-          isOpen={resetPasswordModalOpen}
-          token={resetToken}
-          onClose={() => {
-            setResetPasswordModalOpen(false)
-            setResetToken(null)
+      {/* Lazy-load heavy modal code only when needed */}
+      <Suspense fallback={null}>
+        <AuthModal
+          isOpen={authModalOpen}
+          mode={authMode}
+          onClose={() => setAuthModalOpen(false)}
+          onSwitchMode={(mode) => setAuthMode(mode)}
+          onForgotPassword={() => {
+            setAuthModalOpen(false)
+            setForgotPasswordModalOpen(true)
           }}
-          onSuccess={() => {
-            setResetPasswordModalOpen(false)
-            setResetToken(null)
+        />
+
+        <ForgotPasswordModal
+          isOpen={forgotPasswordModalOpen}
+          onClose={() => setForgotPasswordModalOpen(false)}
+          onBackToLogin={() => {
+            setForgotPasswordModalOpen(false)
             setAuthMode('login')
             setAuthModalOpen(true)
           }}
         />
-      )}
 
-      {professionalTypeModalOpen && (
-        <ProfessionalTypeModal
-          isOpen={professionalTypeModalOpen}
-          onClose={() => setProfessionalTypeModalOpen(false)}
-        />
-      )}
+        {resetToken && (
+          <ResetPasswordModal
+            isOpen={resetPasswordModalOpen}
+            token={resetToken}
+            onClose={() => {
+              setResetPasswordModalOpen(false)
+              setResetToken(null)
+            }}
+            onSuccess={() => {
+              setResetPasswordModalOpen(false)
+              setResetToken(null)
+              setAuthMode('login')
+              setAuthModalOpen(true)
+            }}
+          />
+        )}
+
+        {professionalTypeModalOpen && (
+          <ProfessionalTypeModal
+            isOpen={professionalTypeModalOpen}
+            onClose={() => setProfessionalTypeModalOpen(false)}
+          />
+        )}
+      </Suspense>
     </div>
   )
 }

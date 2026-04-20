@@ -21,8 +21,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8050/api/v2/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 40s
+      retries: 8
+      start_period: 180s
 
   db:
     image: postgres:15-alpine
@@ -64,7 +64,8 @@ services:
       - "3000:80"
     restart: unless-stopped
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
 volumes:
   postgres_data:
