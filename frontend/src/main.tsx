@@ -5,7 +5,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from './providers/ThemeProvider'
 import { AuthProvider } from './providers/AuthProvider'
 import App from './App'
-import '@fortawesome/fontawesome-free/css/all.min.css'
+import '@fortawesome/fontawesome-free/css/fontawesome.min.css'
+import '@fortawesome/fontawesome-free/css/solid.min.css'
 
 // Error boundary component
 class ErrorBoundary extends React.Component<

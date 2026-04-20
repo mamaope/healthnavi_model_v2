@@ -476,26 +476,30 @@ export default function HomePage() {
 
       {/* Lazy-load heavy modal code only when needed */}
       <Suspense fallback={null}>
-        <AuthModal
-          isOpen={authModalOpen}
-          mode={authMode}
-          onClose={() => setAuthModalOpen(false)}
-          onSwitchMode={(mode) => setAuthMode(mode)}
-          onForgotPassword={() => {
-            setAuthModalOpen(false)
-            setForgotPasswordModalOpen(true)
-          }}
-        />
+        {authModalOpen && (
+          <AuthModal
+            isOpen={authModalOpen}
+            mode={authMode}
+            onClose={() => setAuthModalOpen(false)}
+            onSwitchMode={(mode) => setAuthMode(mode)}
+            onForgotPassword={() => {
+              setAuthModalOpen(false)
+              setForgotPasswordModalOpen(true)
+            }}
+          />
+        )}
 
-        <ForgotPasswordModal
-          isOpen={forgotPasswordModalOpen}
-          onClose={() => setForgotPasswordModalOpen(false)}
-          onBackToLogin={() => {
-            setForgotPasswordModalOpen(false)
-            setAuthMode('login')
-            setAuthModalOpen(true)
-          }}
-        />
+        {forgotPasswordModalOpen && (
+          <ForgotPasswordModal
+            isOpen={forgotPasswordModalOpen}
+            onClose={() => setForgotPasswordModalOpen(false)}
+            onBackToLogin={() => {
+              setForgotPasswordModalOpen(false)
+              setAuthMode('login')
+              setAuthModalOpen(true)
+            }}
+          />
+        )}
 
         {resetToken && (
           <ResetPasswordModal
