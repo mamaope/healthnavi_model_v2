@@ -24,6 +24,7 @@ interface SurveySubmission {
 export default function SurveySubmissionsPage() {
   const { user, isAuthenticated, initializing } = useAuth()
   const navigate = useNavigate()
+  const userRole = user?.role ?? ''
   const [surveys, setSurveys] = useState<SurveySubmission[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -37,12 +38,12 @@ export default function SurveySubmissionsPage() {
 
   useEffect(() => {
     if (initializing) return
-    if (!isAuthenticated || !user || !['admin', 'super_admin'].includes(user.role)) {
+    if (!isAuthenticated || !user || !['admin', 'super_admin'].includes(userRole)) {
       navigate('/')
       return
     }
     loadSurveys()
-  }, [isAuthenticated, user, initializing, selectedSurveyType, page, navigate])
+  }, [isAuthenticated, user, userRole, initializing, selectedSurveyType, page, navigate])
 
   const loadSurveys = async () => {
     try {
@@ -175,7 +176,7 @@ export default function SurveySubmissionsPage() {
     )
   }
 
-  if (!isAuthenticated || !user || !['admin', 'super_admin'].includes(user.role)) {
+  if (!isAuthenticated || !user || !['admin', 'super_admin'].includes(userRole)) {
     return null
   }
 

@@ -80,7 +80,10 @@ export default function SafetyPanel({ metrics }: SafetyPanelProps) {
                 <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
                 <Tooltip
-                  formatter={(value: number) => [value, 'Count']}
+                  formatter={(value) => {
+                    const numericValue = typeof value === 'number' ? value : Number(value ?? 0) || 0
+                    return [numericValue, 'Count']
+                  }}
                   labelFormatter={(_, payload) => payload?.[0]?.payload?.fullName ?? ''}
                   contentStyle={{ fontSize: 12, borderRadius: 8, backgroundColor: '#ffffff', color: '#1f2937', border: '1px solid #e5e7eb' }}
                 />

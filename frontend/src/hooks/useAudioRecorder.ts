@@ -19,7 +19,7 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const startTimeRef = useRef<number>(0)
-  const durationIntervalRef = useRef<number | null>(null)
+  const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Cleanup on unmount
   useEffect(() => {

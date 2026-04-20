@@ -82,10 +82,11 @@ export default function PmfPanel({ metrics }: PmfPanelProps) {
                   ))}
                 </Pie>
                 <Tooltip
-                  formatter={(value: number, name: string, props: any) => {
+                  formatter={(value, name) => {
+                    const numericValue = typeof value === 'number' ? value : Number(value ?? 0) || 0
                     const total = replacementData.reduce((s, d) => s + d.value, 0)
-                    const pct = total > 0 ? ((value / total) * 100).toFixed(1) : '0'
-                    return [`${value} (${pct}%)`, name]
+                    const pct = total > 0 ? ((numericValue / total) * 100).toFixed(1) : '0'
+                    return [`${numericValue} (${pct}%)`, String(name ?? '')]
                   }}
                   contentStyle={{ fontSize: 12, borderRadius: 8, backgroundColor: '#ffffff', color: '#1f2937', border: '1px solid #e5e7eb' }}
                 />

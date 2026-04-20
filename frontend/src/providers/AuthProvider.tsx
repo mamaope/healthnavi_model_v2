@@ -203,7 +203,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, 30 * 60 * 1000) // 30 minutes
 
     // Listen for storage changes (e.g., token cleared by apiClient, or new token added)
-    const handleStorageChange = (e: StorageEvent | null = null) => {
+    const handleStorageChange = () => {
       const updatedStored = getStoredAuth()
       
       if (!updatedStored.token) {

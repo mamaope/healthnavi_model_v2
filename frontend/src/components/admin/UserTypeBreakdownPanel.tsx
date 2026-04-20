@@ -124,7 +124,13 @@ export default function UserTypeBreakdownPanel({ days = 30 }: UserTypeBreakdownP
                       <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(v: number) => [v, 'Users']} contentStyle={{ fontSize: 12, borderRadius: 8, backgroundColor: '#ffffff', color: '#1f2937', border: '1px solid #e5e7eb' }} />
+                  <Tooltip
+                    formatter={(value) => {
+                      const numericValue = typeof value === 'number' ? value : Number(value ?? 0) || 0
+                      return [numericValue, 'Users']
+                    }}
+                    contentStyle={{ fontSize: 12, borderRadius: 8, backgroundColor: '#ffffff', color: '#1f2937', border: '1px solid #e5e7eb' }}
+                  />
                   <Legend layout="horizontal" align="center" wrapperStyle={{ paddingTop: 8 }} />
                 </PieChart>
               </ResponsiveContainer>
@@ -150,7 +156,13 @@ export default function UserTypeBreakdownPanel({ days = 30 }: UserTypeBreakdownP
                       <Cell key={i} fill={CHART_COLORS[(i + 2) % CHART_COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(v: number) => [v, 'Users']} contentStyle={{ fontSize: 12, borderRadius: 8, backgroundColor: '#ffffff', color: '#1f2937', border: '1px solid #e5e7eb' }} />
+                  <Tooltip
+                    formatter={(value) => {
+                      const numericValue = typeof value === 'number' ? value : Number(value ?? 0) || 0
+                      return [numericValue, 'Users']
+                    }}
+                    contentStyle={{ fontSize: 12, borderRadius: 8, backgroundColor: '#ffffff', color: '#1f2937', border: '1px solid #e5e7eb' }}
+                  />
                   <Legend layout="horizontal" align="center" wrapperStyle={{ paddingTop: 8 }} />
                 </PieChart>
               </ResponsiveContainer>

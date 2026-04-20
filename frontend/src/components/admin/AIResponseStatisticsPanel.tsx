@@ -132,9 +132,10 @@ export default function AIResponseStatisticsPanel({ days }: AIResponseStatistics
                   ))}
                 </Pie>
                 <Tooltip
-                  formatter={(value: number) => {
-                    const pct = totalFeedback > 0 ? ((value / totalFeedback) * 100).toFixed(1) : '0'
-                    return [`${value} (${pct}%)`, '']
+                  formatter={(value) => {
+                    const numericValue = typeof value === 'number' ? value : Number(value ?? 0) || 0
+                    const pct = totalFeedback > 0 ? ((numericValue / totalFeedback) * 100).toFixed(1) : '0'
+                    return [`${numericValue} (${pct}%)`, '']
                   }}
                   contentStyle={{ fontSize: 12, borderRadius: 8, backgroundColor: '#ffffff', color: '#1f2937', border: '1px solid #e5e7eb' }}
                 />
