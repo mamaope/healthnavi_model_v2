@@ -15,6 +15,18 @@ COPY . .
 # Build the application
 RUN pnpm run build
 
+# Pre-compress static assets so nginx can serve them directly.
+# This avoids CPU-heavy on-the-fly compression on small prod instances.
+RUN find dist -type f \( \
+  -name "*.js" -o \
+  -name "*.css" -o \
+  -name "*.html" -o \
+  -name "*.svg" -o \
+  -name "*.json" -o \
+  -name "*.txt" -o \
+  -name "*.xml" \
+\) -exec gzip -k -9 {} \;
+
 # Production stage
 FROM nginx:alpine
 
