@@ -11386,3 +11386,185 @@ textarea {
         width: 100%;
     }
 }
+
+.oauth-status-banner {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    margin: 0 auto var(--space-2);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-full);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+.auth-modal-content {
+    width: min(460px, 94vw);
+    border-radius: 20px;
+    border: 1px solid var(--border-light);
+    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.2);
+}
+
+.auth-modal-header {
+    padding-bottom: var(--space-4);
+}
+
+.auth-modal-body {
+    padding-top: var(--space-4);
+}
+
+.auth-modal-subtitle {
+    margin: 0 0 var(--space-4);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.55;
+}
+
+.auth-submit-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+}
+
+.btn-google[aria-disabled='true'] {
+    pointer-events: none;
+    opacity: 0.7;
+}
+
+.auth-redirect-status {
+    margin-top: var(--space-3);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-full);
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    font-size: var(--font-size-xs);
+}
+
+.modern-sidebar {
+    height: 100dvh;
+    max-height: 100dvh;
+    padding-bottom: env(safe-area-inset-bottom);
+}
+
+.sidebar-content {
+    padding-bottom: var(--space-6);
+}
+
+.sidebar-footer {
+    padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+}
+
+.followup-card {
+    box-sizing: border-box;
+}
+
+.followup-card span {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+@media (max-width: 768px) {
+    .sample-questions-dropdown {
+        flex-direction: column;
+        align-items: stretch;
+        gap: var(--space-2) !important;
+        row-gap: var(--space-2) !important;
+        column-gap: var(--space-2) !important;
+    }
+
+    .sample-dropdown-item {
+        width: 100%;
+    }
+
+    .sample-dropdown-trigger {
+        width: 100%;
+        min-height: 44px;
+        white-space: normal;
+        justify-content: space-between;
+        text-align: left;
+        padding: 10px 12px;
+    }
+
+    .sample-dropdown-title {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .sample-dropdown-menu,
+    .sample-dropdown-menu--left,
+    .sample-dropdown-menu--right,
+    .sample-dropdown-menu--center {
+        position: static !important;
+        top: auto !important;
+        left: auto !important;
+        right: auto !important;
+        transform: none !important;
+        width: 100% !important;
+        min-width: 100% !important;
+        max-width: 100% !important;
+        margin-top: var(--space-2) !important;
+        padding: var(--space-2);
+        box-shadow: var(--shadow-md);
+        z-index: 1 !important;
+    }
+
+    .prompts-section {
+        overflow: visible;
+    }
+
+    .followup-section {
+        width: 100%;
+    }
+
+    .followup-card {
+        width: 100%;
+        align-items: flex-start;
+    }
+
+    .modern-sidebar.open {
+        height: 100dvh;
+        max-height: 100dvh;
+    }
+}
+
+@media (max-width: 480px) {
+    .auth-modal-content {
+        width: 95vw;
+        border-radius: 16px;
+    }
+
+    .modal.auth-modal {
+        padding: var(--space-3);
+    }
+}
+
+.chat-textarea-input,
+.chat-input-box textarea {
+    caret-color: var(--text-primary) !important;
+    font-style: normal !important;
+    font-variant-ligatures: none;
+    text-rendering: optimizeLegibility;
+}
+
+.chat-input-box textarea {
+    padding-top: 10px;
+    padding-bottom: 10px;
+}
+
+.chat-input-box:focus-within {
+    transform: none;
+}
+
+@media (max-width: 768px) {
+    .chat-textarea-input,
+    .chat-input-box textarea {
+        line-height: 1.45;
+    }
+}
