@@ -62,6 +62,22 @@ export default defineConfig({
     },
   },
   build: {
+    modulePreload: {
+      resolveDependencies: (_url, deps, context) => {
+        // Do not preload non-critical heavy chunks in index.html.
+        // On slow mobile/prod links, preloading these blocks the first interactive paint.
+        if (context.hostType === 'html') {
+          return deps.filter(
+            (dep) =>
+              !dep.includes('pdf-') &&
+              !dep.includes('charts-') &&
+              !dep.includes('forms-') &&
+              !dep.includes('markdown-'),
+          )
+        }
+        return deps
+      },
+    },
     sourcemap: !isProduction,
     rollupOptions: {
       output: {
