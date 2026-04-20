@@ -78,7 +78,8 @@ export default defineConfig({
         return deps
       },
     },
-    sourcemap: !isProduction,
+    sourcemap: false,
+    cssCodeSplit: true,
     rollupOptions: {
       output: {
         manualChunks: (id) => {
@@ -99,7 +100,7 @@ export default defineConfig({
     },
     chunkSizeWarningLimit: 600,
     minify: 'esbuild',
-    cssMinify: false, /* PostCSS + cssnano minifies CSS in production */
+    cssMinify: true,
     target: 'esnext',
   },
 })
