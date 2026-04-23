@@ -858,12 +858,20 @@ export const adminApi = {
       'GET',
     )
   },
-  getSurveys(surveyType?: string, limit: number = 100, offset: number = 0) {
+  getSurveys(
+    surveyType?: string,
+    limit: number = 100,
+    offset: number = 0,
+    startDate?: string,
+    endDate?: string,
+  ) {
     const params = new URLSearchParams({
       limit: limit.toString(),
       offset: offset.toString(),
     })
     if (surveyType) params.append('survey_type', surveyType)
+    if (startDate) params.append('start_date', startDate)
+    if (endDate) params.append('end_date', endDate)
     return apiFetch<{ success: boolean; data: { surveys: any[]; total: number; limit: number; offset: number } }>(
       `/admin/surveys?${params.toString()}`,
       'GET',
