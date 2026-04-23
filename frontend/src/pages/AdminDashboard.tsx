@@ -27,6 +27,7 @@ type AdminTab = 'overview' | 'users' | 'sessions' | 'feedback' | 'surveys' | 'sy
 export default function AdminDashboard() {
   const { user, isAuthenticated, initializing } = useAuth()
   const navigate = useNavigate()
+  const userRole = user?.role ?? ''
   const [metrics, setMetrics] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -92,25 +93,25 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (initializing) return
-    if (!isAuthenticated || !user || !['admin', 'super_admin'].includes(user.role)) {
+    if (!isAuthenticated || !user || !['admin', 'super_admin'].includes(userRole)) {
       navigate('/')
       return
     }
-    if (isAuthenticated && user && ['admin', 'super_admin'].includes(user.role)) {
+    if (isAuthenticated && user && ['admin', 'super_admin'].includes(userRole)) {
       loadMetrics()
       const interval = setInterval(loadMetrics, 5 * 60 * 1000)
       return () => clearInterval(interval)
     }
-  }, [isAuthenticated, user, initializing, loadMetrics, navigate])
+  }, [isAuthenticated, user, userRole, initializing, loadMetrics, navigate])
 
   useEffect(() => {
-    if (!isAuthenticated || !user || !['admin', 'super_admin'].includes(user.role)) return
+    if (!isAuthenticated || !user || !['admin', 'super_admin'].includes(userRole)) return
     adminApi.getUsers(200, 0).then((res) => {
       if (res.success && res.data?.users) {
         setUserList(res.data.users.map((u: any) => ({ id: u.id, email: u.email, full_name: u.full_name })))
       }
     })
-  }, [isAuthenticated, user])
+  }, [isAuthenticated, user, userRole])
 
   const handleExportPdf = useCallback(async () => {
     setExporting(true)
@@ -230,7 +231,7 @@ export default function AdminDashboard() {
   }
 
   // Redirect if not authenticated or not admin
-  if (!isAuthenticated || !user || !['admin', 'super_admin'].includes(user.role)) {
+  if (!isAuthenticated || !user || !['admin', 'super_admin'].includes(userRole)) {
     return null
   }
 

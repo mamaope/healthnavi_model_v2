@@ -185,6 +185,7 @@ export function Sidebar({
                   src="/logo.png" 
                   alt="Empirico" 
                   className="logo-image"
+                  loading="eager"
                 />
               )}
             </div>

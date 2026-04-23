@@ -1,8 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { AuthModal, type AuthMode } from '../components/auth/AuthModal'
-import { ForgotPasswordModal } from '../components/auth/ForgotPasswordModal'
-import { ResetPasswordModal } from '../components/auth/ResetPasswordModal'
-import { ProfessionalTypeModal } from '../components/ProfessionalTypeModal'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import type { AuthMode } from '../components/auth/AuthModal'
 import { ChatInput } from '../components/chat/ChatInput'
 import { LoadingIndicator } from '../components/chat/LoadingIndicator'
 import { MessageList } from '../components/chat/MessageList'
@@ -14,6 +11,27 @@ import { useAuth } from '../providers/AuthProvider'
 import { useChatStore } from '../store/useChatStore'
 import { APP_METADATA, STORAGE_KEYS } from '../config'
 import { Link } from 'react-router-dom'
+
+const AuthModal = lazy(() =>
+  import('../components/auth/AuthModal').then((module) => ({
+    default: module.AuthModal,
+  })),
+)
+const ForgotPasswordModal = lazy(() =>
+  import('../components/auth/ForgotPasswordModal').then((module) => ({
+    default: module.ForgotPasswordModal,
+  })),
+)
+const ResetPasswordModal = lazy(() =>
+  import('../components/auth/ResetPasswordModal').then((module) => ({
+    default: module.ResetPasswordModal,
+  })),
+)
+const ProfessionalTypeModal = lazy(() =>
+  import('../components/ProfessionalTypeModal').then((module) => ({
+    default: module.ProfessionalTypeModal,
+  })),
+)
 
 export default function HomePage() {
   const { isAuthenticated, initializing, refreshProfile, user } = useAuth()
@@ -35,6 +53,7 @@ export default function HomePage() {
   const [forgotPasswordModalOpen, setForgotPasswordModalOpen] = useState(false)
   const [resetPasswordModalOpen, setResetPasswordModalOpen] = useState(false)
   const [resetToken, setResetToken] = useState<string | null>(null)
+  const [isCompletingOAuth, setIsCompletingOAuth] = useState(false)
   const [professionalTypeModalOpen, setProfessionalTypeModalOpen] = useState(false)
   const [inputValue, setInputValue] = useState('')
   const [isDeepSearchEnabled, setIsDeepSearchEnabled] = useState(false)
@@ -62,6 +81,7 @@ export default function HomePage() {
     // Handle Google OAuth success
     if (path.includes('/auth/google/success')) {
       const oauthToken = urlParams.get('token')
+      setIsCompletingOAuth(true)
       console.log('[OAuth] Success callback detected')
       console.log('[OAuth] Path:', path)
       console.log('[OAuth] Token in URL:', oauthToken ? 'yes' : 'no')
@@ -98,6 +118,7 @@ export default function HomePage() {
               console.log(`Attempting to refresh profile (attempt ${i + 1}/${retries})...`)
               await refreshProfile()
               console.log('Profile refreshed successfully after OAuth login')
+              setIsCompletingOAuth(false)
               // The professional type modal will show automatically if needed
               // via the useEffect hook that checks for medical_professional_type
               return // Success, exit retry loop
@@ -119,6 +140,7 @@ export default function HomePage() {
                   window.location.reload()
                 } else {
                   // Token was cleared, show login
+                  setIsCompletingOAuth(false)
                   setAuthMode('login')
                   setAuthModalOpen(true)
                 }
@@ -139,6 +161,7 @@ export default function HomePage() {
         }
       } else {
         console.warn('OAuth success callback but no token in URL')
+        setIsCompletingOAuth(false)
         window.history.replaceState({}, document.title, '/')
         setAuthMode('login')
         setAuthModalOpen(true)
@@ -148,6 +171,7 @@ export default function HomePage() {
     
     // Handle Google OAuth error
     if (path.includes('/auth/google/error')) {
+      setIsCompletingOAuth(false)
       setAuthMode('login')
       setAuthModalOpen(true)
       window.history.replaceState({}, document.title, '/')
@@ -204,7 +228,6 @@ export default function HomePage() {
       try {
         const result = await sendMessage({
           message: userQuestion,
-          sessionId: currentSession?.id,
           deepSearch: true,
         })
         if (result && 'followupQuestions' in result && result.followupQuestions) {
@@ -214,7 +237,7 @@ export default function HomePage() {
         console.error('Error sending deep search message:', error)
       }
     },
-    [sendMessage, currentSession?.id, setFollowupQuestions],
+    [sendMessage, setFollowupQuestions],
   )
 
   const handleToggleSidebar = useCallback(() => {
@@ -229,6 +252,19 @@ export default function HomePage() {
   const showSamplePrompts = !hasMessages && !isSending
   const [hasStartedChat, setHasStartedChat] = useState(false)
   const wasAuthenticatedRef = useRef(isAuthenticated)
+  const previousAuthStateRef = useRef(isAuthenticated)
+
+  useEffect(() => {
+    const justLoggedIn = !previousAuthStateRef.current && isAuthenticated
+    if (
+      justLoggedIn &&
+      typeof window !== 'undefined' &&
+      window.matchMedia('(max-width: 768px)').matches
+    ) {
+      setMobileMenuOpen(true)
+    }
+    previousAuthStateRef.current = isAuthenticated
+  }, [isAuthenticated])
 
   useEffect(() => {
     if (wasAuthenticatedRef.current && !initializing && !isAuthenticated) {
@@ -278,7 +314,12 @@ export default function HomePage() {
           onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
           sessions={sessions}
           currentSessionId={currentSession?.id}
-          onStartNewChat={startNewSession}
+          onStartNewChat={() => {
+            startNewSession()
+            setFollowupQuestions([])
+            setInputValue('')
+            setMobileMenuOpen(false)
+          }}
           onSelectSession={(session) => {
             void loadSession(session)
             setMobileMenuOpen(false)
@@ -323,26 +364,18 @@ export default function HomePage() {
 
         {/* Chat Container */}
         <main className="chat-main">
+          {isCompletingOAuth && (
+            <div className="oauth-status-banner" role="status" aria-live="polite">
+              <i className="fas fa-spinner fa-spin" />
+              <span>Signing you in with Google...</span>
+            </div>
+          )}
           <div className={`chat-wrapper ${hasMessages ? 'has-messages' : 'empty'}`}>
             {/* Messages Area */}
             <div className="messages-container" ref={messagesContainerRef}>
               <MessageList 
                 messages={messages} 
-                onDeepSearch={async (userQuestion: string) => {
-                  // Send the user's question again with deep search enabled
-                  setFollowupQuestions([])
-                  try {
-                    const result = await sendMessage({
-                      message: userQuestion,
-                      deepSearch: true,
-                    })
-                    if (result && 'followupQuestions' in result && result.followupQuestions) {
-                      setFollowupQuestions(result.followupQuestions)
-                    }
-                  } catch (error) {
-                    console.error('Error sending deep search message:', error)
-                  }
-                }}
+                onDeepSearch={handleDeepSearch}
               />
               <LoadingIndicator isVisible={isSending || isFetchingFollowup} />
               
@@ -377,7 +410,7 @@ export default function HomePage() {
             <div className="input-section">
               {showSamplePrompts && (
                 <div className="homepage-logo">
-                  <img src="/logo.png" alt="Empirico" />
+                  <img src="/logo.png" alt="Empirico" loading="eager" />
                 </div>
               )}
               <ChatInput
@@ -471,51 +504,57 @@ export default function HomePage() {
         )}
       </div>
 
-      {/* Auth Modals */}
-      <AuthModal
-        isOpen={authModalOpen}
-        mode={authMode}
-        onClose={() => setAuthModalOpen(false)}
-        onSwitchMode={(mode) => setAuthMode(mode)}
-        onForgotPassword={() => {
-          setAuthModalOpen(false)
-          setForgotPasswordModalOpen(true)
-        }}
-      />
+      {/* Lazy-load heavy modal code only when needed */}
+      <Suspense fallback={null}>
+        {authModalOpen && (
+          <AuthModal
+            isOpen={authModalOpen}
+            mode={authMode}
+            onClose={() => setAuthModalOpen(false)}
+            onSwitchMode={(mode) => setAuthMode(mode)}
+            onForgotPassword={() => {
+              setAuthModalOpen(false)
+              setForgotPasswordModalOpen(true)
+            }}
+          />
+        )}
 
-      <ForgotPasswordModal
-        isOpen={forgotPasswordModalOpen}
-        onClose={() => setForgotPasswordModalOpen(false)}
-        onBackToLogin={() => {
-          setForgotPasswordModalOpen(false)
-          setAuthMode('login')
-          setAuthModalOpen(true)
-        }}
-      />
+        {forgotPasswordModalOpen && (
+          <ForgotPasswordModal
+            isOpen={forgotPasswordModalOpen}
+            onClose={() => setForgotPasswordModalOpen(false)}
+            onBackToLogin={() => {
+              setForgotPasswordModalOpen(false)
+              setAuthMode('login')
+              setAuthModalOpen(true)
+            }}
+          />
+        )}
 
-      {resetToken && (
-        <ResetPasswordModal
-          isOpen={resetPasswordModalOpen}
-          token={resetToken}
-          onClose={() => {
-            setResetPasswordModalOpen(false)
-            setResetToken(null)
-          }}
-          onSuccess={() => {
-            setResetPasswordModalOpen(false)
-            setResetToken(null)
-            setAuthMode('login')
-            setAuthModalOpen(true)
-          }}
-        />
-      )}
+        {resetToken && (
+          <ResetPasswordModal
+            isOpen={resetPasswordModalOpen}
+            token={resetToken}
+            onClose={() => {
+              setResetPasswordModalOpen(false)
+              setResetToken(null)
+            }}
+            onSuccess={() => {
+              setResetPasswordModalOpen(false)
+              setResetToken(null)
+              setAuthMode('login')
+              setAuthModalOpen(true)
+            }}
+          />
+        )}
 
-      {professionalTypeModalOpen && (
-        <ProfessionalTypeModal
-          isOpen={professionalTypeModalOpen}
-          onClose={() => setProfessionalTypeModalOpen(false)}
-        />
-      )}
+        {professionalTypeModalOpen && (
+          <ProfessionalTypeModal
+            isOpen={professionalTypeModalOpen}
+            onClose={() => setProfessionalTypeModalOpen(false)}
+          />
+        )}
+      </Suspense>
     </div>
   )
 }

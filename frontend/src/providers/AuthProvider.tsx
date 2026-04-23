@@ -66,6 +66,18 @@ function getStoredAuth() {
   }
 }
 
+function scheduleBackgroundTask(task: () => void, timeout = 1500) {
+  if (typeof window === 'undefined') {
+    return () => {}
+  }
+  if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+    const id = (window as any).requestIdleCallback(task, { timeout })
+    return () => (window as any).cancelIdleCallback?.(id)
+  }
+  const id = globalThis.setTimeout(task, 0)
+  return () => globalThis.clearTimeout(id)
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [{ user, token, initializing }, setAuthState] = useState<AuthState>({
     user: null,
@@ -187,23 +199,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: Boolean(stored.token),
     })
 
-    // Verify token in background; refreshProfile will update state when done
-    refreshProfile().catch((error) => {
-      console.error('Failed to initialize auth state', error)
+    // Verify token in background during idle time to protect first paint.
+    const cancelInitialRefresh = scheduleBackgroundTask(() => {
+      refreshProfile().catch((error) => {
+        console.error('Failed to initialize auth state', error)
+      })
     })
 
-    // Set up periodic token validation (every 30 minutes)
-    const validationInterval = setInterval(() => {
-      const currentStored = getStoredAuth()
-      if (currentStored.token) {
-        refreshProfile().catch((error) => {
-          console.warn('Periodic token validation failed:', error)
-        })
-      }
-    }, 30 * 60 * 1000) // 30 minutes
+    // Set up periodic token validation (every 30 minutes), also deferred.
+    let validationInterval: ReturnType<typeof setInterval> | null = null
+    const cancelValidationSetup = scheduleBackgroundTask(() => {
+      validationInterval = setInterval(() => {
+        const currentStored = getStoredAuth()
+        if (currentStored.token) {
+          refreshProfile().catch((error) => {
+            console.warn('Periodic token validation failed:', error)
+          })
+        }
+      }, 30 * 60 * 1000) // 30 minutes
+    })
 
     // Listen for storage changes (e.g., token cleared by apiClient, or new token added)
-    const handleStorageChange = (e: StorageEvent | null = null) => {
+    const handleStorageChange = () => {
       const updatedStored = getStoredAuth()
       
       if (!updatedStored.token) {
@@ -250,7 +267,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.addEventListener('logout', handleLogout)
 
     return () => {
-      clearInterval(validationInterval)
+      cancelInitialRefresh()
+      cancelValidationSetup()
+      if (validationInterval) {
+        clearInterval(validationInterval)
+      }
       window.removeEventListener('storage', handleStorageChange)
       window.removeEventListener('logout', handleLogout)
       window.removeEventListener('auth-token-updated', handleTokenUpdate)

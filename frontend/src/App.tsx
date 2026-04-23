@@ -1,10 +1,10 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, type ReactNode } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AppLoadingSkeleton } from './components/AppLoadingSkeleton'
+import HomePage from './pages/HomePage'
 import './styles/app.css'
 
 // Lazy-load pages so the initial bundle is small and first paint is fast
-const HomePage = lazy(() => import('./pages/HomePage'))
 const AboutPage = lazy(() => import('./pages/AboutPage'))
 const TermsOfService = lazy(() => import('./pages/TermsOfService'))
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'))
@@ -19,29 +19,33 @@ const SettingsBilling = lazy(() => import('./pages/settings/SettingsBilling'))
 const SettingsPrivacy = lazy(() => import('./pages/settings/SettingsPrivacy'))
 const SettingsCloseAccount = lazy(() => import('./pages/settings/SettingsCloseAccount'))
 
+function LazyPage({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<AppLoadingSkeleton />}>{children}</Suspense>
+}
+
 export default function App() {
   return (
-    <Suspense fallback={<AppLoadingSkeleton />}>
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/auth/google/success" element={<HomePage />} />
-        <Route path="/auth/google/error" element={<HomePage />} />
-        <Route path="/about" element={<AboutPage />} />
-        <Route path="/terms" element={<TermsOfService />} />
-        <Route path="/privacy" element={<PrivacyPolicy />} />
-        <Route path="/admin" element={<AdminDashboard />} />
-        <Route path="/admin/surveys" element={<SurveySubmissionsPage />} />
-        <Route path="/profile" element={<ProfilePage />} />
-        <Route path="/pilot" element={<PilotPage />} />
-        <Route path="/pilot/survey/:surveyType" element={<SurveyForm />} />
-        <Route path="/settings" element={<SettingsPage />}>
-          <Route index element={<Navigate to="/settings/profile" replace />} />
-          <Route path="profile" element={<SettingsProfile />} />
-          <Route path="billing" element={<SettingsBilling />} />
-          <Route path="privacy" element={<SettingsPrivacy />} />
-          <Route path="close-account" element={<SettingsCloseAccount />} />
-        </Route>
-      </Routes>
-    </Suspense>
+    <Routes>
+      {/* Eager route: first paint should never wait on route-level lazy chunks */}
+      <Route path="/" element={<HomePage />} />
+      <Route path="/auth/google/success" element={<HomePage />} />
+      <Route path="/auth/google/error" element={<HomePage />} />
+
+      <Route path="/about" element={<LazyPage><AboutPage /></LazyPage>} />
+      <Route path="/terms" element={<LazyPage><TermsOfService /></LazyPage>} />
+      <Route path="/privacy" element={<LazyPage><PrivacyPolicy /></LazyPage>} />
+      <Route path="/admin" element={<LazyPage><AdminDashboard /></LazyPage>} />
+      <Route path="/admin/surveys" element={<LazyPage><SurveySubmissionsPage /></LazyPage>} />
+      <Route path="/profile" element={<LazyPage><ProfilePage /></LazyPage>} />
+      <Route path="/pilot" element={<LazyPage><PilotPage /></LazyPage>} />
+      <Route path="/pilot/survey/:surveyType" element={<LazyPage><SurveyForm /></LazyPage>} />
+      <Route path="/settings" element={<LazyPage><SettingsPage /></LazyPage>}>
+        <Route index element={<Navigate to="/settings/profile" replace />} />
+        <Route path="profile" element={<LazyPage><SettingsProfile /></LazyPage>} />
+        <Route path="billing" element={<LazyPage><SettingsBilling /></LazyPage>} />
+        <Route path="privacy" element={<LazyPage><SettingsPrivacy /></LazyPage>} />
+        <Route path="close-account" element={<LazyPage><SettingsCloseAccount /></LazyPage>} />
+      </Route>
+    </Routes>
   )
 }

@@ -478,7 +478,7 @@ export const chatApi = {
             // Check for stream error marker
             if (chunk.includes('[STREAM_ERROR]:')) {
               const errorMessage = chunk.replace('[STREAM_ERROR]:', '').trim()
-              throw new Error(`Streaming failed: ${errorMessage}`)
+              throw new Error(errorMessage)
             }
             yield chunk
           }

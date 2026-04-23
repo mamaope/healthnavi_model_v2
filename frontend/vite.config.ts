@@ -19,6 +19,9 @@ const useCustomHMR = !!process.env.VITE_HMR_HOST
 
 export default defineConfig({
   plugins: [react()],
+  esbuild: {
+    drop: isProduction ? ['console', 'debugger'] : [],
+  },
   server: {
     host: '0.0.0.0',
     allowedHosts: [
@@ -27,16 +30,16 @@ export default defineConfig({
       'empirico.ai',
       '.empirico.ai',
     ],
-    hmr: disableHMR ? false : useCustomHMR ? {
-      // Use custom HMR config if provided via env vars (for production)
-      host: process.env.VITE_HMR_HOST,
-      clientPort: process.env.VITE_HMR_PORT ? parseInt(process.env.VITE_HMR_PORT) : undefined,
-      protocol: process.env.VITE_HMR_PROTOCOL || 'wss',
-    } : {
-      // Default to localhost for local development (no custom config)
-      host: 'localhost',
-      protocol: 'ws',
-    },
+    hmr: disableHMR
+      ? false
+      : useCustomHMR
+        ? {
+            // Explicit override for proxied/cloud dev environments.
+            host: process.env.VITE_HMR_HOST,
+            clientPort: process.env.VITE_HMR_PORT ? parseInt(process.env.VITE_HMR_PORT) : undefined,
+            protocol: process.env.VITE_HMR_PROTOCOL || 'wss',
+          }
+        : undefined,
     proxy: {
       '/api/v2': {
         target: proxyTarget,
@@ -47,12 +50,36 @@ export default defineConfig({
       },
     },
     watch: {
-      ignored: ['**/node_modules/**', '**/.git/**', '**/dist/**', '**/.next/**', '**/.turbo/**'],
+      ignored: [
+        '**/node_modules/**',
+        '**/.pnpm-store/**',
+        '**/.git/**',
+        '**/dist/**',
+        '**/.next/**',
+        '**/.turbo/**',
+      ],
       usePolling: false,
     },
   },
   build: {
-    sourcemap: !isProduction,
+    modulePreload: {
+      resolveDependencies: (_url, deps, context) => {
+        // Do not preload non-critical heavy chunks in index.html.
+        // On slow mobile/prod links, preloading these blocks the first interactive paint.
+        if (context.hostType === 'html') {
+          return deps.filter(
+            (dep) =>
+              !dep.includes('pdf-') &&
+              !dep.includes('charts-') &&
+              !dep.includes('forms-') &&
+              !dep.includes('markdown-'),
+          )
+        }
+        return deps
+      },
+    },
+    sourcemap: false,
+    cssCodeSplit: true,
     rollupOptions: {
       output: {
         manualChunks: (id) => {
@@ -73,11 +100,8 @@ export default defineConfig({
     },
     chunkSizeWarningLimit: 600,
     minify: 'esbuild',
-    cssMinify: false, /* PostCSS + cssnano minifies CSS in production */
+    cssMinify: true,
     target: 'esnext',
-    esbuild: {
-      drop: isProduction ? ['console', 'debugger'] : [],
-    },
   },
 })
 

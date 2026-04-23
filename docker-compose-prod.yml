@@ -11,9 +11,7 @@ services:
     volumes:
       - ./backend:/backend
       - ./logs:/backend/logs
-      - ./regal-autonomy-454806-d1-edf68610c57a.json:/backend/regal-autonomy-454806-d1-edf68610c57a.json  # commented for local dev
-
-    # startup.sh: waits for db, runs 'alembic upgrade head', seeds admin, then uvicorn
+      - ./regal-autonomy-454806-d1-edf68610c57a.json:/backend/regal-autonomy-454806-d1-edf68610c57a.json
     command: sh -c "python3 /backend/scripts/fix_line_endings.py /backend/scripts/startup.sh && chmod +x /backend/scripts/startup.sh && bash /backend/scripts/startup.sh"
     restart: unless-stopped
     depends_on:
@@ -33,7 +31,6 @@ services:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
-    # Only log errors; suppress all statement/connection/checkpoint logs
     command:
       - "postgres"
       - "-c"
@@ -59,24 +56,12 @@ services:
       retries: 5
 
   frontend:
-    image: node:20-alpine
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: empirico_cdss_frontend
-    working_dir: /app
     ports:
-      - "3000:5173"
-    volumes:
-      - ./frontend:/app
-      - pnpm_store:/pnpm-store
-    environment:
-      - NODE_ENV=development
-      - VITE_PROXY_TARGET=http://api:8050
-      - CI=true
-      - PNPM_CONFIG_CONFIRM_MODULES_PURGE=false
-      - PNPM_STORE_DIR=/pnpm-store
-      - PNPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS=true
-      - CHOKIDAR_USEPOLLING=true
-      - CHOKIDAR_INTERVAL=1000
-    command: sh -c "corepack enable && pnpm install --frozen-lockfile --config.confirmModulesPurge=false && until wget -q -T 2 -O- http://api:8050/api/v2/health >/dev/null; do echo 'Waiting for API...'; sleep 2; done && pnpm run dev -- --host 0.0.0.0"
+      - "3000:80"
     restart: unless-stopped
     depends_on:
       api:
@@ -84,4 +69,3 @@ services:
 
 volumes:
   postgres_data:
-  pnpm_store:

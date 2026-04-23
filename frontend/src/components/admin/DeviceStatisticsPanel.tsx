@@ -115,14 +115,15 @@ export default function DeviceStatisticsPanel({ devices: devicesProp, days = 30 
                       dataKey="value"
                       nameKey="name"
                     >
-                      {pieData.map((entry, i) => (
+                      {pieData.map((entry) => (
                         <Cell key={entry.type} fill={DEVICE_COLORS[entry.type] ?? '#94a3b8'} />
                       ))}
                     </Pie>
                     <Tooltip
-                      formatter={(value: number, name: string) => {
-                        const pct = total > 0 ? ((value / total) * 100).toFixed(1) : '0'
-                        return [`${value} (${pct}%)`, name]
+                      formatter={(value, name) => {
+                        const numericValue = typeof value === 'number' ? value : Number(value ?? 0) || 0
+                        const pct = total > 0 ? ((numericValue / total) * 100).toFixed(1) : '0'
+                        return [`${numericValue} (${pct}%)`, String(name ?? '')]
                       }}
                       contentStyle={{ fontSize: 12, borderRadius: 8, backgroundColor: '#ffffff', color: '#1f2937', border: '1px solid #e5e7eb' }}
                     />

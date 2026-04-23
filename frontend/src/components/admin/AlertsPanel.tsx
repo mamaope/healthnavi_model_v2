@@ -1,4 +1,3 @@
-import { adminApi } from '../../services/apiClient'
 import './AdminPanel.css'
 
 interface AlertsPanelProps {

@@ -36,6 +36,9 @@ venv.bak/
 .venv/
 .env/
 
+# pnpm store (local cache)
+frontend/.pnpm-store/
+
 # Environment Variables
 .env
 .env.local

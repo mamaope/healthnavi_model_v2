@@ -46,8 +46,14 @@ export function SamplePrompts({ onSelectPrompt, hidden }: SamplePromptsProps) {
   return (
     <section className="sample-questions-compact">
       <div className="sample-questions-dropdown">
-        {sampleSections.map((section) => {
+        {sampleSections.map((section, index) => {
           const isExpanded = expandedSection === section.title
+          const menuPositionClass =
+            index === 0
+              ? 'sample-dropdown-menu--left'
+              : index === sampleSections.length - 1
+                ? 'sample-dropdown-menu--right'
+                : 'sample-dropdown-menu--center'
           return (
             <div key={section.title} className="sample-dropdown-item">
               <button
@@ -61,7 +67,7 @@ export function SamplePrompts({ onSelectPrompt, hidden }: SamplePromptsProps) {
                 <i className={`fas fa-chevron-down sample-dropdown-chevron ${isExpanded ? 'expanded' : ''}`} />
               </button>
               {isExpanded && (
-                <div className="sample-dropdown-menu">
+                <div className={`sample-dropdown-menu ${menuPositionClass}`}>
                   {section.prompts.map((prompt, index) => (
                     <button
                       key={index}
