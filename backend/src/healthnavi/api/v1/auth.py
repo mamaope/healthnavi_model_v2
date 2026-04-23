@@ -1,5 +1,5 @@
 """
-Authentication router for HealthNavi AI CDSS.
+Authentication router for Empirico AI CDSS.
 """
 
 import logging
@@ -22,6 +22,19 @@ from healthnavi.core.config import get_config
 from healthnavi.core.response_utils import create_success_response, create_error_response, ResponseTimer
 from healthnavi.models.user import User
 from healthnavi.schemas import UserCreate, UserResponse, UserUpdate, Token, LoginRequest, StandardResponse, SuccessResponse, EmailVerificationRequest, ResendVerificationRequest, ForgotPasswordRequest, ResetPasswordRequest, GoogleSignInMobileRequest
+from pydantic import BaseModel, Field
+
+from healthnavi.services.data_deletion_service import (
+    request_data_deletion,
+    cancel_data_deletion,
+    get_deletion_status,
+)
+from healthnavi.core.device_utils import get_device_type
+from healthnavi.services.admin_service import AdminService
+
+# Logger must be defined before any try/except that uses it
+logger = logging.getLogger(__name__)
+config = get_config()
 
 # Import email service with error handling
 try:
@@ -29,9 +42,6 @@ try:
 except ImportError as e:
     logger.warning(f"Email service not available: {e}")
     email_service = None
-
-config = get_config()
-logger = logging.getLogger(__name__)
 
 # Security configuration
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -184,9 +194,69 @@ def require_user_role(current_user: User = Depends(get_current_user)):
     return current_user
 
 
-@router.post("/register", response_model=StandardResponse, status_code=201)
-def register(user: UserCreate, db: Session = Depends(get_db)):
-    """Register a new user."""
+@router.post(
+    "/register",
+    response_model=StandardResponse,
+    status_code=201,
+    responses={
+        201: {"description": "User created successfully"},
+        400: {"description": "Invalid input or user already exists"},
+        429: {"description": "Rate limit exceeded"},
+        422: {"description": "Validation error"},
+        500: {"description": "Internal server error"}
+    }
+)
+def register(user: UserCreate, request: Request, db: Session = Depends(get_db)):
+    """
+    Register a new user.
+    
+    Example request:
+        {
+            "email": "user@example.com",
+            "username": "newuser",
+            "password": "securepass123",
+            "first_name": "John",
+            "last_name": "Doe"
+        }
+    
+    Example response (201):
+        {
+            "success": 1,
+            "data": {
+                "access_token": "eyJ...",
+                "user": {
+                    "id": 1,
+                    "email": "user@example.com",
+                    "username": "newuser",
+                    ...
+                }
+            }
+        }
+    
+    Error codes:
+        - 400: Email or username already exists
+        - 429: Rate limit exceeded (too many registration attempts)
+        - 422: Invalid input (email format, password length, etc.)
+        - 500: Server error
+    """
+    # Rate limiting for registration endpoint
+    client_ip = request.client.host if request.client else "unknown"
+    from healthnavi.core.rate_limiter import get_rate_limiter
+    rate_limiter = get_rate_limiter()
+    is_allowed, message = rate_limiter.is_allowed(
+        key=f"register:{client_ip}",
+        max_requests=3,  # 3 registrations per hour
+        window_seconds=3600,
+        lockout_seconds=3600  # 1 hour lockout
+    )
+    
+    if not is_allowed:
+        return create_error_response(
+            message=message,
+            status_code=429,
+            execution_time=0.0
+        )
+    
     with ResponseTimer() as timer:
         try:
             # Debug logging
@@ -263,6 +333,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
                 full_name=new_user.full_name,
                 email=new_user.email,
                 role=new_user.role,
+                medical_professional_type=new_user.medical_professional_type,
                 is_active=new_user.is_active,
                 is_email_verified=new_user.is_email_verified,
                 created_at=new_user.created_at_str,
@@ -274,6 +345,12 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
                 message = "User registered successfully. Please check your email to verify your account."
             else:
                 message = "User registered successfully. Please contact support for email verification."
+            
+            # Log device type for admin statistics
+            try:
+                AdminService(db).log_device_activity(new_user.id, get_device_type(request), "login")
+            except Exception as e:
+                logger.warning(f"Could not log device activity on register: {e}", exc_info=True)
             
             return create_success_response(
                 data=user_data,
@@ -301,9 +378,40 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
             )
 
 
-@router.post("/login", response_model=StandardResponse)
-def login_for_access_token(login_data: LoginRequest, db: Session = Depends(get_db)):
-    """Login with email and password."""
+@router.post(
+    "/login",
+    response_model=StandardResponse,
+    responses={
+        200: {"description": "Login successful"},
+        401: {"description": "Invalid credentials"},
+        422: {"description": "Validation error"},
+        500: {"description": "Internal server error"}
+    }
+)
+def login_for_access_token(login_data: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    """
+    Login and get access token.
+    
+    Example request:
+        {
+            "email": "user@example.com",
+            "password": "securepass123"
+        }
+    
+    Example response (200):
+        {
+            "success": 1,
+            "data": {
+                "access_token": "eyJ...",
+                "user": {...}
+            }
+        }
+    
+    Error codes:
+        - 401: Invalid email or password
+        - 422: Invalid input format
+        - 500: Server error
+    """
     with ResponseTimer() as timer:
         try:
             # Find user by email
@@ -359,6 +467,7 @@ def login_for_access_token(login_data: LoginRequest, db: Session = Depends(get_d
                 email=user.email,
                 full_name=user.full_name,
                 role=user.role,
+                medical_professional_type=user.medical_professional_type,
                 is_active=user.is_active,
                 is_email_verified=user.is_email_verified,
                 created_at=user.created_at_str,
@@ -371,6 +480,12 @@ def login_for_access_token(login_data: LoginRequest, db: Session = Depends(get_d
                 "token_type": "bearer",
                 "user": user_profile
             }
+            
+            # Log device type for admin statistics
+            try:
+                AdminService(db).log_device_activity(user.id, get_device_type(request), "login")
+            except Exception as e:
+                logger.warning(f"Could not log device activity on login: {e}", exc_info=True)
             
             return create_success_response(
                 data=response_data,
@@ -583,6 +698,109 @@ def get_current_user_me(
     return get_user_profile(current_user=current_user)
 
 
+@router.post("/refresh", response_model=StandardResponse)
+def refresh_token(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Refresh an access token. 
+    Accepts an expired token and issues a new one if the user is still valid.
+    """
+    with ResponseTimer() as timer:
+        try:
+            # Get token from request
+            token = get_token_safe(request)
+            if not token:
+                return create_error_response(
+                    message="Token is required",
+                    status_code=401,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            # Try to decode token (even if expired, we can extract user info)
+            try:
+                # Decode without expiration check first to get user info
+                payload = jwt.decode(
+                    token, 
+                    config.security.secret_key, 
+                    algorithms=[config.security.algorithm],
+                    options={"verify_exp": False}  # Don't verify expiration yet
+                )
+                username: str = payload.get("sub")
+                if not username:
+                    return create_error_response(
+                        message="Invalid token",
+                        status_code=401,
+                        execution_time=timer.get_execution_time()
+                    )
+            except jwt.JWTError:
+                return create_error_response(
+                    message="Invalid token",
+                    status_code=401,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            # Get user from database
+            user = db.query(User).filter(User.username == username).first()
+            if not user:
+                return create_error_response(
+                    message="User not found",
+                    status_code=401,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            # Check if user is active
+            if not user.is_active:
+                return create_error_response(
+                    message="Account is deactivated",
+                    status_code=403,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            # Issue new token
+            access_token_expires = timedelta(minutes=config.security.access_token_expire_minutes)
+            new_access_token = create_access_token(
+                data={"sub": user.username, "role": user.role},
+                expires_delta=access_token_expires
+            )
+            
+            # Create user profile data
+            user_profile = UserResponse(
+                id=user.id,
+                username=user.username,
+                email=user.email,
+                full_name=user.full_name,
+                role=user.role,
+                medical_professional_type=user.medical_professional_type,
+                is_active=user.is_active,
+                is_email_verified=user.is_email_verified,
+                created_at=user.created_at_str,
+                updated_at=user.updated_at_str
+            )
+            
+            # Return new token and user profile
+            response_data = {
+                "access_token": new_access_token,
+                "token_type": "bearer",
+                "user": user_profile
+            }
+            
+            return create_success_response(
+                data=response_data,
+                status_code=200,
+                execution_time=timer.get_execution_time()
+            )
+            
+        except Exception as e:
+            logger.error(f"Token refresh error: {str(e)}")
+            return create_error_response(
+                message="Failed to refresh token",
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
 @router.get("/profile", response_model=StandardResponse)
 def get_user_profile(
     current_user: User = Depends(get_current_user_safe_v2)
@@ -614,6 +832,7 @@ def get_user_profile(
                     email=current_user.email,
                     full_name=current_user.full_name,
                     role=current_user.role,
+                    medical_professional_type=current_user.medical_professional_type,
                     is_active=current_user.is_active,
                     is_email_verified=current_user.is_email_verified,
                     created_at=current_user.created_at_str,
@@ -659,6 +878,261 @@ def get_user_profile(
             )
 
 
+@router.put("/profile", response_model=StandardResponse)
+def update_user_profile(
+    user_update: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update current user's profile information."""
+    with ResponseTimer() as timer:
+        try:
+            # Only allow updating specific fields for own profile
+            update_data = user_update.dict(exclude_unset=True)
+            allowed_fields = ['full_name', 'medical_professional_type']
+            filtered_data = {k: v for k, v in update_data.items() if k in allowed_fields}
+            
+            if not filtered_data:
+                return create_error_response(
+                    message="No valid fields to update",
+                    status_code=400,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            # Validate medical_professional_type if provided
+            if 'medical_professional_type' in filtered_data:
+                valid_types = [
+                    'Consultant',
+                    'Specialist',
+                    'Senior House Officer',
+                    'Medical Officer',
+                    'Intern Clinician',
+                    'Other Clinical Practitioner',
+                    'Clinical/Medical Student',
+                    # Legacy values for backward compatibility
+                    'Intern Doctor',
+                    'Senior House Officers',
+                    'Clinical Officer',
+                    'Student'
+                ]
+                if filtered_data['medical_professional_type'] not in valid_types:
+                    return create_error_response(
+                        message=f"Invalid medical professional type. Must be one of: {', '.join(valid_types[:7])}",
+                        status_code=400,
+                        execution_time=timer.get_execution_time()
+                    )
+            
+            # Update fields
+            for field, value in filtered_data.items():
+                setattr(current_user, field, value)
+            
+            current_user.updated_at = datetime.utcnow().isoformat()
+            db.commit()
+            db.refresh(current_user)
+            
+            user_response = UserResponse(
+                id=current_user.id,
+                username=current_user.username,
+                full_name=current_user.full_name,
+                email=current_user.email,
+                role=current_user.role,
+                medical_professional_type=current_user.medical_professional_type,
+                is_active=current_user.is_active,
+                is_email_verified=current_user.is_email_verified,
+                created_at=current_user.created_at_str,
+                updated_at=current_user.updated_at_str
+            )
+            
+            return create_success_response(
+                data=user_response,
+                status_code=200,
+                execution_time=timer.get_execution_time()
+            )
+            
+        except Exception as e:
+            logger.error(f"Profile update error: {str(e)}")
+            db.rollback()
+            return create_error_response(
+                message="Failed to update profile",
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
+# --- Data Deletion (Privacy / Right to Erasure) ---
+
+
+@router.post(
+    "/request-data-deletion",
+    response_model=StandardResponse,
+    responses={
+        200: {"description": "Deletion request recorded; data will be removed in 6 months"},
+        400: {"description": "Deletion request already pending"},
+        401: {"description": "Unauthorized"},
+        500: {"description": "Internal server error"},
+    },
+)
+def request_user_data_deletion(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Request permanent deletion of your data for privacy compliance.
+
+    Your data will be **permanently deleted 6 months** after this request.
+    You may cancel the request at any time before then via /cancel-data-deletion.
+    """
+    with ResponseTimer() as timer:
+        ok, msg = request_data_deletion(db, current_user)
+        if not ok:
+            return create_error_response(
+                message=msg,
+                status_code=400,
+                execution_time=timer.get_execution_time(),
+            )
+        return create_success_response(
+            data={"message": msg},
+            status_code=200,
+            execution_time=timer.get_execution_time(),
+        )
+
+
+@router.post(
+    "/cancel-data-deletion",
+    response_model=StandardResponse,
+    responses={
+        200: {"description": "Deletion request cancelled"},
+        400: {"description": "No pending deletion request"},
+        401: {"description": "Unauthorized"},
+        500: {"description": "Internal server error"},
+    },
+)
+def cancel_user_data_deletion(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Cancel a pending data deletion request. Your data will be retained."""
+    with ResponseTimer() as timer:
+        ok, msg = cancel_data_deletion(db, current_user)
+        if not ok:
+            return create_error_response(
+                message=msg,
+                status_code=400,
+                execution_time=timer.get_execution_time(),
+            )
+        return create_success_response(
+            data={"message": msg},
+            status_code=200,
+            execution_time=timer.get_execution_time(),
+        )
+
+
+@router.get(
+    "/deletion-status",
+    response_model=StandardResponse,
+    responses={
+        200: {"description": "Deletion status (pending or not, scheduled date)"},
+        401: {"description": "Unauthorized"},
+        500: {"description": "Internal server error"},
+    },
+)
+def deletion_status(
+    current_user: User = Depends(get_current_user),
+):
+    """Get whether you have a pending data deletion request and when it will be processed."""
+    with ResponseTimer() as timer:
+        data = get_deletion_status(current_user)
+        return create_success_response(
+            data=data,
+            status_code=200,
+            execution_time=timer.get_execution_time(),
+        )
+
+
+class ChangePasswordRequest(BaseModel):
+    """Request model for changing password."""
+    current_password: str = Field(..., min_length=1, description="Current password")
+    new_password: str = Field(..., min_length=8, description="New password (min 8 characters)")
+
+
+@router.post(
+    "/change-password",
+    response_model=StandardResponse,
+    responses={
+        200: {"description": "Password changed successfully"},
+        400: {"description": "Invalid current password or new password too short"},
+        401: {"description": "Unauthorized"},
+        422: {"description": "Validation error"},
+        500: {"description": "Internal server error"}
+    }
+)
+def change_password(
+    password_data: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Change current user's password.
+    
+    Example request:
+        {
+            "current_password": "oldpass123",
+            "new_password": "newpass123"
+        }
+    
+    Example response (200):
+        {
+            "success": 1,
+            "data": {
+                "message": "Password changed successfully"
+            }
+        }
+    
+    Error codes:
+        - 400: Current password incorrect or new password too short
+        - 401: Not authenticated
+        - 422: Validation error
+        - 500: Server error
+    """
+    with ResponseTimer() as timer:
+        try:
+            # Verify current password
+            if not current_user.hashed_password:
+                return create_error_response(
+                    message="Password not set for this account. Please use password reset.",
+                    status_code=400,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            if not verify_password(password_data.current_password, current_user.hashed_password):
+                return create_error_response(
+                    message="Current password is incorrect",
+                    status_code=400,
+                    execution_time=timer.get_execution_time()
+                )
+            
+            # Hash and update password
+            current_user.hashed_password = get_password_hash(password_data.new_password)
+            current_user.updated_at = datetime.utcnow().isoformat()
+            db.commit()
+            db.refresh(current_user)
+            
+            return create_success_response(
+                data={"message": "Password changed successfully"},
+                status_code=200,
+                execution_time=timer.get_execution_time()
+            )
+            
+        except Exception as e:
+            logger.error(f"Change password error: {str(e)}")
+            db.rollback()
+            return create_error_response(
+                message="Failed to change password",
+                status_code=500,
+                execution_time=timer.get_execution_time()
+            )
+
+
 @router.get("/users", response_model=StandardResponse)
 def get_all_users(
     skip: int = 0,
@@ -684,6 +1158,7 @@ def get_all_users(
                     full_name=user.full_name,
                     email=user.email,
                     role=user.role,
+                    medical_professional_type=user.medical_professional_type,
                     is_active=user.is_active,
                     is_email_verified=user.is_email_verified,
                     created_at=user.created_at_str,
@@ -761,6 +1236,7 @@ def update_user(
                 full_name=user.full_name,
                 email=user.email,
                 role=user.role,
+                medical_professional_type=user.medical_professional_type,
                 is_active=user.is_active,
                 is_email_verified=user.is_email_verified,
                 created_at=user.created_at_str,
@@ -938,10 +1414,20 @@ def google_login():
     """
     Initiate Google OAuth login flow.
     Redirects user to Google's OAuth consent screen.
+    In production, set BACKEND_URL=https://empirico.ai so the callback URL is correct.
     """
     with ResponseTimer() as timer:
         try:
-            if not config.security.google_client_id or not config.security.google_client_secret:
+            # Defensive: config.security may be missing in some setups
+            security = getattr(config, "security", None)
+            if not security:
+                logger.error("Google login: config.security not available")
+                return create_error_response(
+                    message="Google OAuth is not configured",
+                    status_code=503,
+                    execution_time=timer.get_execution_time()
+                )
+            if not security.google_client_id or not security.google_client_secret:
                 return create_error_response(
                     message="Google OAuth is not configured",
                     status_code=503,
@@ -951,13 +1437,14 @@ def google_login():
             # Generate state token for CSRF protection
             state = secrets.token_urlsafe(32)
             
-            # Build Google OAuth URL - redirect to backend callback endpoint
-            backend_url = os.getenv('BACKEND_URL', 'http://localhost:8050')
-            redirect_uri = config.security.google_redirect_uri or f"{backend_url}/api/v2/auth/google/callback"
+            # Build Google OAuth URL - redirect to backend callback endpoint.
+            # BACKEND_URL must be the public API base (e.g. https://empirico.ai) for proxy setups.
+            backend_url = os.getenv("BACKEND_URL", "http://localhost:8050").rstrip("/")
+            redirect_uri = security.google_redirect_uri or f"{backend_url}/api/v2/auth/google/callback"
             
             google_oauth_url = (
                 "https://accounts.google.com/o/oauth2/v2/auth?"
-                f"client_id={config.security.google_client_id}&"
+                f"client_id={security.google_client_id}&"
                 f"redirect_uri={redirect_uri}&"
                 "response_type=code&"
                 "scope=openid email profile&"
@@ -974,7 +1461,7 @@ def google_login():
             return response
             
         except Exception as e:
-            logger.error(f"Google login initiation error: {str(e)}")
+            logger.exception("Google login initiation error")
             return create_error_response(
                 message="Failed to initiate Google login",
                 status_code=500,
@@ -996,21 +1483,29 @@ async def google_callback(
     """
     with ResponseTimer() as timer:
         try:
+            logger.info(f"Google OAuth callback received - code: {'present' if code else 'missing'}, state: {'present' if state else 'missing'}, error: {error}")
+            
             if error:
                 logger.error(f"Google OAuth error: {error}")
                 redirect_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/auth/google/error?error={error}"
+                logger.info(f"Redirecting to error page: {redirect_url}")
                 return RedirectResponse(url=redirect_url)
             
             if not code or not state:
+                logger.error(f"Missing parameters - code: {code is not None}, state: {state is not None}")
                 redirect_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/auth/google/error?error=missing_parameters"
+                logger.info(f"Redirecting to error page: {redirect_url}")
                 return RedirectResponse(url=redirect_url)
             
             # Verify state token (CSRF protection)
             cookie_state = request.cookies.get("oauth_state")
             if not cookie_state or cookie_state != state:
-                logger.warning("OAuth state mismatch - possible CSRF attack")
+                logger.warning(f"OAuth state mismatch - cookie_state: {cookie_state is not None}, state: {state is not None}, match: {cookie_state == state if cookie_state else False}")
                 redirect_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/auth/google/error?error=invalid_state"
+                logger.info(f"Redirecting to error page: {redirect_url}")
                 return RedirectResponse(url=redirect_url)
+            
+            logger.info("OAuth state verified successfully, proceeding with token exchange")
             
             # Exchange code for token
             try:
@@ -1131,33 +1626,41 @@ async def google_callback(
                 # Try to get frontend URL from environment, with fallbacks
                 frontend_url = os.getenv('FRONTEND_URL')
                 if not frontend_url:
-                    # Fallback to BASE_URL if FRONTEND_URL is not set
-                    base_url = os.getenv('BASE_URL', 'http://localhost:3000')
-                    frontend_url = base_url if base_url else 'http://localhost:3000'
+                    # Fallback to common Vite dev server port
+                    frontend_url = os.getenv('BASE_URL', 'http://localhost:5173')
                 # Ensure no trailing slash
                 frontend_url = frontend_url.rstrip('/')
                 redirect_url = f"{frontend_url}/auth/google/success?token={jwt_token}"
-                logger.info(f"OAuth success - Redirecting to frontend: {redirect_url}")
+                logger.info(f"OAuth success - User ID: {user.id}, Email: {user.email}, Redirecting to: {redirect_url}")
                 
-                response = RedirectResponse(url=redirect_url)
+                # Log device type for admin statistics
+                try:
+                    AdminService(db).log_device_activity(user.id, get_device_type(request), "login")
+                except Exception:
+                    pass
+                
+                response = RedirectResponse(url=redirect_url, status_code=302)  # Use 302 instead of 307
                 response.delete_cookie(key="oauth_state")
                 
                 return response
                 
             except Exception as e:
-                logger.error(f"Error processing Google OAuth callback: {str(e)}")
+                logger.error(f"Error processing Google OAuth callback: {str(e)}", exc_info=True)
                 redirect_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/auth/google/error?error=processing_failed"
+                logger.info(f"Redirecting to error page: {redirect_url}")
                 return RedirectResponse(url=redirect_url)
             
         except Exception as e:
-            logger.error(f"Google callback error: {str(e)}")
+            logger.error(f"Google callback error: {str(e)}", exc_info=True)
             redirect_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/auth/google/error?error=callback_failed"
+            logger.info(f"Redirecting to error page: {redirect_url}")
             return RedirectResponse(url=redirect_url)
 
 
 @router.post("/google/mobile", response_model=StandardResponse)
 def google_sign_in_mobile(
     request_data: GoogleSignInMobileRequest,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """
@@ -1276,6 +1779,7 @@ def google_sign_in_mobile(
                     email=user.email,
                     full_name=user.full_name,
                     role=user.role,
+                    medical_professional_type=user.medical_professional_type,
                     is_active=user.is_active,
                     is_email_verified=user.is_email_verified,
                     created_at=user.created_at_str,
@@ -1288,6 +1792,12 @@ def google_sign_in_mobile(
                     "token_type": "bearer",
                     "user": user_profile
                 }
+                
+                # Log device type for admin statistics (mobile typically sends X-Device-Type: phone/tablet)
+                try:
+                    AdminService(db).log_device_activity(user.id, get_device_type(request), "login")
+                except Exception as e:
+                    logger.warning(f"Could not log device activity on google_sign_in_mobile: {e}", exc_info=True)
                 
                 return create_success_response(
                     data=response_data,

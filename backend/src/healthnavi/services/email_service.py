@@ -1,5 +1,5 @@
 """
-Email service for HealthNavi AI CDSS.
+Email service for Empirico AI CDSS.
 Handles email verification and notifications.
 """
 
@@ -25,8 +25,13 @@ class EmailService:
         self.smtp_port = int(os.getenv("SMTP_PORT", "587"))
         self.sender_email = os.getenv("SMTP_USERNAME", "")
         self.sender_password = os.getenv("SMTP_PASSWORD", "")
-        self.app_name = os.getenv("APP_NAME", "HealthNavy")
+        self.app_name = os.getenv("APP_NAME", "Empirico")
         self.base_url = os.getenv("BASE_URL", "http://localhost:8050")
+        # Optional deep link so mobile can open the reset flow in-app (must match Android/iOS URL handler)
+        self.password_reset_deep_link = os.getenv(
+            "PASSWORD_RESET_DEEP_LINK_TEMPLATE",
+            "empirico://password-reset?token={token}",
+        )
         
         # Check if email is configured
         if not self.sender_email or not self.sender_password:
@@ -124,9 +129,9 @@ class EmailService:
             return False
         
         try:
-            # Create reset URL - point to frontend, which will extract token and show reset modal
-            # The frontend URL should be set in BASE_URL env var (e.g., http://localhost:3000)
+            # Web reset URL — frontend extracts token and shows reset modal (BASE_URL e.g. https://empirico.ai)
             reset_url = f"{self.base_url}?token={reset_token}"
+            deep_link = self.password_reset_deep_link.format(token=reset_token)
             
             # Create email content
             subject = f"Password Reset - {self.app_name}"
@@ -136,10 +141,13 @@ class EmailService:
             <body>
                 <h2>Password Reset Request</h2>
                 <p>Hello {username},</p>
-                <p>You requested a password reset for your {self.app_name} account. Click the link below to reset your password:</p>
-                <p><a href="{reset_url}" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Reset Password</a></p>
-                <p>Or copy and paste this link into your browser:</p>
-                <p>{reset_url}</p>
+                <p>You requested a password reset for your {self.app_name} account. Use one of the options below:</p>
+                <p><a href="{deep_link}" style="background-color: #00695c; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-bottom: 8px;">Open in Empirico app</a></p>
+                <p><a href="{reset_url}" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Reset password in browser</a></p>
+                <p>Or copy one of these links:</p>
+                <p><strong>App:</strong> {deep_link}</p>
+                <p><strong>Browser:</strong> {reset_url}</p>
+                <p>On many phones you can tap the app link and choose <strong>Open with</strong> Empirico or the browser.</p>
                 <p>This link will expire in 1 hour.</p>
                 <p>If you didn't request a password reset, please ignore this email.</p>
                 <br>
@@ -153,8 +161,12 @@ class EmailService:
             
             Hello {username},
             
-            You requested a password reset for your {self.app_name} account. Visit the link below to reset your password:
+            You requested a password reset for your {self.app_name} account. Choose one:
             
+            Open in the Empirico app (copy into your browser or tap; use "Open with" if asked):
+            {deep_link}
+            
+            Or reset in your web browser:
             {reset_url}
             
             This link will expire in 1 hour.

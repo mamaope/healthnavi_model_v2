@@ -4,16 +4,28 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Copy package files
-COPY package*.json ./
+COPY package.json pnpm-lock.yaml ./
 
 # Install dependencies
-RUN npm ci
+RUN corepack enable && pnpm install --frozen-lockfile
 
 # Copy source code
 COPY . .
 
 # Build the application
-RUN npm run build
+RUN pnpm run build
+
+# Pre-compress static assets so nginx can serve them directly.
+# This avoids CPU-heavy on-the-fly compression on small prod instances.
+RUN find dist -type f \( \
+  -name "*.js" -o \
+  -name "*.css" -o \
+  -name "*.html" -o \
+  -name "*.svg" -o \
+  -name "*.json" -o \
+  -name "*.txt" -o \
+  -name "*.xml" \
+\) -exec gzip -k -9 {} \;
 
 # Production stage
 FROM nginx:alpine

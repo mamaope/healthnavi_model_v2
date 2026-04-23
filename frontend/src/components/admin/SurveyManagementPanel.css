@@ -1,0 +1,182 @@
+.survey-management-panel {
+  background: white;
+  border-radius: 12px;
+  padding: 2rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin-bottom: 2rem;
+}
+
+.panel-header {
+  margin-bottom: 1.5rem;
+}
+
+.panel-header h2 {
+  font-size: 1.5rem;
+  color: #2c3e50;
+  margin-bottom: 0.5rem;
+}
+
+.panel-description {
+  color: #5a6c7d;
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.survey-configs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.survey-config-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  border: 2px solid #e9ecef;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.survey-config-card:hover {
+  border-color: #3498db;
+  box-shadow: 0 2px 8px rgba(52, 152, 219, 0.1);
+}
+
+.survey-config-info {
+  flex: 1;
+}
+
+.survey-config-info h3 {
+  font-size: 1.25rem;
+  color: #2c3e50;
+  margin-bottom: 0.5rem;
+}
+
+.survey-type-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  background: #e3f2fd;
+  color: #1976d2;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.survey-config-description {
+  color: #5a6c7d;
+  font-size: 0.9rem;
+  margin: 0.5rem 0 0 0;
+}
+
+.survey-config-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.visibility-status {
+  display: flex;
+  align-items: center;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.status-badge.visible {
+  background: #d4edda;
+  color: #155724;
+}
+
+.status-badge.hidden {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.btn-toggle {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.3s ease;
+}
+
+.btn-toggle:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-show {
+  background: #27ae60;
+  color: white;
+}
+
+.btn-show:hover:not(:disabled) {
+  background: #229954;
+}
+
+.btn-hide {
+  background: #e74c3c;
+  color: white;
+}
+
+.btn-hide:hover:not(:disabled) {
+  background: #c0392b;
+}
+
+.loading-state {
+  text-align: center;
+  padding: 3rem;
+  color: #5a6c7d;
+}
+
+.loading-state i {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+  color: #3498db;
+}
+
+.alert {
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.alert-error {
+  background: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+@media (max-width: 768px) {
+  .survey-management-panel {
+    padding: 1.5rem;
+  }
+
+  .survey-config-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .survey-config-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

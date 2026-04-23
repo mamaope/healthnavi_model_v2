@@ -1,5 +1,5 @@
 """
-Enhanced database service for HealthNavi AI CDSS.
+Enhanced database service for Empirico AI CDSS.
 
 This module provides secure database operations with proper connection management,
 transaction handling, and audit logging following medical software standards.
@@ -27,8 +27,8 @@ engine = create_engine(
     pool_timeout=config.database.db_pool_timeout,
     pool_pre_ping=True,  # Verify connections before use
     pool_recycle=3600,   # Recycle connections every hour
-    echo=config.application.debug,  # Log SQL queries in debug mode
-    echo_pool=config.application.debug,  # Log pool events in debug mode
+    echo=False,  # Disable SQL query logging
+    echo_pool=False,  # Disable pool event logging
 )
 
 # Session factory
@@ -93,7 +93,6 @@ def create_tables():
         # Import all models to ensure they are registered with SQLAlchemy
         from healthnavi.models import Base, User, DiagnosisSession, ChatMessage, MessageFeedback
         Base.metadata.create_all(bind=engine)
-        logger.info("Database tables created successfully")
     except SQLAlchemyError as e:
         logger.error(f"Failed to create database tables: {e}")
         raise
@@ -109,7 +108,6 @@ def check_database_connection() -> bool:
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
-        logger.info("Database connection check successful")
         return True
     except SQLAlchemyError as e:
         logger.error(f"Database connection check failed: {e}")
@@ -129,13 +127,15 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
             cursor.execute("SET idle_in_transaction_session_timeout = '600s'")
 
 
-@event.listens_for(engine, "before_cursor_execute")
-def receive_before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
-    """Log SQL queries in debug mode."""
-    if config.application.debug:
-        logger.debug(f"SQL Query: {statement}")
-        if parameters:
-            logger.debug(f"SQL Parameters: {parameters}")
+# SQL query logging disabled to reduce log noise
+# Uncomment below if you need to debug SQL queries
+# @event.listens_for(engine, "before_cursor_execute")
+# def receive_before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+#     """Log SQL queries in debug mode."""
+#     if config.application.debug:
+#         logger.debug(f"SQL Query: {statement}")
+#         if parameters:
+#             logger.debug(f"SQL Parameters: {parameters}")
 
 
 # Initialize database on module import
@@ -162,4 +162,3 @@ if config.application.environment != 'test':
         initialize_database()
     except Exception as e:
         logger.warning(f"Database initialization failed on import: {e}")
-        logger.info("Database will be initialized when first accessed")

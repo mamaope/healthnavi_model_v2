@@ -1,4 +1,4 @@
-# HealthNavi AI CDSS - Git Ignore File
+# Empirico AI CDSS - Git Ignore File
 # Comprehensive ignore patterns for Python, FastAPI, Docker, AI/ML, and medical data
 
 # Python
@@ -35,6 +35,9 @@ env.bak/
 venv.bak/
 .venv/
 .env/
+
+# pnpm store (local cache)
+frontend/.pnpm-store/
 
 # Environment Variables
 .env
@@ -307,6 +310,11 @@ mock_data/
 docs/_build/
 docs/build/
 site/
+
+# Markdown: ignore all .md files except README.md
+*.md
+!README.md
+!**/README.md
 
 # Local Development
 local/

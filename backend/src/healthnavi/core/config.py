@@ -1,5 +1,5 @@
 """
-Configuration management for HealthNavi AI CDSS.
+Configuration management for Empirico AI CDSS.
 
 This module provides secure configuration management following medical software
 standards with proper environment variable handling and validation.
@@ -61,7 +61,7 @@ class SecurityConfig(BaseSettings):
     # JWT settings
     secret_key: str = Field(..., env="SECRET_KEY")
     algorithm: str = Field(default="HS256", env="JWT_ALGORITHM")
-    access_token_expire_minutes: int = Field(default=30, env="ACCESS_TOKEN_EXPIRE_MINUTES")
+    access_token_expire_minutes: int = Field(default=2880, env="ACCESS_TOKEN_EXPIRE_MINUTES")
     refresh_token_expire_days: int = Field(default=7, env="REFRESH_TOKEN_EXPIRE_DAYS")
     
     # Encryption
@@ -99,7 +99,7 @@ class ApplicationConfig(BaseSettings):
     """Main application configuration."""
     
     # Application settings
-    app_name: str = Field(default="HealthNavi AI CDSS", env="APP_NAME")
+    app_name: str = Field(default="Empirico AI CDSS", env="APP_NAME")
     app_version: str = Field(default="2.0.0", env="APP_VERSION")
     app_description: str = Field(default="AI Clinical Decision Support System", env="APP_DESCRIPTION")
     environment: str = Field(default="development", env="ENV")

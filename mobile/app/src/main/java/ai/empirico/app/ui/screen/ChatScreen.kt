@@ -1,0 +1,1155 @@
+package ai.empirico.app.ui.screen
+
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.filled.ThumbDown
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Assignment
+import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import ai.empirico.app.R
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
+import android.content.Intent
+import ai.empirico.app.data.model.ChatMessage
+import ai.empirico.app.data.model.MessageAuthor
+import ai.empirico.app.ui.theme.*
+import ai.empirico.app.ui.viewmodel.ChatViewModel
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChatScreen(
+    onLogout: () -> Unit,
+    onNavigateToSessions: () -> Unit,
+    onNavigateToProfile: () -> Unit = {},
+    onNavigateToSettings: () -> Unit = {},
+    onNavigateToPilot: () -> Unit = {},
+    onSessionExpired: () -> Unit = {},
+    chatViewModel: ChatViewModel = viewModel()
+) {
+    var messageText by remember { mutableStateOf("") }
+    var menuExpanded by remember { mutableStateOf(false) }
+    val uiState by chatViewModel.uiState.collectAsState()
+    val listState = rememberLazyListState()
+    val clipboardManager = LocalClipboardManager.current
+
+    // Redirect to login when session expires (401, token invalid) - no error message, just redirect
+    LaunchedEffect(uiState.authExpired) {
+        if (uiState.authExpired) {
+            onSessionExpired()
+        }
+    }
+
+    LaunchedEffect(uiState.messages.size) {
+        if (uiState.messages.isNotEmpty()) {
+            listState.animateScrollToItem(uiState.messages.size - 1)
+        }
+    }
+
+    Scaffold(
+        containerColor = BackgroundLight,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Image(
+                        painter = painterResource(id = R.drawable.logo),
+                        contentDescription = "Empirico Logo",
+                        modifier = Modifier.height(32.dp)
+                    )
+                },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            chatViewModel.startNewChat()
+                            chatViewModel.createSession()
+                        }
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "New Session", tint = Primary500)
+                    }
+                    IconButton(onClick = onNavigateToSessions) {
+                        Icon(Icons.Default.List, contentDescription = "Sessions", tint = Primary500)
+                    }
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = TextPrimary)
+                        }
+                        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                            DropdownMenuItem(text = { Text("Pilot") }, onClick = { menuExpanded = false; onNavigateToPilot() }, leadingIcon = { Icon(Icons.Default.Assignment, null) })
+                            DropdownMenuItem(text = { Text("Profile") }, onClick = { menuExpanded = false; onNavigateToProfile() }, leadingIcon = { Icon(Icons.Default.Person, null) })
+                            DropdownMenuItem(text = { Text("Settings") }, onClick = { menuExpanded = false; onNavigateToSettings() }, leadingIcon = { Icon(Icons.Default.Settings, null) })
+                            HorizontalDivider()
+                            DropdownMenuItem(text = { Text("Log out", color = Error600) }, onClick = { menuExpanded = false; onLogout() }, leadingIcon = { Icon(Icons.Default.Logout, null, tint = Error600) })
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = SurfaceLight
+                )
+            )
+        },
+        bottomBar = {
+            // Only show input bar when there are messages
+            if (uiState.messages.isNotEmpty() || uiState.isLoading) {
+                InputArea(
+                    messageText = messageText,
+                    onMessageChange = { messageText = it },
+                    isSending = uiState.isSending,
+                    isDeepSearch = uiState.deepSearchEnabled,
+                    onToggleDeepSearch = { chatViewModel.toggleDeepSearch() },
+                    onSend = {
+                        if (messageText.isNotBlank()) {
+                            chatViewModel.sendMessage(messageText.trim())
+                            messageText = ""
+                        }
+                    },
+                    errorMessage = uiState.errorMessage
+                )
+            }
+        }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .background(BackgroundLight)
+    ) {
+        if (uiState.messages.isEmpty() && !uiState.isLoading) {
+                EmptyChatState(
+                    messageText = messageText,
+                    onMessageChange = { messageText = it },
+                    isSending = uiState.isSending,
+                    isDeepSearch = uiState.deepSearchEnabled,
+                    onToggleDeepSearch = { chatViewModel.toggleDeepSearch() },
+                    onSend = {
+                        if (messageText.isNotBlank()) {
+                            chatViewModel.sendMessage(messageText.trim())
+                            messageText = ""
+                        }
+                    },
+                    onPromptSelected = {
+                        messageText = it
+                    },
+                    errorMessage = uiState.errorMessage
+                )
+        } else {
+            LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+                state = listState,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                    itemsIndexed(uiState.messages) { index, message ->
+                        AnimatedVisibility(
+                            visible = true,
+                            enter = fadeIn(animationSpec = tween(300)) + 
+                                    slideInVertically(
+                                        initialOffsetY = { 20 },
+                                        animationSpec = tween(300)
+                                    )
+                        ) {
+                            MessageBubble(
+                                message = message,
+                                viewModel = chatViewModel
+                            )
+                        }
+                }
+                if (uiState.isSending) {
+                    item {
+                            ThinkingIndicator()
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Feedback Dialog
+        FeedbackDialog(
+            isOpen = uiState.feedbackDialogOpen,
+            feedbackType = uiState.selectedFeedbackType,
+            onDismiss = { chatViewModel.closeFeedbackDialog() },
+            onSubmit = { feedbackText, rating ->
+                uiState.selectedFeedbackMessageId?.let { messageId ->
+                    uiState.selectedFeedbackType?.let { feedbackType ->
+                        chatViewModel.submitFeedback(
+                            messageId = messageId,
+                            feedbackType = feedbackType,
+                            feedbackText = feedbackText,
+                            rating = rating
+                        )
+                    }
+                }
+            },
+            isSubmitting = uiState.isSubmittingFeedback
+        )
+    }
+}
+
+@Composable
+private fun EmptyChatState(
+    messageText: String,
+    onMessageChange: (String) -> Unit,
+    isSending: Boolean,
+    isDeepSearch: Boolean,
+    onToggleDeepSearch: () -> Unit,
+    onSend: () -> Unit,
+    onPromptSelected: (String) -> Unit, // Now populates the input instead of submitting
+    errorMessage: String?
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Logo
+        Image(
+            painter = painterResource(id = R.drawable.logo),
+            contentDescription = "Empirico Logo",
+            modifier = Modifier
+                .fillMaxWidth(0.85f)
+                .padding(bottom = 48.dp)
+        )
+        
+        // Chat Input Interface (Centered)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = SurfaceLight
+            ),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (isDeepSearch) Primary500 else BorderLight
+            )
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    onClick = onToggleDeepSearch,
+                    modifier = Modifier.size(44.dp),
+                    shape = CircleShape,
+                    color = if (isDeepSearch) Primary500.copy(alpha = 0.1f) else Gray100,
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isDeepSearch) Primary500 else BorderLight
+                    )
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Filled.Psychology,
+                            contentDescription = if (isDeepSearch) "Deep search enabled" else "Deep search disabled",
+                            tint = if (isDeepSearch) Primary500 else TextTertiary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+                
+                androidx.compose.material3.TextField(
+                    value = messageText,
+                    onValueChange = onMessageChange,
+                    modifier = Modifier.weight(1f),
+                    placeholder = {
+                        Text(
+                            "Ask me a medical question ...",
+                            color = TextTertiary,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    },
+                    colors = androidx.compose.material3.TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        disabledContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        disabledTextColor = TextDisabled
+                    ),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = TextPrimary),
+                    maxLines = 5,
+                    enabled = !isSending
+                )
+                
+                IconButton(
+                    onClick = onSend,
+                    enabled = messageText.isNotBlank() && !isSending,
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    if (isSending) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = Primary500
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Send,
+                            contentDescription = "Send",
+                            tint = if (messageText.isNotBlank()) Primary500 else TextTertiary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+            }
+        }
+        
+        // Error Message
+        AnimatedVisibility(
+            visible = !errorMessage.isNullOrEmpty(),
+            enter = fadeIn() + slideInVertically(),
+            exit = fadeOut() + slideOutVertically()
+        ) {
+            errorMessage?.let {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Error500.copy(alpha = 0.1f)
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        Error500.copy(alpha = 0.3f)
+                    )
+                ) {
+                    Text(
+                        text = it,
+                        color = Error600,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        // Privacy Notice / Disclaimer
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Info,
+                contentDescription = null,
+                tint = TextSecondary,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Please do not include patient identifying information.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary,
+                textAlign = TextAlign.Center
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(48.dp))
+        
+        // Examples
+        SamplePromptChips(onPromptSelected = onPromptSelected)
+    }
+}
+
+@Composable
+private fun SamplePromptChips(onPromptSelected: (String) -> Unit) {
+    // Match web app examples with dropdowns
+    val sampleSections = listOf(
+        "Drug Dosing & Interactions" to listOf(
+            "Calculate the dose for ceftriaxone for a 60kg adult with severe pneumonia",
+            "What happens when green leafy vegetables are taken in large amounts while on warfarin?"
+        ),
+        "Clinical Guidelines" to listOf(
+            "What are the ADA (American Diabetes Association) recommendations for initiating insulin therapy in type 2 diabetes?",
+            "According to WHO malaria guidelines, how should malaria in pregnancy be treated?"
+        ),
+        "Treatment Options" to listOf(
+            "What are the treatment options for severe malnutrition in children under 5?",
+            "What is the first-line antihypertensive medication for stage 1 hypertension?"
+        )
+    )
+
+    var expandedSection by remember { mutableStateOf<String?>(null) }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        sampleSections.forEach { (title, prompts) ->
+            val isExpanded = expandedSection == title
+            
+            Card(
+                onClick = { expandedSection = if (isExpanded) null else title },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = SurfaceLight
+                ),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    BorderLight
+                )
+            ) {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextPrimary
+                        )
+                        Text(
+                            text = if (isExpanded) "−" else "+",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TextSecondary
+                        )
+                    }
+                    
+                    AnimatedVisibility(
+                        visible = isExpanded,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            prompts.forEach { prompt ->
+                                Card(
+                                    onClick = { 
+                                        onPromptSelected(prompt)
+                                        expandedSection = null
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = BackgroundLight
+                                    ),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        BorderLight
+                                    )
+                                ) {
+                                    Text(
+                                        prompt,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = TextPrimary,
+                                        modifier = Modifier.padding(12.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InputArea(
+    messageText: String,
+    onMessageChange: (String) -> Unit,
+    isSending: Boolean,
+    isDeepSearch: Boolean,
+    onToggleDeepSearch: () -> Unit,
+    onSend: () -> Unit,
+    errorMessage: String?
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(SurfaceLight)
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .padding(16.dp)
+    ) {
+        AnimatedVisibility(
+            visible = !errorMessage.isNullOrEmpty(),
+            enter = fadeIn() + slideInVertically(),
+            exit = fadeOut() + slideOutVertically()
+        ) {
+            errorMessage?.let {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Error500.copy(alpha = 0.1f)
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        Error500.copy(alpha = 0.3f)
+                    )
+                ) {
+            Text(
+                        text = it,
+                        color = Error600,
+                style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(12.dp)
+            )
+                }
+            }
+        }
+        
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = SurfaceLight
+            ),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (isDeepSearch) Primary500 else BorderLight
+                    )
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                Surface(
+                    onClick = onToggleDeepSearch,
+                    modifier = Modifier.size(44.dp),
+                    shape = CircleShape,
+                    color = if (isDeepSearch) Primary500.copy(alpha = 0.1f) else Gray100,
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isDeepSearch) Primary500 else BorderLight
+                    )
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Filled.Psychology,
+                            contentDescription = if (isDeepSearch) "Deep search enabled" else "Deep search disabled",
+                            tint = if (isDeepSearch) Primary500 else TextTertiary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+                
+                OutlinedTextField(
+                    value = messageText,
+                    onValueChange = onMessageChange,
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Type your message...", color = TextTertiary) },
+                    maxLines = 5,
+                    shape = RoundedCornerShape(20.dp),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = TextPrimary),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    ),
+                    trailingIcon = {
+                    FilledIconButton(
+                        onClick = onSend,
+                        enabled = messageText.isNotBlank() && !isSending,
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = if (messageText.isNotBlank()) Primary500 else Gray300,
+                                disabledContainerColor = Gray300
+                        ),
+                            shape = CircleShape,
+                            modifier = Modifier.size(40.dp)
+                    ) {
+                        if (isSending) {
+                            CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.White
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Send,
+                                contentDescription = "Send",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+        )
+                            }
+                        }
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun MessageBubble(
+    message: ChatMessage,
+    viewModel: ChatViewModel
+) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val uiState by viewModel.uiState.collectAsState()
+    val isUser = message.author == MessageAuthor.USER
+    val isError = message.author == MessageAuthor.ERROR
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Center
+    ) {
+        Card(
+            modifier = Modifier
+                .then(
+                    if (isUser) {
+                        Modifier.widthIn(max = 280.dp)
+                    } else {
+                        Modifier.fillMaxWidth(0.9f)
+                    }
+                ),
+            shape = RoundedCornerShape(
+                topStart = 20.dp,
+                topEnd = 20.dp,
+                bottomEnd = if (isUser) 4.dp else 20.dp,
+                bottomStart = if (isUser) 20.dp else 4.dp
+            ),
+            colors = CardDefaults.cardColors(
+                containerColor = when {
+                    isError -> Error500.copy(alpha = 0.1f)
+                    isUser -> Primary500
+                    else -> Gray100
+                }
+            ),
+            border = when {
+                isError -> androidx.compose.foundation.BorderStroke(1.dp, Error500.copy(alpha = 0.3f))
+                isUser -> null
+                else -> androidx.compose.foundation.BorderStroke(1.dp, BorderLight)
+            }
+        ) {
+            Column(
+                modifier = Modifier.padding(
+                    horizontal = if (!isUser && !isError) 20.dp else 16.dp,
+                    vertical = 16.dp
+                )
+            ) {
+                val content = message.content ?: ""
+                if (message.author == MessageAuthor.ASSISTANT && !isError) {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    Text(
+                        text = ai.empirico.app.util.MessageFormatter.formatMessage(content),
+                        modifier = Modifier.fillMaxWidth(),
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            lineHeight = 25.sp  // Match web: line-height 1.8 (14 * 1.8 ≈ 25)
+                        ),
+                        color = TextPrimary,
+                        textAlign = TextAlign.Start  // Left align (headings and body)
+                    )
+                } else {
+                    Text(
+                        text = content,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = when {
+                            isError -> Error600
+                            isUser -> Color.White
+                            else -> TextPrimary
+                        },
+                        lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
+                    )
+                }
+                if (message.author == MessageAuthor.ASSISTANT && !isError) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    val mid = message.messageId
+                    val feedbackState = mid?.let { uiState.feedback[it] }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FeedbackChip(
+                            label = "Deep search",
+                            icon = Icons.Filled.Psychology,
+                            isActive = false,
+                            onClick = { viewModel.performDeepSearch(message) }
+                        )
+                        FeedbackChip(
+                            label = "Copy",
+                            icon = Icons.Default.ContentCopy,
+                            isActive = false,
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(message.content ?: ""))
+                            }
+                        )
+                        FeedbackChip(
+                            label = "Share",
+                            icon = Icons.Default.Share,
+                            isActive = false,
+                            onClick = {
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, message.content ?: "")
+                                    putExtra(Intent.EXTRA_SUBJECT, "Empirico AI Response")
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Share via"))
+                            }
+                        )
+                        if (mid != null) {
+                            FeedbackChip(
+                                label = "Useful",
+                                icon = Icons.Default.ThumbUp,
+                                isActive = feedbackState == "helpful",
+                                onClick = { viewModel.openFeedbackDialog(mid, "helpful") }
+                            )
+                            FeedbackChip(
+                                label = "Not useful",
+                                icon = Icons.Default.ThumbDown,
+                                isActive = feedbackState == "not_helpful",
+                                onClick = { viewModel.openFeedbackDialog(mid, "not_helpful") }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FeedbackChip(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    isActive: Boolean = false,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = if (isActive) Primary500 else SurfaceLight,
+        border = androidx.compose.foundation.BorderStroke(
+            width = if (isActive) 2.dp else 1.dp,
+            color = if (isActive) Primary500 else BorderLight
+        ),
+        modifier = Modifier
+            .size(40.dp)
+            .clickable(onClick = onClick),
+        shadowElevation = if (isActive) 4.dp else 0.dp
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    modifier = Modifier.size(20.dp),
+                    tint = if (isActive) Color.White else TextSecondary
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThinkingIndicator() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Card(
+            modifier = Modifier.widthIn(max = 200.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Gray100
+            ),
+            border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight)
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = Primary500
+                )
+                Text(
+                    "Thinking...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+    }
+}
+    }
+}

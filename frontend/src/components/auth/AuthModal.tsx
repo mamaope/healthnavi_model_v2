@@ -24,6 +24,7 @@ export function AuthModal({ isOpen, mode, onClose, onSwitchMode, onForgotPasswor
   const { login, register } = useAuth()
   const [serverError, setServerError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isGoogleRedirecting, setIsGoogleRedirecting] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
@@ -53,6 +54,7 @@ export function AuthModal({ isOpen, mode, onClose, onSwitchMode, onForgotPasswor
     if (isOpen) {
       setServerError(null)
       setIsSubmitting(false)
+      setIsGoogleRedirecting(false)
       reset()
     }
   }, [isOpen, mode, reset])
@@ -61,6 +63,9 @@ export function AuthModal({ isOpen, mode, onClose, onSwitchMode, onForgotPasswor
     if (!isOpen) return
 
     const handleKeydown = (event: KeyboardEvent) => {
+      if (isGoogleRedirecting) {
+        return
+      }
       if (event.key === 'Escape') {
         onClose()
       }
@@ -68,9 +73,9 @@ export function AuthModal({ isOpen, mode, onClose, onSwitchMode, onForgotPasswor
 
     window.addEventListener('keydown', handleKeydown)
     return () => window.removeEventListener('keydown', handleKeydown)
-  }, [isOpen, onClose])
+  }, [isGoogleRedirecting, isOpen, onClose])
 
-  const confirmPassword = watch('confirmPassword')
+  const passwordValue = watch('password')
 
   const onSubmit = handleSubmit(async (values) => {
     setServerError(null)
@@ -122,24 +127,37 @@ export function AuthModal({ isOpen, mode, onClose, onSwitchMode, onForgotPasswor
 
   return (
     <div
-      className={modalClassName}
+      className={`${modalClassName} auth-modal`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="auth-modal-title"
       onMouseDown={(event) => {
+        if (isGoogleRedirecting) {
+          return
+        }
         if (event.target === event.currentTarget) {
           onClose()
         }
       }}
     >
-      <div className="modal-content" role="document">
-        <div className="modal-header">
+      <div className="modal-content auth-modal-content" role="document">
+        <div className="modal-header auth-modal-header">
           <h2 id="auth-modal-title">{title}</h2>
-          <button className="modal-close" onClick={onClose} aria-label="Close dialog">
+          <button
+            className="modal-close"
+            onClick={onClose}
+            aria-label="Close dialog"
+            disabled={isGoogleRedirecting}
+          >
             &times;
           </button>
         </div>
-        <div className="modal-body">
+        <div className="modal-body auth-modal-body">
+          <p className="auth-modal-subtitle">
+            {mode === 'login'
+              ? 'Welcome back. Continue your clinical workflow securely.'
+              : 'Create your account to start using Empirico on any device.'}
+          </p>
           <form onSubmit={onSubmit} className="auth-form">
             <div className="form-group">
               <label htmlFor="auth-email">Email</label>
@@ -263,7 +281,7 @@ export function AuthModal({ isOpen, mode, onClose, onSwitchMode, onForgotPasswor
                     {...registerField('confirmPassword', {
                       required: 'Please confirm your password',
                       validate: (value) =>
-                        value === confirmPassword || 'Passwords do not match',
+                        value === passwordValue || 'Passwords do not match',
                     })}
                   />
                   <button
@@ -298,8 +316,19 @@ export function AuthModal({ isOpen, mode, onClose, onSwitchMode, onForgotPasswor
 
             {serverError && <div className="auth-error">{serverError}</div>}
 
-            <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-              {isSubmitting ? 'Please wait…' : submitLabel}
+            <button
+              type="submit"
+              className="btn btn-primary auth-submit-btn"
+              disabled={isSubmitting || isGoogleRedirecting}
+            >
+              {isSubmitting ? (
+                <>
+                  <i className="fas fa-spinner fa-spin" />
+                  <span>Please wait...</span>
+                </>
+              ) : (
+                submitLabel
+              )}
             </button>
           </form>
 
@@ -312,13 +341,15 @@ export function AuthModal({ isOpen, mode, onClose, onSwitchMode, onForgotPasswor
             className="btn btn-google"
             onClick={(e) => {
               e.preventDefault()
+              if (isSubmitting || isGoogleRedirecting) return
+              setIsGoogleRedirecting(true)
               // Close modal first
-              onClose()
-              // Then navigate after a brief delay to ensure modal closes
+              // Navigate after a brief delay so loading state is visible first
               setTimeout(() => {
                 window.location.href = `${API_URL.startsWith('/') ? window.location.origin : ''}${API_URL}/auth/google/login`
-              }, 100)
+              }, 180)
             }}
+            aria-disabled={isSubmitting || isGoogleRedirecting}
             style={{ textDecoration: 'none', display: 'inline-block' }}
           >
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -339,8 +370,14 @@ export function AuthModal({ isOpen, mode, onClose, onSwitchMode, onForgotPasswor
                 fill="#EA4335"
               />
             </svg>
-            Continue with Google
+            {isGoogleRedirecting ? 'Redirecting to Google...' : 'Continue with Google'}
           </a>
+          {isGoogleRedirecting && (
+            <div className="auth-redirect-status" role="status" aria-live="polite">
+              <i className="fas fa-spinner fa-spin" />
+              <span>Connecting to Google sign-in...</span>
+            </div>
+          )}
 
           <div className="modal-footer">
             <p>

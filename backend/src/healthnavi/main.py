@@ -1,21 +1,38 @@
 """
-Main FastAPI application for HealthNavi AI CDSS.
+Main FastAPI application for Empirico AI CDSS.
 """
 
+import asyncio
 import logging
+import sys
+import uuid
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
 import time
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)],
+    force=True  # Override any existing configuration
+)
+logger = logging.getLogger(__name__)
+
+# Suppress SQLAlchemy/PostgreSQL engine and pool logs (SQL queries, connections)
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy.dialects").setLevel(logging.WARNING)
 
 from healthnavi.core.config import get_config
 from healthnavi.core.response_utils import create_success_response, create_error_response, ResponseTimer
 from healthnavi.schemas import StandardResponse
-from healthnavi.api.v1 import auth, diagnosis, chat_sessions, partner
+from healthnavi.api.v1 import auth, diagnosis, chat_sessions, partner, admin, surveys
 
 config = get_config()
-logger = logging.getLogger(__name__)
 
 # Conditionally import transcription router
 try:
@@ -31,7 +48,7 @@ except ImportError as e:
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     # Startup
-    logger.info("Starting HealthNavi AI CDSS application...")
+    logger.info("Starting Empirico AI CDSS application...")
     try:
         from healthnavi.core.database import initialize_database
         initialize_database()
@@ -56,22 +73,63 @@ async def lifespan(app: FastAPI):
         logger.warning(f"GenAI client initialization failed during startup: {e}")
         logger.info("Application will continue - AI functionality may be limited")
     
+    _whisper_task = None
     try:
         from healthnavi.services.transcription_service import preload_model
-        # Run in background or just log that it's loading
-        logger.info("Preloading Whisper model...")
-        preload_model()
-        logger.info("Whisper model preloading completed")
+
+        async def _preload_whisper_in_background():
+            try:
+                logger.info("Preloading Whisper model in background...")
+                await asyncio.to_thread(preload_model)
+                logger.info("Whisper model preloading completed")
+            except Exception as e:
+                logger.warning(f"Whisper model preloading failed: {e}")
+                logger.info("Application will continue - Transcription will load on first use")
+
+        # Don't block API readiness on model download/preload.
+        _whisper_task = asyncio.create_task(_preload_whisper_in_background())
     except Exception as e:
-        logger.warning(f"Whisper model preloading failed: {e}")
+        logger.warning(f"Whisper preload task setup failed: {e}")
         logger.info("Application will continue - Transcription will load on first use")
 
     logger.info("Application startup completed successfully")
+
+    # Background job: process pending user data deletions (6 months after request)
+    async def _run_pending_deletions_job():
+        from healthnavi.core.database import SessionLocal
+        from healthnavi.services.data_deletion_service import process_pending_deletions
+        # First run after 60s to let DB be ready; then every 24h
+        await asyncio.sleep(60)
+        while True:
+            try:
+                db = SessionLocal()
+                try:
+                    n = process_pending_deletions(db)
+                    if n:
+                        logger.info(f"Data deletion job: permanently deleted {n} user(s) per deferred privacy requests.")
+                finally:
+                    db.close()
+            except Exception as e:
+                logger.exception(f"Data deletion job error: {e}")
+            await asyncio.sleep(86400)  # 24 hours
+
+    _deletion_task = asyncio.create_task(_run_pending_deletions_job())
     
     yield
     
     # Shutdown
-    logger.info("Shutting down HealthNavi AI CDSS application...")
+    _deletion_task.cancel()
+    try:
+        await _deletion_task
+    except asyncio.CancelledError:
+        pass
+    if _whisper_task is not None:
+        _whisper_task.cancel()
+        try:
+            await _whisper_task
+        except asyncio.CancelledError:
+            pass
+    logger.info("Shutting down Empirico AI CDSS application...")
 
 
 # Create FastAPI application
@@ -82,34 +140,77 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Add CORS middleware
+# Add CORS middleware with environment-aware configuration
+# Get CORS origins from environment variable or config
+import os
+cors_origins_env = os.getenv("CORS_ORIGINS", "")
+if cors_origins_env:
+    cors_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+else:
+    cors_origins = ["*"]  # Default to all in development
+
+# Warn if production allows all origins
+if config.application.environment == "production" and cors_origins == ["*"]:
+    logger.warning("CORS is set to allow all origins in production. Set CORS_ORIGINS environment variable!")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure properly for production
+    allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["X-Correlation-ID"],
 )
 
 
-# Request logging middleware
+# Request logging middleware with correlation IDs
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """Log all requests."""
+    """Log all requests with correlation IDs for tracing."""
+    # Generate correlation ID for this request
+    correlation_id = str(uuid.uuid4())[:8]
+    request.state.correlation_id = correlation_id
+    
     start_time = time.time()
     
-    # Log request
-    logger.info(f"Request: {request.method} {request.url}")
+    # Log request immediately when received
+    client_ip = request.client.host if request.client else "unknown"
+    logger.info(f"[{correlation_id}] >>> {request.method} {request.url.path} from {client_ip}")
     
-    # Process request
-    response = await call_next(request)
-    
-    # Log response
-    process_time = time.time() - start_time
-    logger.info(f"Response: {response.status_code} - {process_time:.3f}s")
-    
-    return response
+    try:
+        response = await call_next(request)
+        process_time = time.time() - start_time
+        logger.info(f"[{correlation_id}] <<< {response.status_code} {request.url.path} ({process_time:.2f}s)")
+        # Add correlation ID to response headers
+        response.headers["X-Correlation-ID"] = correlation_id
+        return response
+    except Exception as e:
+        process_time = time.time() - start_time
+        logger.error(f"[{correlation_id}] !!! FAILED {request.url.path} after {process_time:.2f}s: {e}")
+        raise
 
+
+# Request validation error handler (422 errors)
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle request validation errors (422)."""
+    logger.error(f"Request validation error for {request.method} {request.url.path}: {exc.errors()}")
+    logger.error(f"Request query params: {request.query_params}")
+    logger.error(f"Request path params: {request.path_params}")
+    
+    # Create standardized error response
+    error_details = [f"{err.get('loc', [])}: {err.get('msg', '')}" for err in exc.errors()]
+    error_response = create_error_response(
+        message="Request validation failed",
+        status_code=422,
+        errors=error_details,
+        execution_time=0.0
+    )
+    
+    return JSONResponse(
+        status_code=422,
+        content=error_response.model_dump(mode='json')
+    )
 
 # HTTPException handler
 @app.exception_handler(HTTPException)
@@ -212,6 +313,8 @@ async def api_health_check():
 app.include_router(auth.router, prefix=f"{API_VERSION_PREFIX}/auth", tags=["Authentication"])
 app.include_router(diagnosis.router, prefix=f"{API_VERSION_PREFIX}/diagnosis", tags=["Diagnosis"])
 app.include_router(chat_sessions.router, prefix=f"{API_VERSION_PREFIX}/chat", tags=["Chat Sessions"])
+app.include_router(admin.router, prefix=f"{API_VERSION_PREFIX}/admin", tags=["Admin"])
+app.include_router(surveys.router, prefix=f"{API_VERSION_PREFIX}/surveys", tags=["Surveys"])
 
 # Conditionally include transcription router
 if TRANSCRIPTION_AVAILABLE and transcription:

@@ -1,5 +1,5 @@
 """
-Diagnosis Session Service for HealthNavi AI CDSS.
+Diagnosis Session Service for Empirico AI CDSS.
 
 This module provides services for managing diagnosis sessions and chat messages.
 """
@@ -27,8 +27,10 @@ class DiagnosisSessionService:
     def __init__(self, db: Session):
         self.db = db
     
-    def create_session(self, user: User, session_data: ChatSessionCreate) -> ChatSessionResponse:
-        """Create a new diagnosis session."""
+    def create_session(
+        self, user: User, session_data: ChatSessionCreate, device_type: Optional[str] = None
+    ) -> ChatSessionResponse:
+        """Create a new diagnosis session. Optionally log device_type for admin statistics."""
         try:
             # Create new session
             new_session = DiagnosisSession(
@@ -43,6 +45,13 @@ class DiagnosisSessionService:
             self.db.add(new_session)
             self.db.commit()
             self.db.refresh(new_session)
+            
+            if device_type:
+                try:
+                    from healthnavi.services.admin_service import AdminService
+                    AdminService(self.db).log_device_activity(user.id, device_type, "session_create")
+                except Exception as e:
+                    logger.warning(f"Could not log device activity: {e}", exc_info=True)
             
             logger.info(f"Created new diagnosis session {new_session.id} for user {user.id}")
             
@@ -139,20 +148,22 @@ class DiagnosisSessionService:
             raise
     
     def list_sessions(self, user: User, page: int = 1, per_page: int = 20) -> ChatSessionListResponse:
-        """List diagnosis sessions for a user."""
+        """List diagnosis sessions for a user. Returns all active sessions (including empty ones created manually)."""
         try:
             # Calculate offset
             offset = (page - 1) * per_page
             
-            # Get total count
+            # Get all active sessions for the user (including empty ones created manually)
+            # This allows manually created sessions to appear in the session history immediately
             total = self.db.query(func.count(DiagnosisSession.id)).filter(
-                DiagnosisSession.user_id == user.id
-            ).scalar()
+                DiagnosisSession.user_id == user.id,
+                DiagnosisSession.is_active == True
+            ).scalar() or 0
             
-            # Get sessions WITHOUT expensive message count join
-            # Message count can be lazy-loaded if needed by the frontend
+            # Get all active sessions ordered by most recently updated
             sessions = self.db.query(DiagnosisSession).filter(
-                DiagnosisSession.user_id == user.id
+                DiagnosisSession.user_id == user.id,
+                DiagnosisSession.is_active == True
             ).order_by(
                 desc(DiagnosisSession.updated_at)
             ).offset(offset).limit(per_page).all()

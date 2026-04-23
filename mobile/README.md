@@ -1,6 +1,6 @@
-# HealthNavy Mobile App
+# Empirico Mobile App
 
-Android mobile application for HealthNavy Clinical Decision Support System.
+Android mobile application for Empirico Clinical Decision Support System.
 
 ## Features
 
@@ -28,10 +28,18 @@ The app follows MVVM (Model-View-ViewModel) architecture:
 
 ## Setup
 
-1. **Configure API URL**: 
-   Update `BASE_URL` in `RetrofitClient.kt`:
-   - For Android Emulator: `http://10.0.2.2:8000/api/v2`
-   - For Physical Device: Use your computer's IP address (e.g., `http://192.168.1.100:8000/api/v2`)
+1. **Configure API URL** (required for **physical devices**; emulator can use the default):
+   - **Default**: The app uses `https://empirico.ai/api/v2/` (production). No config needed.
+   - **Android Emulator (local backend)**: Set `API_BASE_URL=http://10.0.2.2:8050/api/v2/`.
+   - **Physical Device (local backend)**: Use your PC's LAN IP, e.g. `API_BASE_URL=http://192.168.1.XXX:8050/api/v2/`. Options:
+     - **gradle.properties** (project root):  
+       `API_BASE_URL=http://192.168.1.XXX:8050/api/v2/`  
+       (replace `192.168.1.XXX` with your machine’s IP; ensure the trailing `/`.)
+     - **local.properties** (project root, usually gitignored):  
+       `api.base.url=http://192.168.1.XXX:8050/api/v2/`
+     - **Command line**:  
+       `./gradlew assembleDebug -PAPI_BASE_URL=http://192.168.1.XXX:8050/api/v2/`
+   - Ensure the backend is running on that machine and port (default 8050). If the device and PC are on the same Wi‑Fi, allow cleartext in `network_security_config` if required.
 
 2. **Build the app**:
    ```bash
@@ -53,13 +61,13 @@ The app follows MVVM (Model-View-ViewModel) architecture:
 
 ## API Integration
 
-The app connects to the HealthNavy backend API. Ensure the backend is running and accessible from your device/emulator.
+The app connects to the Empirico backend API. Ensure the backend is running and accessible from your device/emulator.
 
 ## Notes
 
 - The app uses cleartext traffic for localhost connections (development only)
 - For production, configure HTTPS and update the network security config
-- Google Sign-In can be added by configuring OAuth credentials
+- **Google Sign-In (release builds)**: If Google Sign-In works in debug but not in release (nothing happens after selecting an account), add your **release keystore SHA-1** to the Android OAuth client in Google Cloud Console. See **[RELEASE_GOOGLE_SIGNIN.md](RELEASE_GOOGLE_SIGNIN.md)** for steps.
 
 
 

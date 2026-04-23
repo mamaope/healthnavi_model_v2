@@ -41,9 +41,11 @@ export interface SessionMessagesResponse {
   success: boolean
   data: {
     messages: Array<{
-      id: string | number
+      id: number // Backend returns numeric database ID
+      session_id: number
       message_type: 'user' | 'assistant' | 'system'
       content: string
+      patient_data?: string | null
       diagnosis_complete?: boolean
       created_at: string
     }>

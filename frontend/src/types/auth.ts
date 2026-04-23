@@ -6,6 +6,8 @@ export interface User {
   first_name?: string
   last_name?: string
   role?: string
+  medical_professional_type?: string | null
+  is_email_verified?: boolean
   exp?: number
   created_at?: string
   updated_at?: string

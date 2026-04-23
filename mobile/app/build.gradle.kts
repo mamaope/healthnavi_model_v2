@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -5,26 +7,40 @@ plugins {
 }
 
 android {
-    namespace = "com.mamaope.healthnavy"
+    namespace = "ai.empirico.app"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.mamaope.healthnavy"
+        applicationId = "ai.empirico.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 5
+        versionName = "1.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // API_BASE_URL: leave empty to use https://empirico.ai/api/v2/. For local backend: set in gradle.properties or -PAPI_BASE_URL=http://10.0.2.2:8050/api/v2/ (emulator) or http://YOUR_IP:8050/api/v2/ (device).
+        val apiBase = project.findProperty("API_BASE_URL")?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: (project.rootProject.file("local.properties").takeIf { it.exists() }?.let { f ->
+                Properties().apply { load(f.inputStream()) }.getProperty("api.base.url", "")?.trim()?.takeIf { it.isNotEmpty() }
+            } ?: "")
+        buildConfigField("String", "API_BASE_URL", "\"${apiBase}\"")
+        // Default Google Web Client ID (for debug builds)
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"1033520161890-o24gvc8ecog70fu0ekv9rrr3hobki87r.apps.googleusercontent.com\"")
     }
 
     buildTypes {
+        debug {
+            // Debug Google Web Client ID
+            buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"1033520161890-o24gvc8ecog70fu0ekv9rrr3hobki87r.apps.googleusercontent.com\"")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Release Google Web Client ID (must match backend GOOGLE_CLIENT_ID)
+            buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"1033520161890-of8f7he5k9360iv129sf5le8p4qep7bf.apps.googleusercontent.com\"")
         }
     }
     compileOptions {
@@ -36,6 +52,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

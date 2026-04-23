@@ -95,7 +95,7 @@ class ChatSessionResponse(BaseModel):
 
 class ChatMessageCreate(BaseModel):
     """Schema for creating a new chat message."""
-    content: str = Field(..., min_length=1, max_length=10000, description="Message content")
+    content: str = Field(..., min_length=1, max_length=50000, description="Message content (increased to support comprehensive medical responses)")
     message_type: str = Field(..., description="Type of message: 'user', 'assistant', or 'system'")
     patient_data: Optional[str] = Field(None, max_length=10000, description="Patient data associated with the message")
     diagnosis_complete: Optional[bool] = Field(default=False, description="Whether diagnosis is complete")
@@ -129,6 +129,8 @@ class MessageFeedbackRequest(BaseModel):
     """Schema for submitting message feedback."""
     message_id: int = Field(..., description="ID of the chat message to provide feedback for")
     feedback_type: str = Field(..., description="Type of feedback: 'helpful' or 'not_helpful'")
+    feedback_text: Optional[str] = Field(None, max_length=2000, description="Optional text feedback from the user")
+    rating: Optional[int] = Field(None, ge=1, le=5, description="Rating from 1 to 5 stars")
 
 
 class MessageFeedbackResponse(BaseModel):
@@ -137,6 +139,8 @@ class MessageFeedbackResponse(BaseModel):
     message_id: int
     user_id: int
     feedback_type: str
+    feedback_text: Optional[str]
+    rating: Optional[int]
     created_at: Optional[str]
     updated_at: Optional[str]
 
@@ -170,6 +174,7 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = Field(None, max_length=100)
     email: Optional[EmailStr] = Field(None)
     role: Optional[str] = Field(None)
+    medical_professional_type: Optional[str] = Field(None, description="Medical professional type: Intern Doctor, Senior House Officers, Clinical Officer, Consultant, Student")
     is_active: Optional[bool] = Field(None)
 
 
@@ -180,6 +185,7 @@ class UserResponse(BaseModel):
     full_name: Optional[str]
     email: str
     role: str
+    medical_professional_type: Optional[str]
     is_active: bool
     is_email_verified: bool
     created_at: Optional[str]

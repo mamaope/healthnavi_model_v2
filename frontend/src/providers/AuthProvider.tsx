@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { APP_METADATA, STORAGE_KEYS } from '../config'
 import { authApi } from '../services/apiClient'
+import { useChatStore } from '../store/useChatStore'
 import type { User } from '../types/auth'
 
 interface AuthState {
@@ -63,6 +64,18 @@ function getStoredAuth() {
   } catch {
     return { token, user: null }
   }
+}
+
+function scheduleBackgroundTask(task: () => void, timeout = 1500) {
+  if (typeof window === 'undefined') {
+    return () => {}
+  }
+  if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+    const id = (window as any).requestIdleCallback(task, { timeout })
+    return () => (window as any).cancelIdleCallback?.(id)
+  }
+  const id = globalThis.setTimeout(task, 0)
+  return () => globalThis.clearTimeout(id)
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -122,16 +135,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           initializing: false,
           isAuthenticated: false,
         })
+        if (typeof window !== 'undefined') {
+          useChatStore.getState().reset()
+          window.localStorage.removeItem('empirico.chat')
+          window.location.href = '/'
+        }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.warn('Failed to refresh profile', error)
-      clearPersistedAuth()
-      setAuthState({
-        user: null,
-        token: null,
-        initializing: false,
-        isAuthenticated: false,
-      })
+      
+      // Check if this is a 401/403 error (token invalid) vs other errors
+      const isAuthError = error?.message?.includes('401') || 
+                         error?.message?.includes('403') ||
+                         error?.message?.includes('Unauthorized') ||
+                         error?.message?.includes('Forbidden') ||
+                         error?.message?.includes('authentication')
+      
+      if (isAuthError) {
+        // Token is invalid, clear everything
+        clearPersistedAuth()
+        setAuthState({
+          user: null,
+          token: null,
+          initializing: false,
+          isAuthenticated: false,
+        })
+        if (typeof window !== 'undefined') {
+          useChatStore.getState().reset()
+          window.localStorage.removeItem('empirico.chat')
+        }
+      } else {
+        // Other error (network, server, etc.) - keep token but mark as not authenticated
+        // Don't clear the token in case it's a temporary issue
+        console.warn('Non-auth error during profile refresh, keeping token for retry')
+        setAuthState({
+          user: stored.user, // Keep existing user data if available
+          token: stored.token,
+          initializing: false,
+          isAuthenticated: Boolean(stored.user), // Only authenticated if we have user data
+        })
+      }
     }
   }, [clearPersistedAuth, persistAuth])
 
@@ -147,17 +190,92 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    // We optimistically set the state while verifying the token
+    // Show UI immediately with cached user - don't block on auth API
+    // Run refreshProfile in background; UI updates when it completes
     setAuthState({
       user: stored.user,
       token: stored.token,
-      initializing: true,
+      initializing: false, // No longer blocking - show app right away
       isAuthenticated: Boolean(stored.token),
     })
 
-    refreshProfile().catch((error) => {
-      console.error('Failed to initialize auth state', error)
+    // Verify token in background during idle time to protect first paint.
+    const cancelInitialRefresh = scheduleBackgroundTask(() => {
+      refreshProfile().catch((error) => {
+        console.error('Failed to initialize auth state', error)
+      })
     })
+
+    // Set up periodic token validation (every 30 minutes), also deferred.
+    let validationInterval: ReturnType<typeof setInterval> | null = null
+    const cancelValidationSetup = scheduleBackgroundTask(() => {
+      validationInterval = setInterval(() => {
+        const currentStored = getStoredAuth()
+        if (currentStored.token) {
+          refreshProfile().catch((error) => {
+            console.warn('Periodic token validation failed:', error)
+          })
+        }
+      }, 30 * 60 * 1000) // 30 minutes
+    })
+
+    // Listen for storage changes (e.g., token cleared by apiClient, or new token added)
+    const handleStorageChange = () => {
+      const updatedStored = getStoredAuth()
+      
+      if (!updatedStored.token) {
+        setAuthState({
+          user: null,
+          token: null,
+          initializing: false,
+          isAuthenticated: false,
+        })
+        if (typeof window !== 'undefined') {
+          useChatStore.getState().reset()
+          window.localStorage.removeItem('empirico.chat')
+          window.location.href = '/'
+        }
+      } else if (updatedStored.token && updatedStored.token !== stored.token) {
+        // New token was added (e.g., from OAuth), refresh profile
+        console.log('New token detected in storage, refreshing profile...')
+        refreshProfile().catch((error) => {
+          console.error('Failed to refresh profile after token change:', error)
+        })
+      }
+    }
+    window.addEventListener('storage', handleStorageChange)
+    
+    // Also listen for custom 'auth-token-updated' event for same-window updates
+    const handleTokenUpdate = () => {
+      console.log('Auth token updated event received, refreshing profile...')
+      // Get the latest token from storage
+      const latestStored = getStoredAuth()
+      if (latestStored.token) {
+        refreshProfile().catch((error) => {
+          console.error('Failed to refresh profile after token update event:', error)
+        })
+      }
+    }
+    window.addEventListener('auth-token-updated', handleTokenUpdate)
+    
+    // Also listen for custom logout events
+    const handleLogout = () => {
+      if (typeof window !== 'undefined' && window.location.pathname !== '/') {
+        window.location.href = '/'
+      }
+    }
+    window.addEventListener('logout', handleLogout)
+
+    return () => {
+      cancelInitialRefresh()
+      cancelValidationSetup()
+      if (validationInterval) {
+        clearInterval(validationInterval)
+      }
+      window.removeEventListener('storage', handleStorageChange)
+      window.removeEventListener('logout', handleLogout)
+      window.removeEventListener('auth-token-updated', handleTokenUpdate)
+    }
   }, [refreshProfile])
 
   const login = useCallback(
@@ -178,6 +296,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           initializing: false,
           isAuthenticated: true,
         })
+        // Start fresh conversation after login: clear any persisted guest chat so user sees new conversation UI
+        try {
+          const { useChatStore } = require('../store/useChatStore')
+          const chat = useChatStore.getState()
+          chat.reset()
+          chat.setSessions([])
+          chat.setFollowupQuestions([])
+          if (typeof window !== 'undefined') {
+            window.localStorage.removeItem('empirico.chat')
+          }
+        } catch (err) {
+          if (typeof window !== 'undefined') {
+            window.localStorage.removeItem('empirico.chat')
+          }
+        }
       } catch (error) {
         if (error instanceof Error) {
           throw error
@@ -249,6 +382,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       initializing: false,
       isAuthenticated: false,
     })
+    
+    // Fully clear chat from memory and storage so after reload user sees clean home
+    if (typeof window !== 'undefined') {
+      try {
+        const { useChatStore } = require('../store/useChatStore')
+        const chat = useChatStore.getState()
+        chat.reset()
+        chat.setSessions([])
+        chat.setFollowupQuestions([])
+      } catch (error) {
+        console.warn('Failed to clear chat state on logout:', error)
+      }
+      // Remove persisted chat so next load has no chat data (must do before navigation)
+      window.localStorage.removeItem('empirico.chat')
+      window.dispatchEvent(new Event('logout'))
+      // Full navigation to home so user sees landing UI (nav + login/signup). Reload when already on / so chat is gone.
+      const path = window.location.pathname
+      const onHome = path === '/' || path === '' || path === '/index.html'
+      if (onHome) {
+        window.location.reload()
+      } else {
+        window.location.assign(window.location.origin + '/')
+      }
+    }
   }, [clearPersistedAuth])
 
   const value = useMemo<AuthContextValue>(

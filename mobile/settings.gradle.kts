@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "HealthNavy"
+rootProject.name = "Empirico"
 include(":app")

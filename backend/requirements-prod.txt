@@ -1,0 +1,46 @@
+# Empirico AI CDSS - Production dependencies only (smaller Docker image)
+# Omit pytest, black, flake8, mypy, isort, ipython
+
+# Core Framework & API
+fastapi>=0.115.0,<0.116.0
+uvicorn[standard]>=0.34.0,<0.35.0
+starlette>=0.41.0,<0.42.0
+pydantic>=2.10.0,<3.0.0
+pydantic-settings>=2.6.0,<3.0.0
+python-multipart>=0.0.20,<0.1.0
+
+# Database & ORM
+sqlalchemy>=2.0.36,<3.0.0
+alembic>=1.16.0,<2.0.0
+psycopg2-binary>=2.9.10,<3.0.0
+
+# Authentication & Security
+python-jose[cryptography]>=3.5.0,<4.0.0
+PyJWT>=2.9.0,<3.0.0
+passlib[bcrypt]>=1.7.4,<2.0.0
+bcrypt>=4.1.2,<5.0.0
+cryptography>=46.0.0,<47.0.0
+email-validator>=2.2.0,<3.0.0
+
+# Google Cloud & Vertex AI
+vertexai>=1.71.0,<2.0.0
+google-genai>=0.5.0,<1.0.0
+google-auth>=2.35.0,<3.0.0
+google-auth-oauthlib>=1.2.1,<2.0.0
+
+# Vector Database
+pymilvus>=2.4.9,<3.0.0
+
+# OpenAI (embeddings)
+openai>=1.70.0,<2.0.0
+
+# Audio Transcription (Whisper)
+--extra-index-url https://download.pytorch.org/whl/cpu
+openai-whisper>=20231117
+torch>=2.0.0,<3.0.0
+
+# Utilities
+python-dotenv>=1.0.1,<2.0.0
+tenacity>=9.0.0,<10.0.0
+httpx>=0.28.0,<0.29.0
+python-dateutil>=2.9.0,<3.0.0

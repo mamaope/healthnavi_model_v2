@@ -1,0 +1,60 @@
+.usage-over-time-panel {
+  grid-column: 1 / -1;
+}
+
+.usage-over-time-panel h2 {
+  margin: 0 0 1rem 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.usage-chart-container {
+  min-height: 320px;
+  background: var(--panel-bg, #fafafa);
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.usage-over-time-panel .loading-text,
+.usage-over-time-panel .empty-text {
+  color: var(--text-muted, #666);
+  font-size: 0.9rem;
+}
+
+.usage-over-time-panel .error-text {
+  color: #dc2626;
+  font-size: 0.9rem;
+}
+
+.usage-chart-tooltip {
+  background: #1f2937;
+  color: #f3f4f6;
+  padding: 0.5rem 0;
+  min-width: 200px;
+}
+
+.usage-tooltip-date {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid #4b5563;
+  color: #f3f4f6;
+}
+
+.usage-tooltip-row {
+  margin: 0.35rem 0;
+  font-size: 0.85rem;
+  color: #f3f4f6;
+}
+
+.usage-tooltip-row span {
+  color: inherit;
+}
+
+.usage-tooltip-desc {
+  font-size: 0.75rem;
+  color: #d1d5db;
+  margin-top: 0.15rem;
+  margin-left: 0;
+}

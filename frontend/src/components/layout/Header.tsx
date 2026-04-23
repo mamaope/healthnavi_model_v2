@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../providers/AuthProvider'
 import { ThemeToggle } from '../common/ThemeToggle'
 
@@ -6,12 +7,23 @@ interface HeaderProps {
   onSignIn: () => void
   onRegister: () => void
   onHomeClick?: () => void
+  onMenuToggle?: () => void
+  showMenuButton?: boolean
 }
 
 export function Header({ onSignIn, onRegister, onHomeClick, onMenuToggle, showMenuButton = false }: HeaderProps) {
   const { isAuthenticated } = useAuth()
+  const navigate = useNavigate()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+
+  const handleLogoClick = () => {
+    if (onHomeClick) {
+      onHomeClick()
+    } else {
+      navigate('/')
+    }
+  }
 
   useEffect(() => {
     if (!isMenuOpen) return
@@ -32,7 +44,6 @@ export function Header({ onSignIn, onRegister, onHomeClick, onMenuToggle, showMe
   return (
     <header className="modern-header">
       <div className="header-content">
-        {/* Mobile menu button - for sidebar toggle */}
         {showMenuButton && (
           <button 
             className="mobile-menu-button"
@@ -43,17 +54,26 @@ export function Header({ onSignIn, onRegister, onHomeClick, onMenuToggle, showMe
           </button>
         )}
         
-        {/* Logo - always visible */}
         <div className="header-brand">
           <div 
             className="header-logo" 
-            onClick={onHomeClick}
-            style={{ cursor: onHomeClick ? 'pointer' : 'default' }}
+            onClick={handleLogoClick}
+            style={{ cursor: 'pointer' }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                handleLogoClick()
+              }
+            }}
+            aria-label="Go to home page"
           >
             <img 
               src="/logo.png" 
               alt="Empirico" 
               className="logo-image"
+              loading="eager"
               onError={(e) => {
                 const target = e.target as HTMLImageElement
                 target.style.display = 'none'
@@ -72,10 +92,10 @@ export function Header({ onSignIn, onRegister, onHomeClick, onMenuToggle, showMe
         <div className="header-actions-wrapper">
           {!isAuthenticated && (
             <div className="header-actions">
-              <button className="btn btn-outline" onClick={onSignIn}>
+              <button className="btn btn-outline header-auth-btn" onClick={onSignIn}>
                 Log In
               </button>
-              <button className="btn btn-primary" onClick={onRegister}>
+              <button className="btn btn-primary header-auth-btn" onClick={onRegister}>
                 Sign Up
               </button>
               <div className="header-menu-container" ref={menuRef}>
@@ -99,7 +119,17 @@ export function Header({ onSignIn, onRegister, onHomeClick, onMenuToggle, showMe
                       className="header-menu-item"
                       onClick={() => {
                         setIsMenuOpen(false)
-                        window.alert('Mobile app coming soon!')
+                        navigate('/about')
+                      }}
+                    >
+                      <i className="fas fa-info-circle" />
+                      <span>About</span>
+                    </button>
+                    <button
+                      className="header-menu-item"
+                      onClick={() => {
+                        setIsMenuOpen(false)
+                        window.open('https://play.google.com/apps/internaltest/4701007698232696065', '_blank', 'noopener,noreferrer')
                       }}
                     >
                       <i className="fas fa-mobile-alt" />
@@ -134,7 +164,17 @@ export function Header({ onSignIn, onRegister, onHomeClick, onMenuToggle, showMe
                       className="header-menu-item"
                       onClick={() => {
                         setIsMenuOpen(false)
-                        window.alert('Mobile app coming soon!')
+                        navigate('/about')
+                      }}
+                    >
+                      <i className="fas fa-info-circle" />
+                      <span>About</span>
+                    </button>
+                    <button
+                      className="header-menu-item"
+                      onClick={() => {
+                        setIsMenuOpen(false)
+                        window.open('https://play.google.com/apps/internaltest/4701007698232696065', '_blank', 'noopener,noreferrer')
                       }}
                     >
                       <i className="fas fa-mobile-alt" />
