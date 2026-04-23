@@ -57,6 +57,7 @@
   align-items: center;
   margin-bottom: 1.5rem;
   gap: 1rem;
+  flex-wrap: wrap;
 }
 
 .filter-select {
@@ -68,9 +69,55 @@
   cursor: pointer;
 }
 
+.filter-date {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  background: white;
+}
+
+.btn-clear-dates {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.btn-clear-dates:hover {
+  background: #f8fafc;
+}
+
 .submissions-count {
   color: #6c757d;
   font-size: 0.9rem;
+  margin-right: auto;
+}
+
+.btn-export-excel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid #15803d;
+  background: #16a34a;
+  color: #fff;
+  border-radius: 8px;
+  padding: 0.55rem 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.btn-export-excel:hover:not(:disabled) {
+  background: #15803d;
+}
+
+.btn-export-excel:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .submissions-list {

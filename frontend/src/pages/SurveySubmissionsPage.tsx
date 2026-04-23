@@ -29,9 +29,12 @@ export default function SurveySubmissionsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedSurveyType, setSelectedSurveyType] = useState<string>('')
+  const [startDate, setStartDate] = useState<string>('')
+  const [endDate, setEndDate] = useState<string>('')
   const [selectedSubmission, setSelectedSubmission] = useState<SurveySubmission | null>(null)
   const [surveyQuestions, setSurveyQuestions] = useState<any>(null)
   const [loadingQuestions, setLoadingQuestions] = useState(false)
+  const [exportingExcel, setExportingExcel] = useState(false)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const limit = 20
@@ -42,8 +45,12 @@ export default function SurveySubmissionsPage() {
       navigate('/')
       return
     }
+    if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+      setError('Start date cannot be after end date')
+      return
+    }
     loadSurveys()
-  }, [isAuthenticated, user, userRole, initializing, selectedSurveyType, page, navigate])
+  }, [isAuthenticated, user, userRole, initializing, selectedSurveyType, startDate, endDate, page, navigate])
 
   const loadSurveys = async () => {
     try {
@@ -53,7 +60,9 @@ export default function SurveySubmissionsPage() {
       const response = await adminApi.getSurveys(
         selectedSurveyType || undefined,
         limit,
-        offset
+        offset,
+        startDate || undefined,
+        endDate || undefined,
       )
       if (response.success && response.data) {
         setSurveys(response.data.surveys || [])
@@ -165,6 +174,101 @@ export default function SurveySubmissionsPage() {
     )
   }
 
+  const normalizeCellValue = (value: unknown): string | number | boolean => {
+    if (value === null || value === undefined) return ''
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      return value
+    }
+    return JSON.stringify(value)
+  }
+
+  const fetchAllFilteredSurveys = async (): Promise<SurveySubmission[]> => {
+    const exportBatchSize = 500
+    let offset = 0
+    let fetchedTotal = Infinity
+    const all: SurveySubmission[] = []
+
+    while (offset < fetchedTotal) {
+      const response = await adminApi.getSurveys(
+        selectedSurveyType || undefined,
+        exportBatchSize,
+        offset,
+        startDate || undefined,
+        endDate || undefined,
+      )
+      if (!response.success || !response.data) {
+        throw new Error('Failed to load surveys for export')
+      }
+      const chunk = (response.data.surveys || []) as SurveySubmission[]
+      all.push(...chunk)
+      fetchedTotal = response.data.total || chunk.length
+      offset += exportBatchSize
+      if (chunk.length === 0) break
+    }
+
+    return all
+  }
+
+  const handleExportExcel = async () => {
+    try {
+      setExportingExcel(true)
+      setError(null)
+
+      const allSurveys = await fetchAllFilteredSurveys()
+      if (allSurveys.length === 0) {
+        setError('No submissions available to export')
+        return
+      }
+
+      const responseKeys = new Set<string>()
+      allSurveys.forEach((submission) => {
+        Object.keys(submission.survey_data || {}).forEach((key) => responseKeys.add(key))
+      })
+      const sortedResponseKeys = [...responseKeys].sort()
+
+      const rows = allSurveys.map((submission) => {
+        const base: Record<string, string | number | boolean> = {
+          submission_id: submission.id,
+          user_id: submission.user_id,
+          user_name: submission.user_name || '',
+          user_email: submission.user_email || '',
+          survey_type: submission.survey_type || '',
+          submitted_at: submission.created_at,
+          pmf_score: submission.pmf_score ?? '',
+          very_disappointed: submission.very_disappointed ?? '',
+          willingness_to_pay: submission.willingness_to_pay ?? '',
+          replacement_behavior: submission.replacement_behavior ?? '',
+          time_saved_minutes: submission.time_saved_minutes ?? '',
+          usefulness_score: submission.usefulness_score ?? '',
+          query_relevance: submission.query_relevance ?? '',
+        }
+
+        const responses = submission.survey_data || {}
+        sortedResponseKeys.forEach((key) => {
+          base[`response_${key}`] = normalizeCellValue(responses[key])
+        })
+
+        return base
+      })
+
+      const XLSX = await import('xlsx')
+      const worksheet = XLSX.utils.json_to_sheet(rows)
+      const workbook = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Survey Submissions')
+
+      const datePart = new Date().toISOString().slice(0, 10)
+      const filterPart = selectedSurveyType ? `_${selectedSurveyType}` : '_all'
+      const rangePart =
+        startDate && endDate ? `_${startDate}_to_${endDate}` : ''
+      XLSX.writeFile(workbook, `survey_submissions${filterPart}${rangePart}_${datePart}.xlsx`)
+    } catch (err: any) {
+      console.error('Error exporting surveys to Excel:', err)
+      setError(err.message || 'Failed to export surveys to Excel')
+    } finally {
+      setExportingExcel(false)
+    }
+  }
+
   if (initializing) {
     return (
       <div className="survey-submissions-page">
@@ -211,9 +315,59 @@ export default function SurveySubmissionsPage() {
             <option value="mid">Mid-Pilot Survey</option>
             <option value="final">Post-Pilot Survey</option>
           </select>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => {
+              setStartDate(e.target.value)
+              setPage(1)
+            }}
+            className="filter-date"
+            aria-label="Start date"
+          />
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => {
+              setEndDate(e.target.value)
+              setPage(1)
+            }}
+            className="filter-date"
+            aria-label="End date"
+          />
+          {(startDate || endDate) && (
+            <button
+              type="button"
+              className="btn-clear-dates"
+              onClick={() => {
+                setStartDate('')
+                setEndDate('')
+                setPage(1)
+              }}
+            >
+              Clear dates
+            </button>
+          )}
           <div className="submissions-count">
             {total} total submission{total !== 1 ? 's' : ''}
           </div>
+          <button
+            onClick={handleExportExcel}
+            className="btn-export-excel"
+            disabled={loading || exportingExcel}
+          >
+            {exportingExcel ? (
+              <>
+                <i className="fas fa-spinner fa-spin" />
+                Exporting...
+              </>
+            ) : (
+              <>
+                <i className="fas fa-file-excel" />
+                Export Excel
+              </>
+            )}
+          </button>
         </div>
 
         {error && (
