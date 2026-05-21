@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, wait
+from difflib import SequenceMatcher
 import logging
 import time
 
@@ -236,8 +237,20 @@ def _text_tokens(value: str) -> set[str]:
     return {
         token
         for token in re.sub(r"[^a-zA-Z0-9\s]", " ", value.lower()).split()
-        if len(token) > 1 and not token.isdigit() and token not in _NON_CONTENT_QUERY_TERMS
+        if len(token) > 1 and not token.isdigit() and not _is_non_content_token(token)
     }
+
+
+def _is_non_content_token(token: str) -> bool:
+    if token in _NON_CONTENT_QUERY_TERMS:
+        return True
+    if len(token) < 6:
+        return False
+    return any(
+        SequenceMatcher(None, token, stopword).ratio() >= 0.92
+        for stopword in _NON_CONTENT_QUERY_TERMS
+        if len(stopword) >= 6
+    )
 
 
 def _term_matches_tokens(term: str, tokens: set[str]) -> bool:
@@ -256,7 +269,10 @@ def _terms_match(left: str, right: str) -> bool:
     if left == right:
         return True
     if len(left) >= 4 and len(right) >= 4:
-        return left.startswith(right) or right.startswith(left)
+        if left.startswith(right) or right.startswith(left):
+            return True
+    if len(left) >= 6 and len(right) >= 6:
+        return SequenceMatcher(None, left, right).ratio() >= 0.84
     return False
 
 

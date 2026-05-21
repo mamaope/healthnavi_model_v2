@@ -1,10 +1,14 @@
 from evidence_retrieval_test.src.config import EvidenceRetrievalSettings
 from evidence_retrieval_test.src.models import EvidenceItem
+from evidence_retrieval_test.src.providers.base import BaseEvidenceProvider
 from evidence_retrieval_test.src.providers.crawl4ai_provider import (
     Crawl4AIProvider,
     CrawlSource,
 )
-from evidence_retrieval_test.src.services.evidence_search_service import _select_diverse_results
+from evidence_retrieval_test.src.services.evidence_search_service import (
+    EvidenceSearchService,
+    _select_diverse_results,
+)
 
 
 def test_seed_targets_are_limited_to_broad_source_pages() -> None:
@@ -115,3 +119,32 @@ def test_diverse_selection_rejects_generic_overlap_from_typo_query() -> None:
     )
 
     assert selected == [corrected_match]
+
+
+def test_search_service_keeps_relevant_results_with_typo_in_non_content_word() -> None:
+    service = EvidenceSearchService(
+        EvidenceRetrievalSettings(),
+        providers=[_StaticProvider(EvidenceRetrievalSettings())],
+    )
+
+    result = service.search("treament of malaria in 5 year old", top_k=1)
+
+    assert result.items
+    assert result.items[0].title == "Treatment of malaria in children"
+
+
+class _StaticProvider(BaseEvidenceProvider):
+    source_name = "pubmed"
+
+    def search(self, query: str, max_results: int) -> list[EvidenceItem]:
+        return [
+            EvidenceItem(
+                id="pubmed:malaria-treatment",
+                source="pubmed",
+                title="Treatment of malaria in children",
+                abstract="Treatment guidance for malaria in children under 5 years old.",
+                url="https://pubmed.ncbi.nlm.nih.gov/example/",
+                evidence_type="guideline",
+                relevance_score=0.3,
+            )
+        ]

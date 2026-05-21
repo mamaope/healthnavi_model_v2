@@ -106,20 +106,24 @@ async def generate_evidence_retrieval_test_response(
         dict(source_counts),
         len(result.provider_errors),
     )
+    if result.provider_errors:
+        logger.warning(
+            "Evidence retrieval test provider warnings: %s",
+            result.provider_errors,
+        )
 
     citations = format_citations(result.items)
     llm_context = build_llm_context(result.items)
-    provider_error_text = "\n".join(f"- {error}" for error in result.provider_errors)
     citation_reference_block = _citation_reference_block(citations)
 
     if not result.items:
-        no_sources = (
-            "I could not retrieve relevant live evidence sources for this question. "
-            "No citations are shown because this test mode must not invent references."
+        return (
+            "I could not retrieve enough verified evidence sources for this question. "
+            "Please try rephrasing it or adding key context such as country, age, condition, or treatment setting.",
+            True,
+            "evidence_retrieval_test",
+            [],
         )
-        if provider_error_text:
-            no_sources += f"\n\nProvider errors during retrieval:\n{provider_error_text}"
-        return no_sources, True, "evidence_retrieval_test", []
 
     prompt = _build_live_evidence_prompt(
         query=query,
@@ -127,7 +131,6 @@ async def generate_evidence_retrieval_test_response(
         chat_history=chat_history,
         llm_context=llm_context,
         citation_reference_block=citation_reference_block,
-        provider_error_text=provider_error_text,
         deep_search=deep_search,
         user_role_from_db=user_role_from_db,
     )
@@ -200,7 +203,6 @@ def _build_live_evidence_prompt(
     chat_history: str,
     llm_context: str,
     citation_reference_block: str,
-    provider_error_text: str,
     deep_search: bool,
     user_role_from_db: str | None,
 ) -> str:
@@ -228,8 +230,6 @@ def _build_live_evidence_prompt(
 ### PREVIOUS CONVERSATION SUMMARY:
 {chat_history or "No previous conversation."}
 """
-    if provider_error_text:
-        user_context_block += f"\n### RETRIEVAL WARNINGS:\n{provider_error_text}\n"
     return f"{prompt}\n\n{user_context_block.strip()}"
 
 
