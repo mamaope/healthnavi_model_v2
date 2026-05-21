@@ -15,8 +15,6 @@ services:
       - ./regal-autonomy-454806-d1-edf68610c57a.json:/backend/regal-autonomy-454806-d1-edf68610c57a.json  # commented for local dev
     environment:
       # TEMP EVIDENCE RETRIEVAL TEST:
-      # Route the existing UI through live PubMed/Europe PMC/Semantic Scholar/API evidence retrieval
-      # instead of the Zilliz/Milvus knowledge base. Set false to restore legacy RAG.
       - EVIDENCE_RETRIEVAL_TEST_MODE=true
       - GOOGLE_APPLICATION_CREDENTIALS=/backend/regal-autonomy-454806-d1-edf68610c57a.json
       - ENABLE_SEMANTIC_SCHOLAR=true
