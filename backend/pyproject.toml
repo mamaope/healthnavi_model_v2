@@ -43,11 +43,13 @@ dependencies = [
     "google-auth>=2.35.0,<3.0.0",
     "google-auth-oauthlib>=1.2.1,<2.0.0",
     "pymilvus>=2.4.9,<3.0.0",
-    "openai>=1.70.0,<2.0.0",
+    "openai>=2.8.0,<3.0.0",
     "python-dotenv>=1.0.1,<2.0.0",
     "tenacity>=9.0.0,<10.0.0",
     "httpx>=0.28.0,<0.29.0",
     "python-dateutil>=2.9.0,<3.0.0",
+    "crawl4ai>=0.4.0",
+    "chardet>=5.2.0,<6.0.0",
 ]
 
 [project.optional-dependencies]

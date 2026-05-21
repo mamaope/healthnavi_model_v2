@@ -44,3 +44,7 @@ python-dotenv>=1.0.1,<2.0.0
 tenacity>=9.0.0,<10.0.0
 httpx>=0.28.0,<0.29.0
 python-dateutil>=2.9.0,<3.0.0
+
+# Live evidence retrieval crawler
+crawl4ai
+chardet>=5.2.0,<6.0.0

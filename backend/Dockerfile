@@ -20,7 +20,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 COPY --from=builder /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH" VIRTUAL_ENV="/opt/venv" PYTHONPATH="/backend/src:$PYTHONPATH"
+ENV PATH="/opt/venv/bin:$PATH" \
+    VIRTUAL_ENV="/opt/venv" \
+    PYTHONPATH="/backend/src:$PYTHONPATH" \
+    PLAYWRIGHT_BROWSERS_PATH="/ms-playwright"
+
+RUN python -m playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 COPY . .
 

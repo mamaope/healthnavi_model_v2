@@ -4,6 +4,7 @@ Main FastAPI application for Empirico AI CDSS.
 
 import asyncio
 import logging
+import os
 import sys
 import uuid
 from contextlib import asynccontextmanager
@@ -49,18 +50,35 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     # Startup
     logger.info("Starting Empirico AI CDSS application...")
-    try:
-        from healthnavi.core.database import initialize_database
-        initialize_database()
-        logger.info("Database initialization completed")
-    except Exception as e:
-        logger.warning(f"Database initialization failed during startup: {e}")
-        logger.info("Application will continue - database will be initialized on first access")
+    evidence_test_mode = os.getenv("EVIDENCE_RETRIEVAL_TEST_MODE", "true").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if evidence_test_mode:
+        logger.info("EVIDENCE_RETRIEVAL_TEST_MODE=true: skipping database initialization")
+    else:
+        try:
+            from healthnavi.core.database import initialize_database
+            initialize_database()
+            logger.info("Database initialization completed")
+        except Exception as e:
+            logger.warning(f"Database initialization failed during startup: {e}")
+            logger.info("Application will continue - database will be initialized on first access")
     
     try:
-        from healthnavi.services.vectorstore_manager import initialize_vectorstore
-        initialize_vectorstore()
-        logger.info("Vector store initialization completed")
+        if evidence_test_mode:
+            logger.info(
+                "EVIDENCE_RETRIEVAL_TEST_MODE=true: skipping Zilliz/Milvus vector store initialization"
+            )
+        else:
+            # LEGACY ZILLIZ/MILVUS STARTUP PATH:
+            # Re-enabled by setting EVIDENCE_RETRIEVAL_TEST_MODE=false.
+            from healthnavi.services.vectorstore_manager import initialize_vectorstore
+
+            initialize_vectorstore()
+            logger.info("Vector store initialization completed")
     except Exception as e:
         logger.warning(f"Vector store initialization failed during startup: {e}")
         logger.info("Application will continue - AI will work without RAG context")
@@ -74,23 +92,26 @@ async def lifespan(app: FastAPI):
         logger.info("Application will continue - AI functionality may be limited")
     
     _whisper_task = None
-    try:
-        from healthnavi.services.transcription_service import preload_model
+    if evidence_test_mode:
+        logger.info("EVIDENCE_RETRIEVAL_TEST_MODE=true: skipping Whisper preload")
+    else:
+        try:
+            from healthnavi.services.transcription_service import preload_model
 
-        async def _preload_whisper_in_background():
-            try:
-                logger.info("Preloading Whisper model in background...")
-                await asyncio.to_thread(preload_model)
-                logger.info("Whisper model preloading completed")
-            except Exception as e:
-                logger.warning(f"Whisper model preloading failed: {e}")
-                logger.info("Application will continue - Transcription will load on first use")
+            async def _preload_whisper_in_background():
+                try:
+                    logger.info("Preloading Whisper model in background...")
+                    await asyncio.to_thread(preload_model)
+                    logger.info("Whisper model preloading completed")
+                except Exception as e:
+                    logger.warning(f"Whisper model preloading failed: {e}")
+                    logger.info("Application will continue - Transcription will load on first use")
 
-        # Don't block API readiness on model download/preload.
-        _whisper_task = asyncio.create_task(_preload_whisper_in_background())
-    except Exception as e:
-        logger.warning(f"Whisper preload task setup failed: {e}")
-        logger.info("Application will continue - Transcription will load on first use")
+            # Don't block API readiness on model download/preload.
+            _whisper_task = asyncio.create_task(_preload_whisper_in_background())
+        except Exception as e:
+            logger.warning(f"Whisper preload task setup failed: {e}")
+            logger.info("Application will continue - Transcription will load on first use")
 
     logger.info("Application startup completed successfully")
 
@@ -113,16 +134,21 @@ async def lifespan(app: FastAPI):
                 logger.exception(f"Data deletion job error: {e}")
             await asyncio.sleep(86400)  # 24 hours
 
-    _deletion_task = asyncio.create_task(_run_pending_deletions_job())
+    _deletion_task = None
+    if evidence_test_mode:
+        logger.info("EVIDENCE_RETRIEVAL_TEST_MODE=true: skipping data deletion background job")
+    else:
+        _deletion_task = asyncio.create_task(_run_pending_deletions_job())
     
     yield
     
     # Shutdown
-    _deletion_task.cancel()
-    try:
-        await _deletion_task
-    except asyncio.CancelledError:
-        pass
+    if _deletion_task is not None:
+        _deletion_task.cancel()
+        try:
+            await _deletion_task
+        except asyncio.CancelledError:
+            pass
     if _whisper_task is not None:
         _whisper_task.cancel()
         try:
@@ -142,7 +168,6 @@ app = FastAPI(
 
 # Add CORS middleware with environment-aware configuration
 # Get CORS origins from environment variable or config
-import os
 cors_origins_env = os.getenv("CORS_ORIGINS", "")
 if cors_origins_env:
     cors_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]

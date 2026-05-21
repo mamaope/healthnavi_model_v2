@@ -25,6 +25,11 @@ share/python-wheels/
 *.egg
 MANIFEST
 *regal-autonomy-454806-d1-edf68610c57a.json
+# Evidence retrieval test — local caches and tooling artifacts
+evidence_retrieval_test/__pycache__/
+evidence_retrieval_test/.crawl4ai/
+evidence_retrieval_test/.playwright-browsers/
+evidence_retrieval_test/.venv/
 
 # Virtual Environments
 venv/

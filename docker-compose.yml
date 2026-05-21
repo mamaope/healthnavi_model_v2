@@ -10,11 +10,31 @@ services:
       - .env
     volumes:
       - ./backend:/backend
+      - ./evidence_retrieval_test:/evidence_retrieval_test
       - ./logs:/backend/logs
       - ./regal-autonomy-454806-d1-edf68610c57a.json:/backend/regal-autonomy-454806-d1-edf68610c57a.json  # commented for local dev
+    environment:
+      # TEMP EVIDENCE RETRIEVAL TEST:
+      # Route the existing UI through live PubMed/Europe PMC/Semantic Scholar/API evidence retrieval
+      # instead of the Zilliz/Milvus knowledge base. Set false to restore legacy RAG.
+      - EVIDENCE_RETRIEVAL_TEST_MODE=true
+      - GOOGLE_APPLICATION_CREDENTIALS=/backend/regal-autonomy-454806-d1-edf68610c57a.json
+      - ENABLE_SEMANTIC_SCHOLAR=true
+      - ENABLE_OFFICIAL_HEALTH_APIS=true
+      - ENABLE_CRAWL4AI=true
+      - ENABLE_CRAWL4AI_BROWSER=false
+      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+      - CRAWL4_AI_BASE_DIRECTORY=/evidence_retrieval_test
+      - CRAWL_MAX_SOURCES=8
+      - CRAWL_MAX_PAGES=14
+      - CRAWL_SEARCH_PAGES_PER_SOURCE=1
+      - CRAWL_TIME_BUDGET_SECONDS=8
+      - RETRIEVAL_TIME_BUDGET_SECONDS=10
+      - REQUEST_TIMEOUT_SECONDS=4
 
     # startup.sh: waits for db, runs 'alembic upgrade head', seeds admin, then uvicorn
     command: sh -c "python3 /backend/scripts/fix_line_endings.py /backend/scripts/startup.sh && chmod +x /backend/scripts/startup.sh && bash /backend/scripts/startup.sh"
+    shm_size: "1gb"
     restart: unless-stopped
     depends_on:
       db:
@@ -59,7 +79,7 @@ services:
       retries: 5
 
   frontend:
-    image: node:20-alpine
+    image: node:22-alpine
     container_name: empirico_cdss_frontend
     working_dir: /app
     ports:
@@ -76,7 +96,7 @@ services:
       - PNPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS=true
       - CHOKIDAR_USEPOLLING=true
       - CHOKIDAR_INTERVAL=1000
-    command: sh -c "corepack enable && pnpm install --frozen-lockfile --config.confirmModulesPurge=false && until wget -q -T 2 -O- http://api:8050/api/v2/health >/dev/null; do echo 'Waiting for API...'; sleep 2; done && pnpm run dev -- --host 0.0.0.0"
+    command: sh -c "corepack enable && corepack prepare && pnpm install --frozen-lockfile --config.confirmModulesPurge=false && until wget -q -T 2 -O- http://api:8050/api/v2/health >/dev/null; do echo 'Waiting for API...'; sleep 2; done && pnpm run dev -- --host 0.0.0.0"
     restart: unless-stopped
     depends_on:
       api:

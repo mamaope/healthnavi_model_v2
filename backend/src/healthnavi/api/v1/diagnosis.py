@@ -31,7 +31,7 @@ async def diagnosis_health():
     with ResponseTimer() as timer:
         try:
             # Test AI service with a simple query
-            test_response, _, _ = await generate_response(
+            test_response, _, _, _ = await generate_response(
                 query="test",
                 chat_history="",
                 patient_data="test patient data"

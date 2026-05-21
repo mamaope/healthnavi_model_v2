@@ -7,7 +7,12 @@ import hashlib
 from collections import defaultdict
 from fastapi import HTTPException
 from healthnavi.services.genai_client import get_genai_client
-from healthnavi.services.vectorstore_manager import search_all_collections
+# TEMP EVIDENCE RETRIEVAL TEST:
+# Original production import, intentionally moved into the legacy branch below:
+# from healthnavi.services.vectorstore_manager import search_all_collections
+#
+# Keeping it lazy prevents the current frontend test from touching Zilliz/Milvus
+# unless EVIDENCE_RETRIEVAL_TEST_MODE=false.
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -421,6 +426,21 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
     full_response_text = ""
     actual_sources = []
     try:
+        # TEMP EVIDENCE RETRIEVAL TEST:
+        from healthnavi.services.evidence_retrieval_adapter import (
+            evidence_retrieval_test_mode_enabled,
+            generate_evidence_retrieval_test_response,
+        )
+
+        if evidence_retrieval_test_mode_enabled():
+            return await generate_evidence_retrieval_test_response(
+                query=query,
+                chat_history=chat_history,
+                patient_data=patient_data,
+                deep_search=deep_search,
+                user_role_from_db=user_role_from_db,
+            )
+
         # Check cache first (skip for queries with chat history)
         cache_key = None
         if not chat_history or chat_history == "No previous conversation":
@@ -455,6 +475,10 @@ async def generate_response(query: str, chat_history: str, patient_data: str, de
             prompt_template = QUICK_SEARCH_PROMPT
             prompt_type = "quick_search"
         
+        # LEGACY ZILLIZ/MILVUS RAG PATH:
+        # This is skipped while EVIDENCE_RETRIEVAL_TEST_MODE=true.
+        from healthnavi.services.vectorstore_manager import search_all_collections
+
         context, actual_sources = search_all_collections(
             query,
             patient_data,
@@ -640,6 +664,34 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
     actual_sources = []
     
     try:
+        # TEMP EVIDENCE RETRIEVAL TEST:
+        # Stream a chunked version of the live-evidence answer through the same
+        # frontend path. This keeps the UI unchanged while bypassing the normal
+        # Zilliz/Milvus retrieval code below.
+        from healthnavi.services.evidence_retrieval_adapter import (
+            evidence_retrieval_test_mode_enabled,
+            generate_evidence_retrieval_test_response,
+        )
+
+        if evidence_retrieval_test_mode_enabled():
+            response, _diagnosis_complete, _prompt_type, followup_questions = (
+                await generate_evidence_retrieval_test_response(
+                    query=query,
+                    chat_history=chat_history,
+                    patient_data=patient_data,
+                    deep_search=deep_search,
+                    user_role_from_db=user_role_from_db,
+                )
+            )
+            chunk_size = 180
+            for i in range(0, len(response), chunk_size):
+                yield response[i:i + chunk_size]
+            if followup_questions:
+                import json
+
+                yield f"\n\n[FOLLOWUP_QUESTIONS]:{json.dumps(followup_questions)}"
+            return
+
         # Check cache first (skip for queries with chat history)
         cache_key = None
         if not chat_history or chat_history == "No previous conversation":
@@ -685,6 +737,10 @@ async def generate_response_stream(query: str, chat_history: str, patient_data: 
             max_output_tokens = QUICK_SEARCH_MAX_OUTPUT_TOKENS
             prompt_template = QUICK_SEARCH_PROMPT
             prompt_type = "quick_search"
+
+        # LEGACY ZILLIZ/MILVUS RAG PATH:
+        # This is skipped while EVIDENCE_RETRIEVAL_TEST_MODE=true.
+        from healthnavi.services.vectorstore_manager import search_all_collections
 
         context, actual_sources = search_all_collections(
             query, 

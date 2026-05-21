@@ -1,5 +1,5 @@
 # Build stage
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
 
 # Install dependencies
-RUN corepack enable && pnpm install --frozen-lockfile
+RUN corepack enable && corepack prepare && pnpm install --frozen-lockfile
 
 # Copy source code
 COPY . .
