@@ -2,8 +2,10 @@
 Diagnosis router for Empirico AI CDSS.
 """
 
+import asyncio
 import logging
 import time
+from contextlib import suppress
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import StreamingResponse
@@ -20,6 +22,9 @@ from healthnavi.core.device_utils import get_device_type
 from healthnavi.models.diagnosis_session import ChatMessage, MessageFeedback
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+STREAM_KEEPALIVE_MARKER = "[STREAM_KEEPALIVE]\n"
+STREAM_KEEPALIVE_INTERVAL_SECONDS = 15
 
 
 @router.get("/health", response_model=StandardResponse)
@@ -390,26 +395,56 @@ async def diagnose_stream(
             stream_error = None
             ai_message_saved = False
             try:
-                async for chunk in generate_response_stream(
+                # The live evidence/model path can spend a while before producing
+                # the first answer chunk. Keep the proxy/browser stream alive.
+                yield STREAM_KEEPALIVE_MARKER
+
+                response_stream = generate_response_stream(
                     query=data.patient_data,
                     chat_history=chat_history,
                     patient_data=data.patient_data,
                     deep_search=deep_search_enabled,
                     user_role_from_db=user_role
-                ):
-                    # Check for error markers from the generator
-                    if chunk and chunk.startswith("[STREAM_ERROR]:"):
-                        error_msg = chunk.replace("[STREAM_ERROR]:", "").strip()
-                        logger.error(f"Stream generator reported error: {error_msg}")
-                        stream_error = error_msg
-                        yield chunk  # Still yield so frontend can handle it
-                        break
-                    
-                    full_response += chunk
-                    # Track AI response content separately (exclude followup markers)
-                    if not chunk.startswith("[FOLLOWUP_QUESTIONS]:"):
-                        ai_response_content += chunk
-                    yield chunk
+                )
+                next_chunk_task = asyncio.create_task(response_stream.__anext__())
+
+                try:
+                    while True:
+                        done, _ = await asyncio.wait(
+                            {next_chunk_task},
+                            timeout=STREAM_KEEPALIVE_INTERVAL_SECONDS,
+                        )
+                        if not done:
+                            yield STREAM_KEEPALIVE_MARKER
+                            continue
+
+                        try:
+                            chunk = next_chunk_task.result()
+                        except StopAsyncIteration:
+                            break
+
+                        # Check for error markers from the generator
+                        if chunk and chunk.startswith("[STREAM_ERROR]:"):
+                            error_msg = chunk.replace("[STREAM_ERROR]:", "").strip()
+                            logger.error(f"Stream generator reported error: {error_msg}")
+                            stream_error = error_msg
+                            yield chunk  # Still yield so frontend can handle it
+                            break
+
+                        full_response += chunk
+                        # Track AI response content separately (exclude followup markers)
+                        if not chunk.startswith("[FOLLOWUP_QUESTIONS]:"):
+                            ai_response_content += chunk
+                        yield chunk
+
+                        next_chunk_task = asyncio.create_task(response_stream.__anext__())
+                finally:
+                    if not next_chunk_task.done():
+                        next_chunk_task.cancel()
+                        with suppress(asyncio.CancelledError):
+                            await next_chunk_task
+                    with suppress(Exception):
+                        await response_stream.aclose()
                 
                 # Save AI message only if user message was saved successfully and we have valid content
                 if session_id_int and user_id and user_message_saved:

@@ -10,25 +10,15 @@ services:
       - .env
     volumes:
       - ./backend:/backend
-      - ./evidence_retrieval_test:/evidence_retrieval_test
       - ./logs:/backend/logs
       - ./regal-autonomy-454806-d1-edf68610c57a.json:/backend/regal-autonomy-454806-d1-edf68610c57a.json
     environment:
       - EVIDENCE_RETRIEVAL_TEST_MODE=true
+      - MODEL_SERVICE_BASE_URL=${MODEL_SERVICE_BASE_URL:-https://model.empirico.ai}
+      - MODEL_SERVICE_API_KEY=${MODEL_SERVICE_API_KEY:-}
+      - MODEL_SERVICE_TIMEOUT_SECONDS=${MODEL_SERVICE_TIMEOUT_SECONDS:-180}
       - GOOGLE_APPLICATION_CREDENTIALS=/backend/regal-autonomy-454806-d1-edf68610c57a.json
-      - ENABLE_SEMANTIC_SCHOLAR=true
-      - ENABLE_OFFICIAL_HEALTH_APIS=true
-      - ENABLE_CRAWL4AI=true
-      - ENABLE_CRAWL4AI_BROWSER=false
-      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-      - CRAWL4_AI_BASE_DIRECTORY=/evidence_retrieval_test
-      - CRAWL_MAX_SOURCES=8
-      - CRAWL_MAX_PAGES=14
-      - CRAWL_SEARCH_PAGES_PER_SOURCE=1
-      - CRAWL_TIME_BUDGET_SECONDS=8
-      - RETRIEVAL_TIME_BUDGET_SECONDS=10
-      - REQUEST_TIMEOUT_SECONDS=4
-    command: sh -c "python3 /backend/scripts/fix_line_endings.py /backend/scripts/startup.sh && chmod +x /backend/scripts/startup.sh && bash /backend/scripts/startup.sh"
+    command: sh -c "python3 /backend/scripts/fix_line_endings.py /backend/scripts/startup_prod.sh && chmod +x /backend/scripts/startup_prod.sh && bash /backend/scripts/startup_prod.sh"
     restart: unless-stopped
     depends_on:
       db:

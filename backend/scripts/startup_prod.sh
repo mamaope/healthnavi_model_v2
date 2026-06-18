@@ -70,5 +70,6 @@ echo "🌱 Seeding admin user..."
 python /backend/scripts/seed_admin_user.py
 
 # Start the application
+WEB_CONCURRENCY="${WEB_CONCURRENCY:-2}"
 echo "🚀 Starting API server..."
-exec uvicorn healthnavi.main:app --host 0.0.0.0 --port 8050 --timeout-keep-alive 120
+exec uvicorn healthnavi.main:app --host 0.0.0.0 --port 8050 --workers "$WEB_CONCURRENCY" --timeout-keep-alive 120

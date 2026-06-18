@@ -1,78 +1,44 @@
 """
-Temporary adapter for testing live evidence retrieval through the existing chat UI.
+Adapter for routing the live-evidence experiment through the standalone model
+service.
 
-This deliberately bypasses the current Zilliz/Milvus knowledge-base retrieval path
-when EVIDENCE_RETRIEVAL_TEST_MODE is enabled. Keep this file small and easy to
-remove once the experiment is folded into the production RAG architecture.
+The chat service still calls this adapter exactly as before. The implementation
+now delegates to the local/hosted Empirico Model Service over HTTP instead of
+importing the copied evidence_retrieval_test package.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import re
-import sys
-import time
-from collections import Counter
-from pathlib import Path
+from typing import Any, Optional
 
-from dotenv import load_dotenv
-from google.api_core import exceptions
-from tenacity import retry, retry_if_exception, stop_after_attempt, wait_random_exponential
+import httpx
 
 from healthnavi.core.constants import (
     BOLDING_RULES,
-    DEEP_SEARCH_PROMPT,
     DEEP_SEARCH_MAX_OUTPUT_TOKENS,
+    DEEP_SEARCH_PROMPT,
     EXAM_HANDLING,
     GLOBAL_CONDUCT_RULES,
-    MODEL_NAME,
     PHARMACOLOGY_RULES,
     PREEMPTIVE_REASONING_RULES,
     QUERY_CLASSIFICATION_RULES,
-    QUICK_SEARCH_PROMPT,
     QUICK_SEARCH_MAX_OUTPUT_TOKENS,
-    RETRY_MAX_WAIT,
-    RETRY_MIN_WAIT,
-    RETRY_MULTIPLIER,
+    QUICK_SEARCH_PROMPT,
     ROLE_INSTRUCTIONS,
     SECURITY_AND_EVIDENCE_RULES,
 )
-from healthnavi.services.genai_client import get_genai_client
 
 logger = logging.getLogger(__name__)
-
-PROJECT_ROOT = next(
-    (
-        parent
-        for parent in Path(__file__).resolve().parents
-        if (parent / "evidence_retrieval_test").exists()
-    ),
-    Path("/"),
-)
-EVIDENCE_MODULE_DIR = PROJECT_ROOT / "evidence_retrieval_test"
-EVIDENCE_ENV_PATH = EVIDENCE_MODULE_DIR / ".env"
-
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-load_dotenv(EVIDENCE_ENV_PATH)
-
-from evidence_retrieval_test.src.services.citation_formatter import (  # noqa: E402
-    build_llm_context,
-    format_citations,
-)
-from evidence_retrieval_test.src.services.evidence_search_service import (  # noqa: E402
-    EvidenceSearchService,
-)
 
 
 def evidence_retrieval_test_mode_enabled() -> bool:
     """
     Default ON for this experiment so the existing UI immediately exercises the
-    new provider layer. Set EVIDENCE_RETRIEVAL_TEST_MODE=false to return to the
-    original Zilliz-backed flow.
+    model-service endpoint. Set EVIDENCE_RETRIEVAL_TEST_MODE=false to return to
+    the original Zilliz-backed flow.
     """
     return os.getenv("EVIDENCE_RETRIEVAL_TEST_MODE", "true").strip().lower() in {
         "1",
@@ -87,41 +53,53 @@ async def generate_evidence_retrieval_test_response(
     chat_history: str,
     patient_data: str,
     deep_search: bool = False,
-    user_role_from_db: str | None = None,
+    user_role_from_db: Optional[str] = None,
 ) -> tuple[str, bool, str, list[str]]:
-    total_started_at = time.perf_counter()
     top_k = 10 if deep_search else 6
-    retrieval_started_at = time.perf_counter()
-    result = await asyncio.to_thread(
-        EvidenceSearchService().search,
-        query,
-        top_k,
-    )
-    retrieval_ms = round((time.perf_counter() - retrieval_started_at) * 1000, 1)
-    source_counts = Counter(getattr(item.source, "value", str(item.source)) for item in result.items)
-    logger.info(
-        "Evidence retrieval test search timings: total=%.1f ms provider_timings=%s source_counts=%s errors=%d",
-        retrieval_ms,
-        result.timings_ms,
-        dict(source_counts),
-        len(result.provider_errors),
-    )
-    if result.provider_errors:
-        logger.warning(
-            "Evidence retrieval test provider warnings: %s",
-            result.provider_errors,
+    prompt_type = "deep_search" if deep_search else "quick_search"
+
+    try:
+        evidence_data = await _post_evidence_search({"question": query, "top_k": top_k})
+    except httpx.HTTPStatusError as exc:
+        logger.error(
+            "Model service evidence search returned %s from %s: %s",
+            exc.response.status_code,
+            exc.request.url,
+            _safe_response_text(exc.response),
+        )
+        return (
+            "The model service is temporarily unavailable. Please try again.",
+            False,
+            prompt_type,
+            [],
+        )
+    except httpx.RequestError as exc:
+        logger.error("Model service evidence search failed: %s", exc, exc_info=True)
+        return (
+            "The model service is still starting up or cannot be reached. Please try again in a moment.",
+            False,
+            prompt_type,
+            [],
+        )
+    except ValueError as exc:
+        logger.error("Model service evidence search returned invalid JSON: %s", exc, exc_info=True)
+        return (
+            "The model service returned an invalid evidence response. Please try again.",
+            False,
+            prompt_type,
+            [],
         )
 
-    citations = format_citations(result.items)
-    llm_context = build_llm_context(result.items)
-    citation_reference_block = _citation_reference_block(citations)
+    citations = list(evidence_data.get("citations") or [])
+    llm_context = str(evidence_data.get("llm_context") or "")
+    provider_errors = list(evidence_data.get("provider_errors") or [])
 
-    if not result.items:
+    if not evidence_data.get("items"):
         return (
             "I could not retrieve enough verified evidence sources for this question. "
             "Please try rephrasing it or adding key context such as country, age, condition, or treatment setting.",
             True,
-            "evidence_retrieval_test",
+            prompt_type,
             [],
         )
 
@@ -130,70 +108,98 @@ async def generate_evidence_retrieval_test_response(
         patient_data=patient_data,
         chat_history=chat_history,
         llm_context=llm_context,
-        citation_reference_block=citation_reference_block,
+        citation_reference_block=_citation_reference_block(citations),
         deep_search=deep_search,
         user_role_from_db=user_role_from_db,
     )
-
-    client = get_genai_client()
+    payload = {
+        "prompt": prompt,
+        "prompt_type": prompt_type,
+        "temperature": 0.15,
+        "max_output_tokens": (
+            min(DEEP_SEARCH_MAX_OUTPUT_TOKENS, 4500)
+            if deep_search
+            else min(QUICK_SEARCH_MAX_OUTPUT_TOKENS, 3000)
+        ),
+        "top_p": 0.9,
+        "top_k": 20,
+        "candidate_count": 1,
+    }
 
     try:
-        generation_started_at = time.perf_counter()
-        response = _generate_content_with_retry(
-            client,
-            MODEL_NAME,
-            [{"role": "user", "parts": [{"text": prompt}]}],
-            {
-                "temperature": 0.15,
-                "max_output_tokens": (
-                    min(DEEP_SEARCH_MAX_OUTPUT_TOKENS, 4500)
-                    if deep_search
-                    else min(QUICK_SEARCH_MAX_OUTPUT_TOKENS, 3000)
-                ),
-                "top_p": 0.9,
-                "top_k": 20,
-                "candidate_count": 1,
-            },
+        data = await _post_model_response(payload)
+    except httpx.HTTPStatusError as exc:
+        logger.error(
+            "Model service returned %s from %s: %s",
+            exc.response.status_code,
+            exc.request.url,
+            _safe_response_text(exc.response),
         )
-        generation_ms = round((time.perf_counter() - generation_started_at) * 1000, 1)
-        logger.info(
-            "Evidence retrieval test generation timings: model=%.1f ms total=%.1f ms",
-            generation_ms,
-            (time.perf_counter() - total_started_at) * 1000,
-        )
-    except Exception as exc:
-        logger.error("Evidence retrieval test generation failed: %s", exc, exc_info=True)
-        if _is_retryable_genai_error(exc):
-            return (
-                "The model service is temporarily busy. The evidence retrieval completed, but answer generation failed. Please try again.",
-                False,
-                "evidence_retrieval_test",
-                [],
-            )
         return (
-            user_friendly_genai_error(exc),
+            "The model service is temporarily unavailable. Please try again.",
             False,
-            "evidence_retrieval_test",
+            prompt_type,
+            [],
+        )
+    except httpx.RequestError as exc:
+        logger.error("Model service request failed: %s", exc, exc_info=True)
+        return (
+            "The model service is still starting up or cannot be reached. Please try again in a moment.",
+            False,
+            prompt_type,
+            [],
+        )
+    except ValueError as exc:
+        logger.error("Model service returned invalid JSON: %s", exc, exc_info=True)
+        return (
+            "The model service returned an invalid response. Please try again.",
+            False,
+            prompt_type,
             [],
         )
 
-    answer = _extract_text(response)
+    answer = str(data.get("answer") or "").strip()
     if not answer:
         return (
-            "The model returned no usable answer from the retrieved evidence. Please try a narrower query.",
+            "The model returned no usable answer. Please try a narrower query.",
             False,
-            "evidence_retrieval_test",
+            prompt_type,
             [],
         )
-
     answer = _ensure_reference_urls(answer, citations)
+
     logger.info(
-        "Evidence retrieval test completed timings: retrieval=%.1f ms model=%.1f ms total=%.1f ms",
-        retrieval_ms,
-        generation_ms,
-        (time.perf_counter() - total_started_at) * 1000,
+        "Model service response completed: model=%s citations=%d provider_errors=%d timings=%s",
+        data.get("model"),
+        len(citations),
+        len(provider_errors),
+        data.get("timings_ms") or {},
     )
-    return answer, True, "evidence_retrieval_test", []
+
+    return (
+        answer,
+        bool(data.get("diagnosis_complete", True)),
+        str(data.get("prompt_type") or prompt_type),
+        [],
+    )
+
+
+async def _post_evidence_search(payload: dict[str, Any]) -> dict[str, Any]:
+    base_url = _model_service_base_url()
+    timeout = float(os.getenv("MODEL_SERVICE_TIMEOUT_SECONDS", "120"))
+    headers = {"Content-Type": "application/json"}
+    api_key = os.getenv("MODEL_SERVICE_API_KEY")
+    if api_key:
+        headers["X-API-Key"] = api_key
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.post(
+            f"{base_url}/v1/evidence/search",
+            headers=headers,
+            json=payload,
+        )
+        response.raise_for_status()
+        return response.json()
 
 
 def _build_live_evidence_prompt(
@@ -204,7 +210,7 @@ def _build_live_evidence_prompt(
     llm_context: str,
     citation_reference_block: str,
     deep_search: bool,
-    user_role_from_db: str | None,
+    user_role_from_db: Optional[str],
 ) -> str:
     prompt_template = DEEP_SEARCH_PROMPT if deep_search else QUICK_SEARCH_PROMPT
     prompt = prompt_template.format(
@@ -256,7 +262,7 @@ Rules:
 """.strip()
 
 
-def _role_instruction(user_role_from_db: str | None) -> str:
+def _role_instruction(user_role_from_db: Optional[str]) -> str:
     if not user_role_from_db:
         return ROLE_INSTRUCTIONS["DEFAULT"]
     mapping = {
@@ -275,64 +281,6 @@ def _role_instruction(user_role_from_db: str | None) -> str:
     return mapping.get(user_role_from_db, ROLE_INSTRUCTIONS["DEFAULT"])
 
 
-def _is_retryable_genai_error(exception: BaseException) -> bool:
-    if isinstance(exception, exceptions.ResourceExhausted):
-        return True
-    if isinstance(exception, (exceptions.ServiceUnavailable, exceptions.InternalServerError)):
-        return True
-    msg = str(exception).upper()
-    return (
-        "429" in msg
-        or "RESOURCE_EXHAUSTED" in msg
-        or "503" in msg
-        or "UNAVAILABLE" in msg
-        or "TOO_MANY_REQUESTS" in msg
-    )
-
-
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_random_exponential(
-        multiplier=RETRY_MULTIPLIER,
-        min=RETRY_MIN_WAIT,
-        max=RETRY_MAX_WAIT,
-    ),
-    retry=retry_if_exception(_is_retryable_genai_error),
-    reraise=True,
-)
-def _generate_content_with_retry(client, model: str, contents, config: dict):
-    return client.models.generate_content(
-        model=model,
-        contents=contents,
-        config=config,
-    )
-
-
-def user_friendly_genai_error(exception: BaseException) -> str:
-    msg = str(exception)
-    upper = msg.upper()
-    if "RESOURCE_EXHAUSTED" in upper or "429" in upper or "RATE" in upper:
-        return "Empirico is temporarily busy. Please wait a moment and try again."
-    if "SAFETY" in upper or "BLOCKED" in upper:
-        return "Empirico could not complete this request. Try rephrasing your question."
-    if len(msg) > 280 or "{" in msg or "googleapis" in msg.lower():
-        return "Something went wrong while generating a response. Please try again in a moment."
-    return "Something went wrong while generating a response. Please try again in a moment."
-
-
-def _extract_text(response) -> str:
-    if response and hasattr(response, "candidates") and response.candidates:
-        candidate = response.candidates[0]
-        if (
-            hasattr(candidate, "content")
-            and hasattr(candidate.content, "parts")
-            and candidate.content.parts
-            and hasattr(candidate.content.parts[0], "text")
-        ):
-            return candidate.content.parts[0].text.strip()
-    return ""
-
-
 def _citation_reference_block(citations: list[dict[str, object]]) -> str:
     if not citations:
         return "No citations retrieved."
@@ -348,10 +296,6 @@ def _citation_reference_block(citations: list[dict[str, object]]) -> str:
 
 
 def _ensure_reference_urls(answer: str, citations: list[dict[str, object]]) -> str:
-    """
-    The prompt asks Gemini to include references, but for frontend testing we enforce
-    a canonical one-reference-per-line block using the exact retrieved URLs.
-    """
     if not citations:
         return answer
     answer = _link_inline_citation_markers(answer, citations)
@@ -393,3 +337,36 @@ def _link_inline_citation_markers(answer: str, citations: list[dict[str, object]
     linked = re.sub(r"\[\[(\d+)\]\](?!\()", replace_double, linked)
     linked = re.sub(r"(?<!\[)\[(\d+)\](?![\]\(])", replace_plain, linked)
     return linked
+
+
+async def _post_model_response(payload: dict[str, Any]) -> dict[str, Any]:
+    base_url = _model_service_base_url()
+    timeout = float(os.getenv("MODEL_SERVICE_TIMEOUT_SECONDS", "120"))
+    headers = {"Content-Type": "application/json"}
+    api_key = os.getenv("MODEL_SERVICE_API_KEY")
+    if api_key:
+        headers["X-API-Key"] = api_key
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.post(
+            f"{base_url}/v1/model/respond",
+            headers=headers,
+            json=payload,
+        )
+        response.raise_for_status()
+        return response.json()
+
+
+def _model_service_base_url() -> str:
+    return (
+        os.getenv("MODEL_SERVICE_BASE_URL")
+        or os.getenv("EMPIRICO_MODEL_SERVICE_URL")
+        or "http://127.0.0.1:8080"
+    ).rstrip("/")
+
+
+def _safe_response_text(response: httpx.Response) -> str:
+    text = response.text.strip()
+    if len(text) > 500:
+        return text[:500] + "..."
+    return text

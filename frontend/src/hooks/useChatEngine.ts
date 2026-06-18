@@ -206,7 +206,10 @@ export function useChatEngine() {
           setIsFetchingFollowup(true)
           
           while (!(streamResult = await streamGenerator.next()).done) {
-            const chunk = streamResult.value
+            const chunk = streamResult.value.replace(/\[STREAM_KEEPALIVE\]\n?/g, '')
+            if (!chunk) {
+              continue
+            }
             allChunks.push(chunk) // Store all chunks
             
             // Check for message_id marker first (before processing content)
@@ -507,4 +510,3 @@ export function useChatEngine() {
 
   return value
 }
-
