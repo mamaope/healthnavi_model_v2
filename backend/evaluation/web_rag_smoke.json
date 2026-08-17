@@ -1,0 +1,50 @@
+[
+  {
+    "id": "malaria_pregnancy_who",
+    "question": "According to WHO malaria guidelines, how should malaria in pregnancy be treated?",
+    "expected_terms": ["malaria", "pregnancy", "artemisinin", "iptp"],
+    "preferred_domains": ["who.int", "afro.who.int"]
+  },
+  {
+    "id": "hypertension_stage_1",
+    "question": "What is the first-line antihypertensive medication for stage 1 hypertension?",
+    "expected_terms": ["antihypertensive", "calcium", "ace", "arb"],
+    "preferred_domains": ["nice.org.uk", "who.int"]
+  },
+  {
+    "id": "hiv_adult_art",
+    "question": "What is recommended first-line ART for adults with HIV?",
+    "expected_terms": ["hiv", "art", "dolutegravir", "tenofovir"],
+    "preferred_domains": ["who.int", "clinicalinfo.hiv.gov", "health.go.ug"]
+  },
+  {
+    "id": "tb_treatment",
+    "question": "What is the standard initial treatment regimen for drug-susceptible pulmonary tuberculosis?",
+    "expected_terms": ["tuberculosis", "isoniazid", "rifampicin", "pyrazinamide", "ethambutol"],
+    "preferred_domains": ["who.int", "cdc.gov", "medicalguidelines.msf.org"]
+  },
+  {
+    "id": "severe_acute_malnutrition_child",
+    "question": "How should severe acute malnutrition in a child be managed?",
+    "expected_terms": ["severe acute malnutrition", "therapeutic", "nutrition"],
+    "preferred_domains": ["who.int", "unicef.org", "medicalguidelines.msf.org"]
+  },
+  {
+    "id": "pre_eclampsia_magnesium",
+    "question": "When is magnesium sulfate used in pre-eclampsia or eclampsia?",
+    "expected_terms": ["magnesium", "eclampsia", "seizure"],
+    "preferred_domains": ["who.int", "nice.org.uk", "ncbi.nlm.nih.gov"]
+  },
+  {
+    "id": "uti_pregnancy",
+    "question": "What antibiotics are recommended for urinary tract infection in pregnancy?",
+    "expected_terms": ["pregnancy", "urinary", "antibiotic"],
+    "preferred_domains": ["nice.org.uk", "aafp.org", "ncbi.nlm.nih.gov"]
+  },
+  {
+    "id": "cholera_rehydration",
+    "question": "What is the main treatment for cholera dehydration?",
+    "expected_terms": ["cholera", "rehydration", "oral", "intravenous"],
+    "preferred_domains": ["who.int", "cdc.gov", "medicalguidelines.msf.org"]
+  }
+]

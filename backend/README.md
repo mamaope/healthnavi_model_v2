@@ -1,164 +1,89 @@
-# HealthNavi AI CDSS
+# Empirico Backend
 
-A professional FastAPI-based Clinical Decision Support System with AI-powered diagnosis capabilities.
+FastAPI backend for Empirico, an evidence-backed medical information service.
+The backend owns users, sessions, feedback, admin reporting, API delivery, and
+evidence retrieval. Empirico calls PubMed/NCBI, Europe PMC, Semantic Scholar,
+official health APIs, and Crawl4AI locally, then sends the assembled evidence
+to the shared GCP Empirico Model Service for generation only.
 
-## Project Structure
+## Runtime Path
 
-```
-backend/
-├── src/
-│   └── healthnavi/           # Main application package
-│       ├── __init__.py
-│       ├── main.py           # FastAPI application entry point
-│       ├── api/              # API endpoints
-│       │   ├── __init__.py
-│       │   └── v1/           # API version 1
-│       │       ├── __init__.py
-│       │       ├── auth.py   # Authentication endpoints
-│       │       └── diagnosis.py # Diagnosis endpoints
-│       ├── core/              # Core application components
-│       │   ├── __init__.py
-│       │   ├── config.py     # Configuration management
-│       │   ├── database.py   # Database connection
-│       │   └── security.py   # Security utilities
-│       ├── models/            # Database models
-│       │   ├── __init__.py
-│       │   ├── base.py       # Base model
-│       │   └── user.py       # User model
-│       ├── schemas/           # Pydantic schemas
-│       │   └── __init__.py   # Request/response schemas
-│       └── services/          # Business logic services
-│           ├── __init__.py
-│           ├── conversational_service.py # AI service
-│           ├── database_service.py      # Database service
-│           └── vectorstore_manager.py   # Vector store service
-├── alembic/                   # Database migrations
-├── scripts/                   # Utility scripts
-├── tests/                     # Test files
-├── Dockerfile                 # Docker configuration
-├── pyproject.toml            # Python project configuration
-└── requirements.txt          # Python dependencies
-```
+1. A user asks a medical information question through the API.
+2. `conversational_service.py` delegates to `evidence_retrieval_adapter.py`.
+3. The adapter runs local evidence retrieval with enabled providers.
+4. The adapter removes weak seed-only references, prioritizes real Uganda/Africa
+   crawled and official web sources when relevant, and sends the filtered
+   evidence to `MODEL_SERVICE_BASE_URL/v1/model/respond`.
+5. Empirico rebuilds clickable numeric citations and stores/streams the answer.
 
-## Features
+## Evidence Quality Strategy
 
-- **AI-Powered Diagnosis**: Integration with Google Vertex AI Gemini 2.5 Flash
-- **User Authentication**: JWT-based authentication with role-based access control
-- **Database Management**: PostgreSQL with Alembic migrations
-- **Security**: HIPAA/GDPR compliant security measures
-- **API Documentation**: Automatic OpenAPI/Swagger documentation
-- **Docker Support**: Containerized deployment
+Empirico uses controlled web-RAG rather than unrestricted open-web answering:
 
-## Quick Start
+- Retrieval is limited to configured provider APIs and allowed crawl domains.
+- A source policy ranks evidence by trust tier: Uganda/local official guidance,
+  WHO/AFRO and Africa-facing guidance, international guidelines, peer-reviewed
+  article databases, then broad scholarly search.
+- Evidence type is ranked separately: guidelines and official guidance before
+  systematic reviews, trials, reviews, and ordinary articles.
+- Static HTML guideline fetches are cached so repeated local/prod queries are
+  faster and more reproducible. Set `CRAWL_CACHE_TTL_SECONDS=-1` to disable the
+  cache.
+- Generated citations are rebuilt by Empirico, so every clickable inline marker
+  maps to a retrieved source URL.
+- `backend/evaluation/web_rag_smoke.json` contains cross-domain medical smoke
+  cases. Run `PYTHONPATH=src python scripts/evaluate_web_rag.py --limit 3`
+  from `backend/` to check retrieval/generation behavior.
 
-### Prerequisites
+## Required Environment
 
-- Python 3.11+
-- PostgreSQL 15+
-- Docker and Docker Compose
-- Google Cloud credentials for Vertex AI
+- `SECRET_KEY`, `ENCRYPTION_KEY`
+- `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME`
+- `MODEL_SERVICE_BASE_URL`
+- `MODEL_SERVICE_API_KEY`
+- `MODEL_SERVICE_TIMEOUT_SECONDS`
+- Provider keys and toggles when local retrieval is enabled:
+  `NCBI_API_KEY`, `NCBI_TOOL_EMAIL`, `SEMANTIC_SCHOLAR_API_KEY`,
+  `ENABLE_PUBMED`, `ENABLE_EUROPE_PMC`, `ENABLE_SEMANTIC_SCHOLAR`,
+  `ENABLE_OFFICIAL_HEALTH_APIS`, `ENABLE_CRAWL4AI`
+- `CRAWL_CACHE_DIR`, `CRAWL_CACHE_TTL_SECONDS`
+- `EMPIRICO_EVIDENCE_COUNTRY_CODE`
+- `EMPIRICO_SOURCE_PREFERENCE_HINTS`
+- `EMPIRICO_SOURCE_PREFERENCE_TERMS`
+- `EMPIRICO_EVIDENCE_PROVIDER_MODE=web`
+- `EMPIRICO_ENABLE_TRUSTED_GUIDELINE_RESCUE=true`
 
-### Installation
+`web` mode uses crawled/official web sources first, then PubMed/Europe PMC/
+Semantic Scholar as fallback. `crawl` mode keeps only real crawled or official
+web sources and drops article-database fallback results.
 
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd healthnavi_model_v2
-```
+`EMPIRICO_EVIDENCE_COUNTRY_CODE` is optional. Leave it blank for open global
+retrieval with Uganda/Africa source preference, or set it when a deployment
+needs a hard country hint for local official-source routing.
 
-2. Set up environment variables:
-```bash
-cp env.example .env
-# Edit .env with your configuration
-```
+`EMPIRICO_SOURCE_PREFERENCE_HINTS` expands generic searches toward Uganda
+Ministry of Health, Uganda Clinical Guidelines, WHO AFRO, and East
+African/African sources. `EMPIRICO_SOURCE_PREFERENCE_TERMS` controls citation
+ranking for returned evidence; it is source preference, not country routing.
 
-3. Start with Docker Compose:
-```bash
-docker compose up --build
-```
+Provider credentials for PubMed/NCBI, Semantic Scholar, official APIs, and
+Crawl4AI belong in the Empirico app runtime because this app calls those
+providers directly. Vertex/model credentials belong on the shared model-service
+runtime. Legacy Azure OpenAI and Milvus settings should stay commented unless a
+new local feature explicitly reintroduces them.
 
-### API Endpoints
+The default Docker image skips Whisper/Torch so local rebuilds stay fast. Build
+with `INSTALL_TRANSCRIPTION=true` only when testing voice transcription.
 
-- **Authentication**: `/api/v2/auth/`
-  - `POST /register` - User registration
-  - `POST /login` - User login
-  - `GET /users` - List users (admin only)
-
-- **Diagnosis**: `/api/v2/diagnosis/`
-  - `POST /diagnose` - AI diagnosis (requires authentication)
-  - `GET /health` - Service health check
-
-- **Health Check**: `/api/v2/health` - Application health status
+Google OAuth and SMTP settings are optional unless those features are enabled.
+Whisper settings are only needed for voice transcription.
 
 ## Development
 
-### Local Development Setup
-
-1. Create virtual environment:
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-2. Install dependencies:
-```bash
-pip install -e .
-pip install -e ".[dev]"
-```
-
-3. Run database migrations:
-```bash
+pip install -r requirements.txt
 alembic upgrade head
-```
-
-4. Start development server:
-```bash
 uvicorn healthnavi.main:app --reload
 ```
 
-### Testing
-
-```bash
-pytest
-```
-
-### Code Quality
-
-```bash
-black src/
-isort src/
-flake8 src/
-mypy src/
-```
-
-## Configuration
-
-The application uses environment variables for configuration. See `env.example` for required variables.
-
-### Required Environment Variables
-
-- `SECRET_KEY`: JWT secret key (min 32 characters)
-- `ENCRYPTION_KEY`: Data encryption key (min 32 characters)
-- `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME`: Database configuration
-- `GOOGLE_APPLICATION_CREDENTIALS`: Path to Google Cloud credentials JSON
-- `GOOGLE_CLOUD_PROJECT`: Google Cloud project ID
-- `GOOGLE_CLOUD_LOCATION`: Google Cloud location
-
-## Security
-
-This application implements medical software security standards:
-
-- **Data Encryption**: All PHI data is encrypted at rest and in transit
-- **Authentication**: JWT-based authentication with secure password requirements
-- **Authorization**: Role-based access control (user, admin, super_admin)
-- **Input Validation**: Comprehensive input sanitization and validation
-- **Audit Logging**: Secure logging with PHI redaction
-- **Rate Limiting**: Protection against brute force attacks
-
-## License
-
-MIT License - see LICENSE file for details.
-
-## Support
-
-For support and questions, contact: support@healthnavi.ai
+For Docker-based local development, use the root `docker-compose.yml`.

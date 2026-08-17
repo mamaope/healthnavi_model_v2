@@ -1,5 +1,5 @@
 """
-User model for Empirico AI CDSS.
+User model for Empirico.
 """
 
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text

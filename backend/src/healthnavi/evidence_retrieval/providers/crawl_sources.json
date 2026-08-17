@@ -1,0 +1,656 @@
+[
+  {
+    "name": "Uganda Clinical Guidelines",
+    "publisher": "Ministry of Health Uganda",
+    "domains": ["differentiatedservicedelivery.org", "iris.who.int", "who.int"],
+    "topics": ["uganda", "clinical guidelines", "standard treatment", "all diseases", "primary care", "hospital care", "medicine", "surgery", "paediatrics", "maternal health", "child health", "emergency care", "infectious disease", "noncommunicable disease"],
+    "priority": 1.0,
+    "seed_urls": [
+      "https://www.differentiatedservicedelivery.org/wp-content/uploads/UCG-2023-Publication-Final-PDF-Version-1.pdf",
+      "https://iris.who.int/discover?query=Uganda%20clinical%20guidelines",
+      "https://www.who.int/search?query=Uganda%20clinical%20guidelines"
+    ],
+    "search_urls": [
+      "https://iris.who.int/discover?query={query}",
+      "https://www.who.int/search?query={query}"
+    ]
+  },
+  {
+    "name": "Uganda Ministry of Health",
+    "publisher": "Ministry of Health Uganda",
+    "domains": ["health.go.ug"],
+    "topics": ["uganda", "clinical guidelines", "standard treatment", "all diseases", "public health", "primary care", "child health", "maternal health", "nutrition", "infectious disease", "noncommunicable disease"],
+    "priority": 0.96,
+    "seed_urls": [
+      "https://health.go.ug/downloads/malaria/",
+      "https://health.go.ug/downloads/",
+      "https://health.go.ug/"
+    ],
+    "search_urls": [
+      "https://health.go.ug/?s={query}"
+    ]
+  },
+  {
+    "name": "Uganda Integrated Management of Acute Malnutrition Guidelines",
+    "publisher": "Ministry of Health Uganda",
+    "domains": ["platform.who.int", "who.int", "iris.who.int"],
+    "topics": ["uganda", "nutrition", "severe acute malnutrition", "moderate acute malnutrition", "wasting", "nutritional oedema", "children", "under five", "paediatrics", "inpatient care", "outpatient care", "IMAM", "CMAM", "RUTF", "F-75", "F-100", "guideline"],
+    "priority": 0.99,
+    "seed_urls": [
+      "https://platform.who.int/docs/default-source/mca-documents/policy-documents/guideline/UGA-CH-38-03-GUIDELINE-2016-eng-IMAM-Guidelines-for-Uganda-Jan-2016.pdf",
+      "https://iris.who.int/discover?query=Uganda%20acute%20malnutrition%20IMAM",
+      "https://www.who.int/search?query=Uganda%20integrated%20management%20acute%20malnutrition"
+    ],
+    "search_urls": [
+      "https://platform.who.int/search?indexCatalogue=genericsearchindex1&searchQuery={query}",
+      "https://iris.who.int/discover?query={query}"
+    ]
+  },
+  {
+    "name": "Infectious Diseases Institute Uganda",
+    "publisher": "Infectious Diseases Institute",
+    "domains": ["idi.mak.ac.ug", "elearning.idi.co.ug"],
+    "topics": ["uganda", "idi", "hiv", "aids", "tb", "tuberculosis", "malaria", "opportunistic infection", "guideline", "training"],
+    "priority": 0.93,
+    "seed_urls": [
+      "https://idi.mak.ac.ug/treatment-guidelines/",
+      "https://elearning.idi.co.ug/index.php/guidelines/",
+      "https://elearning.idi.co.ug/index.php/comprehensive-tb-management-course/"
+    ],
+    "search_urls": [
+      "https://idi.mak.ac.ug/?s={query}",
+      "https://elearning.idi.co.ug/?s={query}"
+    ]
+  },
+  {
+    "name": "Uganda Central Public Health Laboratories",
+    "publisher": "Ministry of Health Uganda",
+    "domains": ["cphl.go.ug"],
+    "topics": ["uganda", "laboratory", "diagnosis", "hiv", "tb", "malaria", "viral load", "guideline", "policy"],
+    "priority": 0.84,
+    "seed_urls": [
+      "https://cphl.go.ug/web/"
+    ],
+    "search_urls": [
+      "https://cphl.go.ug/web/?s={query}"
+    ]
+  },
+  {
+    "name": "Kenya Ministry of Health",
+    "publisher": "Ministry of Health Kenya",
+    "domains": ["health.go.ke"],
+    "topics": ["kenya", "east africa", "malaria", "hiv", "tb", "maternal", "pregnancy", "guideline", "standard treatment"],
+    "priority": 0.78,
+    "seed_urls": [
+      "https://www.health.go.ke/",
+      "https://www.health.go.ke/resources/"
+    ],
+    "search_urls": [
+      "https://www.health.go.ke/?s={query}"
+    ]
+  },
+  {
+    "name": "East African Community Health Repository",
+    "publisher": "East African Community",
+    "domains": ["repository.eac.int"],
+    "topics": ["east africa", "kenya", "uganda", "tanzania", "malaria", "hiv", "tb", "guideline", "policy"],
+    "priority": 0.76,
+    "seed_urls": [
+      "https://repository.eac.int/handle/11671/598",
+      "https://repository.eac.int/"
+    ],
+    "search_urls": [
+      "https://repository.eac.int/simple-search?query={query}"
+    ]
+  },
+  {
+    "name": "Tanzania Ministry of Health",
+    "publisher": "Ministry of Health Tanzania",
+    "domains": ["moh.go.tz"],
+    "topics": ["tanzania", "east africa", "standard treatment", "essential medicines", "malaria", "hiv", "tb", "pregnancy", "guideline"],
+    "priority": 0.77,
+    "seed_urls": [
+      "https://www.moh.go.tz/",
+      "https://www.moh.go.tz/storage/app/uploads/public/663/c8f/ceb/663c8fceb418d132695047.pdf"
+    ],
+    "search_urls": [
+      "https://www.moh.go.tz/search?search={query}"
+    ]
+  },
+  {
+    "name": "Tanzania National Malaria Control Programme",
+    "publisher": "Tanzania NMCP",
+    "domains": ["nmcp.go.tz"],
+    "topics": ["tanzania", "malaria", "pregnancy", "iptp", "diagnosis", "treatment", "guideline", "prevention"],
+    "priority": 0.82,
+    "seed_urls": [
+      "https://www.nmcp.go.tz/publication",
+      "https://www.nmcp.go.tz/storage/app/uploads/public/643/90d/29e/64390d29ef4b0392189644.pdf"
+    ],
+    "search_urls": [
+      "https://www.nmcp.go.tz/search?search={query}"
+    ]
+  },
+  {
+    "name": "World Health Organization",
+    "publisher": "WHO",
+    "domains": ["who.int", "wkc.who.int", "pmnch.who.int"],
+    "topics": ["who", "clinical guidelines", "all diseases", "communicable diseases", "noncommunicable diseases", "hypertension", "maternal health", "child health", "nutrition", "malnutrition", "emergency care", "primary care", "public health", "treatment", "recommendations"],
+    "priority": 0.95,
+    "seed_urls": [
+      "https://www.who.int/teams/global-malaria-programme/guidelines-for-malaria",
+      "https://www.who.int/news-room/fact-sheets/detail/malaria",
+      "https://www.who.int/tools/elena/interventions/iptp-pregnancy",
+      "https://www.who.int/publications/who-guidelines",
+      "https://www.who.int/publications/i/item/9789240033986",
+      "https://www.who.int/teams/global-hiv-hepatitis-and-stis-programmes/hiv/treatment",
+      "https://www.who.int/publications-detail-redirect/9789241506328",
+      "https://www.who.int/tools/elena/interventions/sam-identification-inpatient",
+      "https://www.who.int/tools/elena/interventions/oedema-sam",
+      "https://pmnch.who.int/resources/publications/m/item/who-pocket-book-of-hospital-care-for-children",
+      "https://wkc.who.int/resources/publications/i/item/9789241506328"
+    ],
+    "search_urls": [
+      "https://www.who.int/search?query={query}"
+    ]
+  },
+  {
+    "name": "WHO IRIS Publications",
+    "publisher": "WHO IRIS",
+    "domains": ["iris.who.int"],
+    "topics": ["who", "publication", "clinical guidelines", "all diseases", "maternal health", "child health", "nutrition", "malnutrition", "pocket book", "hospital care", "infectious disease", "public health"],
+    "priority": 0.9,
+    "seed_urls": [
+      "https://iris.who.int/",
+      "https://iris.who.int/bitstream/handle/10665/379635/B09146-eng.pdf",
+      "https://iris.who.int/bitstream/handle/10665/43206/9241546700.pdf"
+    ],
+    "search_urls": [
+      "https://iris.who.int/discover?query={query}"
+    ]
+  },
+  {
+    "name": "WHO Regional Office for Africa",
+    "publisher": "WHO AFRO",
+    "domains": ["afro.who.int"],
+    "topics": ["africa", "who", "malaria", "hiv", "tb", "maternal", "pregnancy", "guideline", "treatment"],
+    "priority": 0.86,
+    "seed_urls": [
+      "https://www.afro.who.int/publications/guidelines-treatment-malaria-third-edition",
+      "https://www.afro.who.int/health-topics/malaria",
+      "https://www.afro.who.int/sites/default/files/2017-05/casemgt.pdf"
+    ],
+    "search_urls": [
+      "https://www.afro.who.int/search?search_api_views_fulltext={query}"
+    ]
+  },
+  {
+    "name": "WHO Policy Platform",
+    "publisher": "WHO",
+    "domains": ["platform.who.int"],
+    "topics": ["who", "policy", "guideline", "malaria", "hiv", "tb", "uganda", "maternal", "child"],
+    "priority": 0.8,
+    "seed_urls": [
+      "https://platform.who.int/docs/default-source/mca-documents/policy-documents/operational-guidance/UGA-CH-33-01-OPERATIONAL-GUIDANCE-2012-eng-Manual-integrated-management-of-malaria-practical-guide-for-health-workers.pdf"
+    ],
+    "search_urls": [
+      "https://platform.who.int/search?indexCatalogue=genericsearchindex1&searchQuery={query}"
+    ]
+  },
+  {
+    "name": "WHO Tuberculosis Treatment Guidance",
+    "publisher": "WHO",
+    "domains": ["who.int", "tbksp.who.int", "ncbi.nlm.nih.gov"],
+    "topics": ["who", "tuberculosis", "tb", "drug-susceptible tb", "pulmonary tb", "treatment", "regimen", "first-line", "initial phase", "continuation phase", "guideline", "recommendation"],
+    "priority": 0.97,
+    "seed_urls": [
+      "https://www.who.int/publications/i/item/9789240048126",
+      "https://tbksp.who.int/en/node/3020",
+      "https://www.ncbi.nlm.nih.gov/books/NBK613096/",
+      "https://www.ncbi.nlm.nih.gov/books/NBK581330/"
+    ],
+    "search_urls": [
+      "https://www.who.int/search?query={query}",
+      "https://tbksp.who.int/en/search?keys={query}",
+      "https://www.ncbi.nlm.nih.gov/books/?term={query}"
+    ]
+  },
+  {
+    "name": "WHO Cholera Treatment Guidance",
+    "publisher": "WHO",
+    "domains": ["who.int"],
+    "topics": ["who", "cholera", "acute watery diarrhoea", "diarrhea", "dehydration", "oral rehydration solution", "ors", "intravenous fluids", "antibiotics", "outbreak", "treatment", "guideline"],
+    "priority": 0.93,
+    "seed_urls": [
+      "https://www.who.int/news-room/fact-sheets/detail/cholera",
+      "https://www.who.int/news-room/questions-and-answers/item/cholera-outbreaks"
+    ],
+    "search_urls": [
+      "https://www.who.int/search?query={query}"
+    ]
+  },
+  {
+    "name": "WHO Pre-Eclampsia and Eclampsia Guidance",
+    "publisher": "WHO",
+    "domains": ["who.int", "ncbi.nlm.nih.gov"],
+    "topics": ["who", "pre-eclampsia", "preeclampsia", "eclampsia", "pregnancy", "maternal health", "magnesium sulfate", "magnesium sulphate", "anticonvulsant", "seizure", "fits", "hypertension", "guideline", "recommendation"],
+    "priority": 0.94,
+    "seed_urls": [
+      "https://www.ncbi.nlm.nih.gov/books/NBK140560/",
+      "https://www.who.int/publications/m/item/simplified-treatment-for-eclampsia-prevention-using-magnesium-sulfate"
+    ],
+    "search_urls": [
+      "https://www.who.int/search?query={query}",
+      "https://www.ncbi.nlm.nih.gov/books/?term={query}"
+    ]
+  },
+  {
+    "name": "CDC Clinical Guidance",
+    "publisher": "CDC",
+    "domains": ["cdc.gov"],
+    "topics": ["cdc", "malaria", "pregnancy", "hiv", "tb", "sti", "immunization", "travel", "infection", "guideline", "treatment"],
+    "priority": 0.9,
+    "seed_urls": [
+      "https://www.cdc.gov/malaria/hcp/clinical-guidance/index.html",
+      "https://www.cdc.gov/malaria/hcp/clinical-guidance/pregnant-women.html",
+      "https://www.cdc.gov/malaria/hcp/clinical-guidance/malaria-treatment-tables.html",
+      "https://www.cdc.gov/tb/hcp/treatment/index.html",
+      "https://www.cdc.gov/sti/hcp/treatment-guidelines/index.html",
+      "https://www.cdc.gov/hivnexus/hcp/index.html"
+    ],
+    "search_urls": [
+      "https://www.cdc.gov/search/?query={query}"
+    ]
+  },
+  {
+    "name": "CDC Stacks",
+    "publisher": "CDC Stacks",
+    "domains": ["stacks.cdc.gov", "cdc.gov"],
+    "topics": ["cdc", "publication", "guideline", "mmwr", "malaria", "hiv", "tb", "infection", "vaccine"],
+    "priority": 0.82,
+    "seed_urls": [
+      "https://stacks.cdc.gov/"
+    ],
+    "search_urls": [
+      "https://stacks.cdc.gov/search?query={query}"
+    ]
+  },
+  {
+    "name": "NIH ClinicalInfo HIV Guidelines",
+    "publisher": "NIH ClinicalInfo",
+    "domains": ["clinicalinfo.hiv.gov"],
+    "topics": ["hiv", "aids", "art", "arv", "antiretroviral", "pregnancy", "opportunistic infection", "pep", "prep", "guideline", "malaria"],
+    "priority": 0.88,
+    "seed_urls": [
+      "https://clinicalinfo.hiv.gov/en/guidelines",
+      "https://clinicalinfo.hiv.gov/en/guidelines/perinatal",
+      "https://clinicalinfo.hiv.gov/en/guidelines/adult-and-adolescent-arv",
+      "https://clinicalinfo.hiv.gov/en/guidelines/hiv-clinical-guidelines-adult-and-adolescent-opportunistic-infections/malaria"
+    ],
+    "search_urls": [
+      "https://clinicalinfo.hiv.gov/en/search/node/{query}"
+    ]
+  },
+  {
+    "name": "NIH Office of Dietary Supplements",
+    "publisher": "NIH Office of Dietary Supplements",
+    "domains": ["ods.od.nih.gov", "nih.gov"],
+    "topics": ["dietary supplement", "nutrient", "nutrition", "pregnancy", "lactation", "choline", "folate", "iron", "vitamin", "mineral", "intake", "safety", "fact sheet", "health professional"],
+    "priority": 0.9,
+    "seed_urls": [
+      "https://ods.od.nih.gov/factsheets/Choline-HealthProfessional/"
+    ],
+    "search_urls": [
+      "https://ods.od.nih.gov/search.aspx?zoom_query={query}"
+    ]
+  },
+  {
+    "name": "WHO HIV Treatment Guidance",
+    "publisher": "WHO",
+    "domains": ["who.int", "ncbi.nlm.nih.gov"],
+    "topics": ["hiv", "aids", "art", "arv", "antiretroviral", "dolutegravir", "tenofovir", "lamivudine", "first-line", "treatment", "adult", "adolescent", "guideline", "recommendation"],
+    "priority": 0.98,
+    "seed_urls": [
+      "https://www.who.int/news/item/07-01-2026-who-releases-updated-recommendations-on-hiv-clinical-management",
+      "https://www.who.int/publications/i/item/9789240031593",
+      "https://www.who.int/publications/i/item/9789240053335",
+      "https://www.who.int/publications/i/item/WHO-CDS-HIV-19.15",
+      "https://www.who.int/teams/global-hiv-hepatitis-and-stis-programmes/hiv/treatment/hiv-treatment-for-adults",
+      "https://www.ncbi.nlm.nih.gov/books/NBK620318/"
+    ],
+    "search_urls": [
+      "https://www.who.int/search?query={query}",
+      "https://www.ncbi.nlm.nih.gov/books/?term={query}"
+    ]
+  },
+  {
+    "name": "WHO HIV Updated Recommendations - NCBI Bookshelf",
+    "publisher": "WHO / NCBI Bookshelf",
+    "domains": ["ncbi.nlm.nih.gov", "nih.gov"],
+    "topics": ["hiv", "art", "arv", "antiretroviral", "first-line", "initial art", "initial regimen", "adult", "adolescent", "dolutegravir", "tenofovir", "lamivudine", "emtricitabine", "nucleoside reverse transcriptase inhibitor", "guideline", "recommendation"],
+    "priority": 0.99,
+    "seed_urls": [
+      "https://www.ncbi.nlm.nih.gov/books/NBK620318/"
+    ],
+    "search_urls": [
+      "https://www.ncbi.nlm.nih.gov/books/?term={query}"
+    ]
+  },
+  {
+    "name": "NCBI Bookshelf",
+    "publisher": "NCBI Bookshelf",
+    "domains": ["ncbi.nlm.nih.gov", "nih.gov"],
+    "topics": ["guideline", "textbook", "all diseases", "who", "bookshelf", "child health", "maternal health", "nutrition", "malnutrition", "pocket book", "hospital care", "clinical reference"],
+    "priority": 0.78,
+    "seed_urls": [
+      "https://www.ncbi.nlm.nih.gov/books/NBK620318/",
+      "https://www.ncbi.nlm.nih.gov/books/NBK601660/",
+      "https://www.ncbi.nlm.nih.gov/books/NBK154447/",
+      "https://www.ncbi.nlm.nih.gov/books/NBK588130/",
+      "https://www.ncbi.nlm.nih.gov/books/"
+    ],
+    "search_urls": [
+      "https://www.ncbi.nlm.nih.gov/books/?term={query}"
+    ]
+  },
+  {
+    "name": "PubMed Central",
+    "publisher": "NIH PubMed Central",
+    "domains": ["pmc.ncbi.nlm.nih.gov", "ncbi.nlm.nih.gov"],
+    "topics": ["open access", "malaria", "pregnancy", "hiv", "tb", "clinical", "guideline", "research"],
+    "priority": 0.7,
+    "seed_urls": [
+      "https://pmc.ncbi.nlm.nih.gov/"
+    ],
+    "search_urls": [
+      "https://pmc.ncbi.nlm.nih.gov/?term={query}"
+    ]
+  },
+  {
+    "name": "UNICEF Nutrition Guidance",
+    "publisher": "UNICEF",
+    "domains": ["unicef.org", "reliefweb.int"],
+    "topics": ["children", "under five", "nutrition", "severe acute malnutrition", "wasting", "acute malnutrition", "RUTF", "MUAC", "community management", "CMAM", "IMAM", "guideline", "programme guidance"],
+    "priority": 0.82,
+    "seed_urls": [
+      "https://www.unicef.org/documents/simplified-approaches-provision-care-children-wasting-and-other-forms-acute-malnutrition",
+      "https://reliefweb.int/attachments/45f163e5-526f-3a09-ac8a-dc9f91c10bd3/unicef_2015_management_of_severe_acute_malnutrition.pdf",
+      "https://reliefweb.int/attachments/812bcc05-6606-3bac-bf07-85db805474bd/cmam_guidelines_book.pdf"
+    ],
+    "search_urls": [
+      "https://www.unicef.org/search?force=0&query={query}",
+      "https://reliefweb.int/search/results?search={query}"
+    ]
+  },
+  {
+    "name": "MSF Medical Guidelines",
+    "publisher": "Medecins Sans Frontieres",
+    "domains": ["medicalguidelines.msf.org"],
+    "topics": ["clinical guidelines", "all diseases", "malaria", "pregnancy", "hiv", "tb", "pediatric", "paediatric", "maternal", "emergency", "nutrition", "malnutrition", "low resource", "primary care"],
+    "priority": 0.84,
+    "seed_urls": [
+      "https://medicalguidelines.msf.org/en",
+      "https://medicalguidelines.msf.org/en/viewport/CG/english/malaria-16689758.html",
+      "https://medicalguidelines.msf.org/en/viewport/CG/english/hiv-infection-16689804.html",
+      "https://medicalguidelines.msf.org/en/viewport/CG/english/tuberculosis-16689806.html",
+      "https://medicalguidelines.msf.org/en/viewport/mme/english/5-4-treatment-of-complicated-cases-32408073.html",
+      "https://medicalguidelines.msf.org/en/node/660?language_content_entity=en",
+      "https://medicalguidelines.msf.org/en/viewport/CHOL/english/5-8-cholera-and-acute-malnutrition-32409733.html"
+    ],
+    "search_urls": [
+      "https://medicalguidelines.msf.org/en/search?search={query}"
+    ]
+  },
+  {
+    "name": "MSF Essential Drugs",
+    "publisher": "Medecins Sans Frontieres",
+    "domains": ["medicalguidelines.msf.org"],
+    "topics": ["essential drugs", "drug monograph", "medicine", "dose", "dosage", "dosing", "adult dose", "child dose", "route", "administration", "injectable", "antibiotic", "antimicrobial", "pneumonia", "low resource", "clinical resource"],
+    "priority": 0.86,
+    "seed_urls": [
+      "https://medicalguidelines.msf.org/en/viewport/EssDr/english/",
+      "https://medicalguidelines.msf.org/en/viewport/EssDr/english/ceftriaxone-injectable-16682532.html"
+    ],
+    "search_urls": [
+      "https://medicalguidelines.msf.org/en/search?search={query}"
+    ]
+  },
+  {
+    "name": "DailyMed Drug Labels",
+    "publisher": "National Library of Medicine",
+    "domains": ["dailymed.nlm.nih.gov", "nih.gov"],
+    "topics": ["drug label", "prescribing information", "package insert", "dose", "dosage", "dosing", "adult dose", "pediatric dose", "route", "administration", "contraindications", "warnings", "renal impairment", "hepatic impairment", "drug safety", "clinical resource"],
+    "priority": 0.80,
+    "seed_urls": [
+      "https://dailymed.nlm.nih.gov/dailymed/",
+      "https://dailymed.nlm.nih.gov/dailymed/search.cfm?query=ceftriaxone"
+    ],
+    "search_urls": [
+      "https://dailymed.nlm.nih.gov/dailymed/search.cfm?query={query}"
+    ]
+  },
+  {
+    "name": "MSF Southern Africa Guidelines",
+    "publisher": "Medecins Sans Frontieres Southern Africa",
+    "domains": ["msf.org.za"],
+    "topics": ["africa", "hiv", "tb", "pmtct", "pregnancy", "malaria", "guideline", "primary care"],
+    "priority": 0.76,
+    "seed_urls": [
+      "https://www.msf.org.za/sites/default/files/2023-03/Guideline_PMTCT_MSF_2020_EN.pdf"
+    ],
+    "search_urls": [
+      "https://www.msf.org.za/search?search={query}"
+    ]
+  },
+  {
+    "name": "Infectious Diseases Society of America",
+    "publisher": "IDSA",
+    "domains": ["idsociety.org"],
+    "topics": ["infection", "antibiotic", "antimicrobial", "uti", "pneumonia", "sepsis", "hiv", "covid", "guideline"],
+    "priority": 0.82,
+    "seed_urls": [
+      "https://www.idsociety.org/practice-guideline/"
+    ],
+    "search_urls": [
+      "https://www.idsociety.org/search/?q={query}"
+    ]
+  },
+  {
+    "name": "NICE Guidance",
+    "publisher": "NICE",
+    "domains": ["nice.org.uk"],
+    "topics": ["guideline", "antimicrobial", "pregnancy", "diabetes", "hypertension", "mental health", "child", "clinical"],
+    "priority": 0.76,
+    "seed_urls": [
+      "https://www.nice.org.uk/guidance",
+      "https://www.nice.org.uk/guidance/ng136",
+      "https://www.nice.org.uk/guidance/ng136/chapter/recommendations"
+    ],
+    "search_urls": [
+      "https://www.nice.org.uk/search?q={query}"
+    ]
+  },
+  {
+    "name": "European Centre for Disease Prevention and Control",
+    "publisher": "ECDC",
+    "domains": ["ecdc.europa.eu"],
+    "topics": ["infection", "surveillance", "vaccine", "tb", "hiv", "malaria", "travel", "guidance"],
+    "priority": 0.72,
+    "seed_urls": [
+      "https://www.ecdc.europa.eu/en"
+    ],
+    "search_urls": [
+      "https://www.ecdc.europa.eu/en/search?s={query}"
+    ]
+  },
+  {
+    "name": "Africa CDC",
+    "publisher": "Africa CDC",
+    "domains": ["africacdc.org"],
+    "topics": ["africa", "infection", "outbreak", "public health", "malaria", "hiv", "tb", "guideline", "policy"],
+    "priority": 0.76,
+    "seed_urls": [
+      "https://africacdc.org/"
+    ],
+    "search_urls": [
+      "https://africacdc.org/?s={query}"
+    ]
+  },
+  {
+    "name": "UNAIDS",
+    "publisher": "UNAIDS",
+    "domains": ["unaids.org"],
+    "topics": ["hiv", "aids", "prevention", "treatment", "policy", "guidance", "uganda", "africa"],
+    "priority": 0.72,
+    "seed_urls": [
+      "https://www.unaids.org/en/resources"
+    ],
+    "search_urls": [
+      "https://www.unaids.org/en/search?keywords={query}"
+    ]
+  },
+  {
+    "name": "Pan American Health Organization",
+    "publisher": "PAHO",
+    "domains": ["paho.org"],
+    "topics": ["who", "malaria", "hiv", "tb", "maternal", "child", "guideline", "recommendation"],
+    "priority": 0.68,
+    "seed_urls": [
+      "https://www.paho.org/en"
+    ],
+    "search_urls": [
+      "https://www.paho.org/en/search/r?keys={query}"
+    ]
+  },
+  {
+    "name": "American Academy of Family Physicians",
+    "publisher": "AAFP",
+    "domains": ["aafp.org"],
+    "topics": ["primary care", "family medicine", "pregnancy", "diabetes", "hypertension", "infection", "clinical recommendation"],
+    "priority": 0.64,
+    "seed_urls": [
+      "https://www.aafp.org/family-physician/patient-care/clinical-recommendations.html"
+    ],
+    "search_urls": [
+      "https://www.aafp.org/search.html?q={query}"
+    ]
+  },
+  {
+    "name": "NICE Clinical Knowledge Summaries",
+    "publisher": "NICE CKS",
+    "domains": ["cks.nice.org.uk", "nice.org.uk"],
+    "topics": ["guideline", "primary care", "clinical knowledge summary", "antimicrobial", "pregnancy", "diabetes", "hypertension", "child", "infection", "clinical"],
+    "priority": 0.77,
+    "seed_urls": [
+      "https://cks.nice.org.uk/"
+    ],
+    "search_urls": [
+      "https://cks.nice.org.uk/search/?q={query}"
+    ]
+  },
+  {
+    "name": "Global Initiative for Asthma",
+    "publisher": "GINA",
+    "domains": ["ginasthma.org"],
+    "topics": ["asthma", "wheeze", "airway disease", "inhaler", "corticosteroid", "bronchodilator", "guideline", "treatment", "children", "pregnancy"],
+    "priority": 0.78,
+    "seed_urls": [
+      "https://ginasthma.org/gina-reports/"
+    ],
+    "search_urls": [
+      "https://ginasthma.org/?s={query}"
+    ]
+  },
+  {
+    "name": "Global Initiative for Chronic Obstructive Lung Disease",
+    "publisher": "GOLD",
+    "domains": ["goldcopd.org"],
+    "topics": ["copd", "chronic obstructive pulmonary disease", "exacerbation", "bronchodilator", "inhaler", "guideline", "treatment"],
+    "priority": 0.76,
+    "seed_urls": [
+      "https://goldcopd.org/gold-reports/"
+    ],
+    "search_urls": [
+      "https://goldcopd.org/?s={query}"
+    ]
+  },
+  {
+    "name": "KDIGO Guidelines",
+    "publisher": "KDIGO",
+    "domains": ["kdigo.org"],
+    "topics": ["kidney", "ckd", "acute kidney injury", "glomerular disease", "diabetes", "hypertension", "guideline", "treatment"],
+    "priority": 0.76,
+    "seed_urls": [
+      "https://kdigo.org/guidelines/"
+    ],
+    "search_urls": [
+      "https://kdigo.org/?s={query}"
+    ]
+  },
+  {
+    "name": "European Society of Cardiology Guidelines",
+    "publisher": "ESC",
+    "domains": ["escardio.org"],
+    "topics": ["cardiology", "heart failure", "hypertension", "atrial fibrillation", "acute coronary syndrome", "lipids", "guideline", "treatment"],
+    "priority": 0.74,
+    "seed_urls": [
+      "https://www.escardio.org/Guidelines"
+    ],
+    "search_urls": [
+      "https://www.escardio.org/Search?query={query}"
+    ]
+  },
+  {
+    "name": "ACOG Clinical Guidance",
+    "publisher": "American College of Obstetricians and Gynecologists",
+    "domains": ["acog.org"],
+    "topics": ["pregnancy", "obstetrics", "gynecology", "postpartum", "pre-eclampsia", "eclampsia", "contraception", "guideline", "clinical guidance"],
+    "priority": 0.73,
+    "seed_urls": [
+      "https://www.acog.org/clinical"
+    ],
+    "search_urls": [
+      "https://www.acog.org/search?keyword={query}"
+    ]
+  },
+  {
+    "name": "RCOG Guidance",
+    "publisher": "Royal College of Obstetricians and Gynaecologists",
+    "domains": ["rcog.org.uk"],
+    "topics": ["pregnancy", "obstetrics", "gynecology", "postpartum", "pre-eclampsia", "eclampsia", "guideline", "green-top guideline"],
+    "priority": 0.72,
+    "seed_urls": [
+      "https://www.rcog.org.uk/guidance/"
+    ],
+    "search_urls": [
+      "https://www.rcog.org.uk/search/?query={query}"
+    ]
+  },
+  {
+    "name": "World Gastroenterology Organisation Guidelines",
+    "publisher": "World Gastroenterology Organisation",
+    "domains": ["worldgastroenterology.org"],
+    "topics": ["gastroenterology", "diarrhea", "hepatitis", "liver", "ibd", "ibs", "guideline", "global guideline"],
+    "priority": 0.7,
+    "seed_urls": [
+      "https://www.worldgastroenterology.org/guidelines"
+    ],
+    "search_urls": [
+      "https://www.worldgastroenterology.org/search?q={query}"
+    ]
+  },
+  {
+    "name": "Severe Malaria Observatory",
+    "publisher": "Medicines for Malaria Venture",
+    "domains": ["severemalaria.org"],
+    "topics": ["malaria", "severe malaria", "pregnancy", "africa", "treatment", "guideline", "policy"],
+    "priority": 0.72,
+    "seed_urls": [
+      "https://www.severemalaria.org/",
+      "https://www.severemalaria.org/sites/default/files/content/document/Tanzania_STG_052013.pdf"
+    ],
+    "search_urls": [
+      "https://www.severemalaria.org/search?search={query}"
+    ]
+  }
+]

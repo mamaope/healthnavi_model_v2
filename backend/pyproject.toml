@@ -3,16 +3,16 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "empirico-cdss"
+name = "empirico"
 version = "2.0.0"
-description = "Empirico AI Clinical Decision Support System"
+description = "Empirico medical information service"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
     {name = "Empirico Team", email = "support@empirico.ai"}
 ]
-keywords = ["healthcare", "ai", "clinical", "diagnosis", "fastapi"]
+keywords = ["healthcare", "medical-information", "evidence", "fastapi"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Healthcare Industry",
@@ -38,21 +38,18 @@ dependencies = [
     "cryptography>=46.0.0,<47.0.0",
     "PyJWT>=2.9.0,<3.0.0",
     "email-validator>=2.2.0,<3.0.0",
-    "vertexai>=1.71.0,<2.0.0",
-    "google-genai>=0.5.0,<1.0.0",
-    "google-auth>=2.35.0,<3.0.0",
-    "google-auth-oauthlib>=1.2.1,<2.0.0",
-    "pymilvus>=2.4.9,<3.0.0",
-    "openai>=2.8.0,<3.0.0",
     "python-dotenv>=1.0.1,<2.0.0",
-    "tenacity>=9.0.0,<10.0.0",
     "httpx>=0.28.0,<0.29.0",
     "python-dateutil>=2.9.0,<3.0.0",
-    "crawl4ai>=0.4.0",
-    "chardet>=5.2.0,<6.0.0",
+    "PyPDF2>=3.0.1,<4.0.0",
+    "pycryptodome>=3.20.0,<4.0.0",
 ]
 
 [project.optional-dependencies]
+transcription = [
+    "openai-whisper>=20231117",
+    "torch>=2.0.0,<3.0.0",
+]
 dev = [
     "pytest>=8.3.4,<9.0.0",
     "pytest-asyncio>=0.24.0,<0.25.0",
@@ -126,14 +123,6 @@ warn_unused_ignores = true
 warn_no_return = true
 warn_unreachable = true
 strict_equality = true
-
-[[tool.mypy.overrides]]
-module = [
-    "vertexai.*",
-    "pymilvus.*",
-    "google.*",
-]
-ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

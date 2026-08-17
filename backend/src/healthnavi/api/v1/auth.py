@@ -1,5 +1,5 @@
 """
-Authentication router for Empirico AI CDSS.
+Authentication router for Empirico.
 """
 
 import logging

@@ -1,4 +1,4 @@
-# Empirico AI CDSS - Production Dependencies
+# Empirico - Backend Dependencies
 # Optimized requirements with only direct dependencies
 # Generated: 2025-01-27
 
@@ -30,41 +30,13 @@ cryptography>=46.0.0,<47.0.0
 email-validator>=2.2.0,<3.0.0
 
 # ============================================================================
-# Google Cloud & Vertex AI
-# ============================================================================
-vertexai>=1.71.0,<2.0.0
-google-genai>=0.5.0,<1.0.0
-google-auth>=2.35.0,<3.0.0
-google-auth-oauthlib>=1.2.1,<2.0.0
-
-# ============================================================================
-# Vector Database
-# ============================================================================
-pymilvus>=2.4.9,<3.0.0
-
-# ============================================================================
-# OpenAI (for Azure OpenAI embeddings)
-# ============================================================================
-openai>=1.70.0,<2.0.0
-
-# ============================================================================
-# Audio Transcription (Voice-to-text with Whisper)
-# ============================================================================
---extra-index-url https://download.pytorch.org/whl/cpu
-openai-whisper>=20231117
-torch>=2.0.0,<3.0.0
-
-# ============================================================================
 # Utilities
 # ============================================================================
 python-dotenv>=1.0.1,<2.0.0
-tenacity>=9.0.0,<10.0.0
 httpx>=0.28.0,<0.29.0
 python-dateutil>=2.9.0,<3.0.0
-
-# Live evidence retrieval crawler
-crawl4ai
-chardet>=5.2.0,<6.0.0
+PyPDF2>=3.0.1,<4.0.0
+pycryptodome>=3.20.0,<4.0.0
 
 # Testing
 pytest>=7.4.0

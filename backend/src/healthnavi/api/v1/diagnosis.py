@@ -1,5 +1,5 @@
 """
-Diagnosis router for Empirico AI CDSS.
+Diagnosis router for Empirico.
 """
 
 import asyncio
@@ -154,7 +154,7 @@ async def diagnose(
                     if not session_id:
                         from healthnavi.schemas import ChatSessionCreate
                         new_session_data = ChatSessionCreate(
-                            session_name=f"Diagnosis Session - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
+                            session_name=f"Empirico Session - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
                             patient_summary=data.patient_data[:200] + "..." if len(data.patient_data) > 200 else data.patient_data
                         )
                         new_session = session_service.create_session(
@@ -205,9 +205,9 @@ async def diagnose(
 
             # Build updated chat history
             updated_chat_history = (
-                f"{chat_history}\nDoctor: {data.patient_data}\nAI Assistant: {response}"
+                f"{chat_history}\nUser: {data.patient_data}\nEmpirico: {response}"
                 if chat_history else
-                f"Doctor: {data.patient_data}\nAI Assistant: {response}"
+                f"User: {data.patient_data}\nEmpirico: {response}"
             )
 
             if followup_questions is None:
@@ -432,8 +432,10 @@ async def diagnose_stream(
                             break
 
                         full_response += chunk
-                        # Track AI response content separately (exclude followup markers)
-                        if not chunk.startswith("[FOLLOWUP_QUESTIONS]:"):
+                        # Track answer content separately so stream metadata is not saved.
+                        if "[FOLLOWUP_QUESTIONS]:" in chunk:
+                            ai_response_content += chunk.split("[FOLLOWUP_QUESTIONS]:", 1)[0]
+                        elif not chunk.startswith("[MESSAGE_ID]:"):
                             ai_response_content += chunk
                         yield chunk
 
@@ -490,28 +492,12 @@ async def diagnose_stream(
                 elif not user_message_saved:
                     logger.warning(f"Skipping AI message save - user message was not saved successfully")
                 
-                # Generate follow-up questions if we have valid content
+                # Follow-up questions are emitted by the model-service adapter when available.
                 followup_already_sent = "[FOLLOWUP_QUESTIONS]:" in full_response
-                if not stream_error and not followup_already_sent and ai_response_content and len(ai_response_content.strip()) > 10:
-                    followup_questions = []
-                    try:
-                        from healthnavi.services.conversational_service import generate_followup_questions_sync
-                        followup_questions = generate_followup_questions_sync(data.patient_data, ai_response_content)
-                    except Exception as e:
-                        logger.warning(f"Could not generate follow-up questions: {e}", exc_info=True)
-                    
-                    if followup_questions:
-                        import json
-                        followup_json = json.dumps(followup_questions)
-                        yield f"\n\n[FOLLOWUP_QUESTIONS]:{followup_json}"
-                    else:
-                        logger.warning("⚠️ Follow-up question generation returned empty list")
-                elif followup_already_sent:
+                if followup_already_sent:
                     pass  # Skip duplicate generation
                 elif stream_error:
                     logger.warning("⚠️ Skipping follow-up question generation due to stream error")
-                elif not ai_response_content or len(ai_response_content.strip()) <= 10:
-                    logger.debug(f"Skipping follow-up question generation - content too short ({len(ai_response_content.strip()) if ai_response_content else 0} chars)")
                 
                 # Send message_id at the end if available (before stream ends)
                 if ai_message_id_container["value"]:

@@ -4,7 +4,7 @@
 
 ![Empirico Logo](https://via.placeholder.com/200x60?text=Empirico)
 
-**Empirico** is a secure, HIPAA/GDPR/ISO 13485 compliant AI-powered medical knowledge base that uses Retrieval-Augmented Generation (RAG) to provide healthcare professionals with evidence-based medical information and guidance.
+**Empirico** is a secure AI-powered medical information system that connects to the shared Empirico Model Service for evidence retrieval, web crawling, citations, and answer generation.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
@@ -36,14 +36,14 @@
 
 ## 🎯 Overview
 
-**Empirico** is a comprehensive medical knowledge base platform designed to help healthcare professionals access evidence-based medical information through AI-powered assistance. The system combines advanced language models with a curated medical knowledge base to provide evidence-based guidance, drug information, clinical guidelines, and treatment recommendations.
+**Empirico** is a medical information platform designed to help users access evidence-backed medical answers through AI-powered assistance. This app owns the user experience, authentication, sessions, and response display; the shared model service owns retrieval, crawling, citation grounding, and model generation.
 
 ### What Empirico Does
 
 - **Medical Information Access**: Provides AI-powered access to evidence-based medical information, treatment planning, and clinical queries
 - **Drug Information**: Access comprehensive drug dosing, interactions, and prescribing information
 - **Clinical Guidelines**: References to WHO, ADA, and other authoritative medical guidelines
-- **Evidence-Based Answers**: Uses RAG (Retrieval-Augmented Generation) to ground responses in medical literature
+- **Evidence-Based Answers**: Delegates retrieval and generation to the shared Empirico Model Service
 - **Multi-Platform Access**: Available on web and mobile (Android) platforms
 
 ---
@@ -104,16 +104,11 @@
 │   (React/Vite)  │◄──►│   Backend       │◄──►│   Database      │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
          │                      │                        │
-         │                      ▼                        │
-         │              ┌─────────────────┐             │
-         │              │   Vector Store  │             │
-         │              │   (Zilliz)      │             │
-         │              └─────────────────┘             │
          │                      │                        │
          │                      ▼                        │
          │              ┌─────────────────┐             │
-         │              │   AI Models     │             │
-         │              │   (Vertex AI)   │             │
+         │              │ Shared Empirico │             │
+         │              │ Model Service   │             │
          │              └─────────────────┘             │
          │                                              │
          └──────────────────────────────────────────────┘
@@ -128,8 +123,7 @@
 **Backend**
 - **Framework**: FastAPI (Python 3.11+)
 - **Database**: PostgreSQL 15+
-- **Vector Database**: Zilliz Cloud (Milvus)
-- **AI/ML**: Google Vertex AI (Gemini models)
+- **Model Service**: Shared Empirico Model Service over HTTPS
 - **Authentication**: JWT, OAuth 2.0
 - **ORM**: SQLAlchemy
 - **Migrations**: Alembic
@@ -150,8 +144,7 @@
 
 **Infrastructure**
 - **Containerization**: Docker & Docker Compose
-- **Cloud Services**: Google Cloud Platform (Vertex AI)
-- **Vector Database**: Zilliz Cloud
+- **Model Backend**: Shared GCP-hosted Empirico Model Service
 
 ---
 
@@ -162,34 +155,31 @@
 - **Python 3.11+**
 - **PostgreSQL 15+**
 - **Docker & Docker Compose** (recommended)
-- **Google Cloud Platform** account with Vertex AI enabled
+- **Shared Empirico Model Service URL and API key**
 - **Node.js 18+** (for frontend development)
 - **Android Studio** (for mobile development)
 
 ### Docker Deployment (Recommended)
 
-The fastest way to get started:
+The local Docker stack runs only the services this app owns: Postgres, the
+FastAPI backend, and the Vite frontend. The model service stays in GCP.
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/empirico.git
-cd empirico
-
-# Copy environment file
-cp .env.example .env
-# Edit .env with your configuration
-
 # Start all services
-docker-compose up -d
+docker compose up -d --build
 
 # Check logs
-docker-compose logs -f api
+docker compose logs -f api
 
 # Access the application
 # Web: http://localhost:3000
 # API: http://localhost:8050/api/v2
 # API Docs: http://localhost:8050/api/v2/docs
 ```
+
+The default API image is intentionally lean. It does not install Whisper/Torch
+or browser automation dependencies. To include voice transcription dependencies,
+build with `INSTALL_TRANSCRIPTION=true docker compose up -d --build`.
 
 On first run, the API container runs database migrations and seeds an admin user if none exists (override with `ADMIN_EMAIL`, `ADMIN_PASSWORD`, etc. in `.env`). To seed an admin manually: `cd backend && python scripts/seed_admin_user.py`.
 
@@ -287,20 +277,39 @@ DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=empirico_cdss
 
-# Google Cloud / Vertex AI
-GOOGLE_CLOUD_PROJECT=your-gcp-project-id
-GOOGLE_CLOUD_LOCATION=us-central1
-GOOGLE_APPLICATION_CREDENTIALS=path/to/service-account.json
-
 # Google OAuth (for authentication)
 GOOGLE_CLIENT_ID=your-web-oauth-client-id
 GOOGLE_CLIENT_SECRET=your-client-secret
 GOOGLE_REDIRECT_URI=https://your-domain.com/api/v2/auth/google/callback
 
-# Vector Database (Zilliz)
-MILVUS_URI=https://your-cluster.zillizcloud.com
-MILVUS_TOKEN=your-milvus-token
-MILVUS_COLLECTION_NAME=medical_knowledge
+# Shared Empirico Model Service
+MODEL_SERVICE_BASE_URL=https://empirico-model-service-e2dgjxq3uq-ew.a.run.app
+MODEL_SERVICE_API_KEY=your-model-service-api-key
+MODEL_SERVICE_TIMEOUT_SECONDS=180
+EMPIRICO_EVIDENCE_COUNTRY_CODE=
+EMPIRICO_SOURCE_PREFERENCE_HINTS=Uganda Ministry of Health Uganda Clinical Guidelines health.go.ug library.health.go.ug CPHL IDI Uganda WHO AFRO East Africa Africa
+EMPIRICO_SOURCE_PREFERENCE_TERMS=uganda,ugandan,health.go.ug,library.health.go.ug,cphl.go.ug,idi.mak.ac.ug,elearning.idi.co.ug,uganda clinical guidelines,ministry of health uganda,who afro,afro.who.int,east africa,africa
+EMPIRICO_EVIDENCE_PROVIDER_MODE=web
+EMPIRICO_ENABLE_TRUSTED_GUIDELINE_RESCUE=true
+
+# Local evidence providers called by Empirico
+NCBI_API_KEY=your-ncbi-api-key
+NCBI_TOOL_EMAIL=you@example.com
+SEMANTIC_SCHOLAR_API_KEY=your-semantic-scholar-api-key
+ENABLE_PUBMED=true
+ENABLE_EUROPE_PMC=true
+ENABLE_SEMANTIC_SCHOLAR=true
+ENABLE_OFFICIAL_HEALTH_APIS=true
+ENABLE_CRAWL4AI=true
+ENABLE_CRAWL4AI_BROWSER=false
+CRAWL_ALLOWED_DOMAINS=health.go.ug,library.health.go.ug,cphl.go.ug,differentiatedservicedelivery.org,who.int,iris.who.int,cdc.gov,stacks.cdc.gov,nih.gov,ncbi.nlm.nih.gov,idsociety.org,medicalguidelines.msf.org,nice.org.uk,ecdc.europa.eu,africacdc.org,unaids.org,paho.org,aafp.org
+CRAWL_MAX_SOURCES=8
+CRAWL_MAX_PAGES=14
+CRAWL_SEARCH_PAGES_PER_SOURCE=1
+CRAWL_TIME_BUDGET_SECONDS=8
+RETRIEVAL_TIME_BUDGET_SECONDS=10
+REQUEST_TIMEOUT_SECONDS=20
+MAX_RESULTS_PER_PROVIDER=10
 
 # Application
 ENV=production
@@ -313,6 +322,26 @@ BACKEND_URL=https://empirico.ai
 FRONTEND_URL=https://empirico.ai
 ```
 
+`EMPIRICO_EVIDENCE_PROVIDER_MODE=web` means crawled and official web sources
+are used first, with PubMed/Europe PMC/Semantic Scholar as fallback. Use
+`crawl` only when the deployment should refuse article-database fallback
+results.
+
+`EMPIRICO_EVIDENCE_COUNTRY_CODE` is optional. Leave it blank for open global
+retrieval with Uganda/Africa source preference. Set it only when a deployment
+needs a hard country hint for local official-source routing.
+
+`EMPIRICO_SOURCE_PREFERENCE_HINTS` expands generic searches toward Uganda
+Ministry of Health, Uganda Clinical Guidelines, WHO AFRO, and East
+African/African sources. `EMPIRICO_SOURCE_PREFERENCE_TERMS` controls citation
+ranking for returned evidence; it is source preference, not country routing.
+
+Provider credentials for PubMed/NCBI, Semantic Scholar, official APIs, and
+Crawl4AI belong in the Empirico app runtime because this app calls those
+providers directly. `MODEL_SERVICE_BASE_URL` only controls where the final
+generation request is sent. Legacy Azure OpenAI and Milvus settings should stay
+commented unless a new local feature explicitly reintroduces them.
+
 ### Troubleshooting: 502 Bad Gateway on Google login
 
 If `https://empirico.ai/api/v2/auth/google/login` returns **502 Bad Gateway**:
@@ -322,18 +351,9 @@ If `https://empirico.ai/api/v2/auth/google/login` returns **502 Bad Gateway**:
 3. **Google OAuth** – Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and optionally `GOOGLE_REDIRECT_URI=https://empirico.ai/api/v2/auth/google/callback` in the backend environment.
 4. **Logs** – Check backend logs when you hit the login URL; errors are logged with traceback.
 
-### Google Cloud Setup
+### Google OAuth Setup
 
-1. **Create a Google Cloud Project**
-   - Enable Vertex AI API
-   - Enable OAuth consent screen
-
-2. **Create Service Account**
-   - Go to IAM & Admin > Service Accounts
-   - Create service account with Vertex AI User role
-   - Download JSON key file
-
-3. **Configure OAuth**
+1. **Configure OAuth**
    - Create OAuth 2.0 Client IDs (Web and Android)
    - Add authorized redirect URIs
    - Configure Android OAuth client with package name and SHA-1
@@ -602,8 +622,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🙏 Acknowledgments
 
-- **Google Vertex AI** for AI/ML capabilities
-- **Zilliz** for vector database infrastructure
+- **Empirico Model Service** for evidence retrieval and answer generation
 - **FastAPI** for the excellent web framework
 - **React** and **Jetpack Compose** communities
 

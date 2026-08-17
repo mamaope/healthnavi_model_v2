@@ -1,5 +1,5 @@
 """
-Chat Sessions API router for Empirico AI CDSS.
+Chat Sessions API router for Empirico.
 
 This module provides endpoints for managing diagnosis chat sessions and messages.
 """

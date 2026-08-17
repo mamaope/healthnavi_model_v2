@@ -1,5 +1,5 @@
 """
-Email service for Empirico AI CDSS.
+Email service for Empirico.
 Handles email verification and notifications.
 """
 

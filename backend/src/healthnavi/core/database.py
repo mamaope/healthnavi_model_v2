@@ -1,5 +1,5 @@
 """
-Enhanced database service for Empirico AI CDSS.
+Enhanced database service for Empirico.
 
 This module provides secure database operations with proper connection management,
 transaction handling, and audit logging following medical software standards.
@@ -14,6 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from contextlib import contextmanager
 
 from healthnavi.core.config import get_config
+from healthnavi.models import Base
 
 config = get_config()
 logger = logging.getLogger(__name__)
@@ -91,7 +92,7 @@ def create_tables():
     """Create all database tables."""
     try:
         # Import all models to ensure they are registered with SQLAlchemy
-        from healthnavi.models import Base, User, DiagnosisSession, ChatMessage, MessageFeedback
+        from healthnavi.models import User, DiagnosisSession, ChatMessage, MessageFeedback
         Base.metadata.create_all(bind=engine)
     except SQLAlchemyError as e:
         logger.error(f"Failed to create database tables: {e}")

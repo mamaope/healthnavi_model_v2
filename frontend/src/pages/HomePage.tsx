@@ -423,7 +423,7 @@ export default function HomePage() {
                 onToggleDeepSearch={() =>
                   setIsDeepSearchEnabled((previous) => !previous)
                 }
-                placeholder="Ask me a medical question ..."
+                placeholder="Ask a medical question..."
               />
             </div>
 
@@ -447,8 +447,8 @@ export default function HomePage() {
                 <i className="fas fa-shield-alt" />
                 <span>
                   {isAuthenticated
-                    ? 'For healthcare professionals only: guidance is informational and not a substitute for clinical judgment.'
-                    : 'For healthcare professionals only: guidance is informational and not a substitute for clinical judgment.'}
+                    ? 'For healthcare professionals only: information is evidence-backed and not a substitute for clinical judgment.'
+                    : 'For healthcare professionals only: information is evidence-backed and not a substitute for clinical judgment.'}
                 </span>
               </div>
             )}
@@ -459,8 +459,8 @@ export default function HomePage() {
                 <i className="fas fa-shield-alt" />
                 <span>
                   {isAuthenticated
-                    ? 'For healthcare professionals only: guidance is informational and not a substitute for clinical judgment.'
-                    : 'For healthcare professionals only: guidance is informational and not a substitute for clinical judgment.'}
+                    ? 'For healthcare professionals only: information is evidence-backed and not a substitute for clinical judgment.'
+                    : 'For healthcare professionals only: information is evidence-backed and not a substitute for clinical judgment.'}
                 </span>
               </div>
             )}
@@ -558,4 +558,3 @@ export default function HomePage() {
     </div>
   )
 }
-

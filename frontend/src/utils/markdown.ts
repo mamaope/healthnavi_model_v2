@@ -100,7 +100,7 @@ function fixMarkdownSpacing(markdown: string): string {
   fixed = fixed.replace(/([^\n])\n([-*]\s)/g, '$1\n\n$2')
 
   // STEP 7: Add blank line after lists (before non-list content)
-  fixed = fixed.replace(/(\n(?:\d+\.|-|\*)\s[^\n]+)\n([^\n\d\-\*#])/g, '$1\n\n$2')
+  fixed = fixed.replace(/(\n(?:\d+\.|-|\*)\s[^\n]+)\n([^\n\d\-*#])/g, '$1\n\n$2')
 
   // STEP 8: Add blank lines before blockquotes
   fixed = fixed.replace(/([^\n>])\n(>\s)/g, '$1\n\n$2')
@@ -117,31 +117,67 @@ function fixMarkdownSpacing(markdown: string): string {
   return fixed
 }
 
-// Icon mapping for headings
-const iconMap: Record<string, string> = {
-  question: '📋',
-  rationale: '🧠',
-  impression: '💡',
-  'clinical impression': '💡',
-  management: '⚕️',
-  'further management': '⚕️',
-  sources: '📚',
-  'knowledge base': '📚',
-  alert: '🚨',
-  'clinical overview': '🏥',
-  'differential diagnos': '🔍', // Matches "diagnoses" or "diagnosis"
-  'immediate workup': '🔬',
-  workup: '🔬',
-  'red flags': '🚩',
-  treatment: '💊',
-  medication: '💊',
-  history: '📊',
-  examination: '🔬',
-  investigation: '🔬',
-  assessment: '📋',
-  plan: '📝',
-  'follow-up': '📅',
-  prognosis: '📈',
+function splitReferenceSection(markdown: string):
+  | { body: string; separator: string; references: string }
+  | null {
+  const match = markdown.match(/\n{0,2}(?:#{1,6}\s*)?(?:\*\*)?References(?:\*\*)?\s*\n/i)
+  if (!match || match.index == null) return null
+
+  const body = markdown.slice(0, match.index)
+  const separator = match[0]
+  const references = markdown.slice(match.index + match[0].length)
+  return { body, separator, references }
+}
+
+function normalizeCitationUrl(url: string | undefined): string | null {
+  if (!url) return null
+  const cleaned = url.trim().replace(/[.,;]+$/, '')
+  if (!/^https?:\/\//i.test(cleaned)) return null
+  return cleaned
+}
+
+function referenceUrlMap(references: string): Map<string, string> {
+  const urls = new Map<string, string>()
+  const markdownReference =
+    /^\s*(?:[-*]\s*)?(\d+)\.\s+\[[^\]]+\]\((https?:\/\/[^)\s]+)\)/i
+  const plainReference = /^\s*(?:[-*]\s*)?(\d+)\.\s+.*?\b(https?:\/\/\S+)/i
+
+  references.split('\n').forEach((line) => {
+    const markdownMatch = line.match(markdownReference)
+    const plainMatch = markdownMatch ?? line.match(plainReference)
+    if (!plainMatch) return
+
+    const [, number, rawUrl] = plainMatch
+    const url = normalizeCitationUrl(rawUrl)
+    if (url) urls.set(number, url)
+  })
+
+  return urls
+}
+
+function linkPlainCitationMarkers(markdown: string): string {
+  const section = splitReferenceSection(markdown)
+  if (!section) return markdown
+
+  const urls = referenceUrlMap(section.references)
+  if (!urls.size) return markdown
+
+  const body = section.body.replace(
+    /(^|[^\[])\[(\d{1,2}(?:\s*,\s*\d{1,2})*)\](?![\]\(])/g,
+    (_match, prefix: string, rawNumbers: string) => {
+      const links = rawNumbers
+        .split(',')
+        .map((rawNumber) => {
+          const number = rawNumber.trim()
+          const url = urls.get(number)
+          return url ? `[${number}](${url})` : `[${number}]`
+        })
+        .join(' ')
+      return `${prefix}${links}`
+    },
+  )
+
+  return `${body}${section.separator}${section.references}`
 }
 
 // Section headings to convert from **BOLD** to ## Heading
@@ -178,35 +214,12 @@ const sectionHeadings = [
 const createRenderer = () => {
   const renderer = new marked.Renderer()
 
-  // Enhanced heading renderer with medical icons
+  // Clean heading renderer for evidence-answer sections
   renderer.heading = (text, level) => {
-    // Check if text already has an emoji at the start
-    const emojiRegex = /^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}]/u
-    const hasEmoji = emojiRegex.test(text.trim())
-
-    // If heading already has emoji, don't add another one
-    if (hasEmoji) {
-      const isAlert =
-        text.toLowerCase().includes('alert') || text.toLowerCase().includes('red flag')
-      const className = isAlert ? ' class="alert-heading"' : ''
-      return `<h${level}${className}>${text}</h${level}>`
-    }
-
-    // Otherwise, add icon based on content
-    let icon = ''
     const lowerText = text.toLowerCase()
-    for (const [key, value] of Object.entries(iconMap)) {
-      if (lowerText.includes(key)) {
-        icon = `${value} `
-        break
-      }
-    }
-
-    // Add appropriate styling for alert headings
     const isAlert = lowerText.includes('alert') || lowerText.includes('red flag')
     const className = isAlert ? ' class="alert-heading"' : ''
-
-    return `<h${level}${className}>${icon}${text}</h${level}>`
+    return `<h${level}${className}>${text}</h${level}>`
   }
 
   // Enhanced list renderer
@@ -255,24 +268,18 @@ const createRenderer = () => {
   renderer.blockquote = (quote) => {
     const lowerQuote = quote.toLowerCase()
     let className = 'blockquote'
-    let icon = '💬'
 
     if (lowerQuote.includes('note:') || lowerQuote.includes('📝')) {
       className += ' note'
-      icon = '📝'
     } else if (lowerQuote.includes('warning:') || lowerQuote.includes('⚠️')) {
       className += ' warning'
-      icon = '⚠️'
     } else if (lowerQuote.includes('tip:') || lowerQuote.includes('💡')) {
       className += ' tip'
-      icon = '💡'
     } else if (lowerQuote.includes('important:') || lowerQuote.includes('❗')) {
       className += ' important'
-      icon = '❗'
     }
 
     return `<blockquote class="${className}">
-      <div class="blockquote-icon">${icon}</div>
       <div class="blockquote-content">${quote}</div>
     </blockquote>`
   }
@@ -292,8 +299,11 @@ const createRenderer = () => {
     const isExternal = href?.startsWith('http://') || href?.startsWith('https://')
     const targetAttrs = isExternal ? ' target="_blank" rel="noopener noreferrer"' : ''
     const titleAttr = title ? ` title="${title}"` : ''
-    const icon = isExternal ? ' <i class="fas fa-external-link-alt"></i>' : ''
-    return `<a href="${href}"${targetAttrs}${titleAttr}>${text}${icon}</a>`
+    const linkText = String(text).trim()
+    const isCitation = /^\d+$/.test(linkText) || /^\[\d+\]$/.test(linkText)
+    const displayText = isCitation && /^\d+$/.test(linkText) ? `[${linkText}]` : text
+    const linkClass = isCitation ? ' class="inline-citation-link"' : ' class="evidence-link"'
+    return `<a href="${href}"${targetAttrs}${titleAttr}${linkClass}>${displayText}</a>`
   }
 
   return renderer
@@ -479,29 +489,10 @@ function renderMarkdownWithEnhancements(markdown: string): string {
   // Remove blank lines at the very start
   fixedMarkdown = fixedMarkdown.replace(/^\n+/, '')
 
-  // Pre-process fixed markdown for medical-specific enhancements
-  let processedMarkdown = fixedMarkdown
-
-  // Highlight percentages (e.g., "85%")
-  processedMarkdown = processedMarkdown.replace(
-    /(\d+(?:\.\d+)?%)/g,
-    '<span class="probability-badge">$1</span>',
-  )
-
-  // Highlight medical ranges (e.g., "120/80 mmHg")
-  processedMarkdown = processedMarkdown.replace(
-    /(\d+\/\d+\s*(?:mmHg|mg\/dL|g\/dL|mEq\/L))/g,
-    '<span class="medical-value">$1</span>',
-  )
-
-  // Highlight temperature (e.g., "38.5°C" or "101.3°F")
-  processedMarkdown = processedMarkdown.replace(
-    /(\d+(?:\.\d+)?°[CF])/g,
-    '<span class="medical-value">$1</span>',
-  )
+  fixedMarkdown = linkPlainCitationMarkers(fixedMarkdown)
 
   // Parse markdown to HTML
-  const html = marked.parse(processedMarkdown) as string
+  const html = marked.parse(fixedMarkdown) as string
 
   return html
 }

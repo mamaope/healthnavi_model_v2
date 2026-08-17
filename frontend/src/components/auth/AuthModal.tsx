@@ -155,7 +155,7 @@ export function AuthModal({ isOpen, mode, onClose, onSwitchMode, onForgotPasswor
         <div className="modal-body auth-modal-body">
           <p className="auth-modal-subtitle">
             {mode === 'login'
-              ? 'Welcome back. Continue your clinical workflow securely.'
+              ? 'Welcome back. Continue exploring medical evidence securely.'
               : 'Create your account to start using Empirico on any device.'}
           </p>
           <form onSubmit={onSubmit} className="auth-form">
@@ -392,4 +392,3 @@ export function AuthModal({ isOpen, mode, onClose, onSwitchMode, onForgotPasswor
     </div>
   )
 }
-

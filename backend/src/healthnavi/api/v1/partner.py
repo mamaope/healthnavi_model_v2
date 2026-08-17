@@ -1,5 +1,5 @@
 """
-Partner-facing diagnosis endpoint with scoped bearer auth.
+Partner-facing Empirico endpoint with scoped bearer auth.
 
 This keeps existing public/mobile/web APIs untouched while adding a
 partner-only surface that requires a short-lived, scope-bearing token.
@@ -78,7 +78,7 @@ async def partner_diagnose(
     db: Session = Depends(get_db),
 ):
     """
-    Partner-facing diagnosis endpoint.
+    Partner-facing medical information endpoint.
 
     Differences vs public/mobile/web:
     - Requires partner bearer token with scope `diagnosis:read`.
@@ -121,9 +121,9 @@ async def partner_diagnose(
                 )
 
             updated_chat_history = (
-                f"{chat_history}\nDoctor: {data.patient_data}\nAI Assistant: {response}"
+                f"{chat_history}\nUser: {data.patient_data}\nEmpirico: {response}"
                 if chat_history
-                else f"Doctor: {data.patient_data}\nAI Assistant: {response}"
+                else f"User: {data.patient_data}\nEmpirico: {response}"
             )
 
             diagnosis_data = DiagnosisResponse(
@@ -152,6 +152,5 @@ async def partner_diagnose(
                 status_code=500,
                 execution_time=timer.get_execution_time(),
             )
-
 
 

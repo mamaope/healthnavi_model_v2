@@ -152,7 +152,7 @@ export function Sidebar({
   const getSessionTitle = (session: ChatSession) => {
     // Backend updates session_name with first user message automatically
     // Filter out generic/system-generated names
-    const genericPrefixes = ['Diagnosis Session', 'Session', 'Streaming Session', 'New Session']
+    const genericPrefixes = ['Diagnosis Session', 'Empirico Session', 'Session', 'Streaming Session', 'New Session']
     const isGenericName = !session.session_name || 
       genericPrefixes.some(prefix => session.session_name.startsWith(prefix))
     
@@ -230,7 +230,7 @@ export function Sidebar({
                     <i className="fas fa-comments" />
                   </div>
                   <p className="empty-state-title">No conversations yet</p>
-                  <p className="empty-state-description">Start a new chat to begin your clinical consultation</p>
+                  <p className="empty-state-description">Start a new chat to explore medical evidence</p>
                 </div>
               )}
               {!isLoading &&

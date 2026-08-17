@@ -1,5 +1,5 @@
 """
-Diagnosis Session Service for Empirico AI CDSS.
+Diagnosis Session Service for Empirico.
 
 This module provides services for managing diagnosis sessions and chat messages.
 """
@@ -280,7 +280,7 @@ class DiagnosisSessionService:
                     ChatMessage.session_id == session.id
                 ).scalar() or 0
                 
-                generic_prefixes = ['Diagnosis Session', 'Streaming Session', 'Session', 'New Session']
+                generic_prefixes = ['Diagnosis Session', 'Empirico Session', 'Streaming Session', 'Session', 'New Session']
                 is_generic_name = session.session_name and any(
                     session.session_name.startswith(prefix) for prefix in generic_prefixes
                 )
@@ -350,9 +350,9 @@ class DiagnosisSessionService:
             chat_history_parts = []
             for msg in messages:
                 if msg.message_type == "user":
-                    chat_history_parts.append(f"Doctor: {msg.content}")
+                    chat_history_parts.append(f"User: {msg.content}")
                 elif msg.message_type == "assistant":
-                    chat_history_parts.append(f"AI Assistant: {msg.content}")
+                    chat_history_parts.append(f"Empirico: {msg.content}")
                 # Skip system messages in chat history
             
             return "\n".join(chat_history_parts)

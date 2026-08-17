@@ -1,5 +1,5 @@
 """
-Security utilities for HealthNavi AI CDSS.
+Security utilities for Empirico.
 
 This module provides secure authentication, encryption, and data protection
 utilities following medical software security standards (HIPAA/GDPR/ISO 13485).

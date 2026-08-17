@@ -1,8 +1,8 @@
 """
-Configuration management for Empirico AI CDSS.
+Configuration management for Empirico.
 
-This module provides secure configuration management following medical software
-standards with proper environment variable handling and validation.
+This module provides secure configuration management with proper environment
+variable handling and validation.
 """
 
 import os
@@ -99,9 +99,9 @@ class ApplicationConfig(BaseSettings):
     """Main application configuration."""
     
     # Application settings
-    app_name: str = Field(default="Empirico AI CDSS", env="APP_NAME")
+    app_name: str = Field(default="Empirico Medical Information Service", env="APP_NAME")
     app_version: str = Field(default="2.0.0", env="APP_VERSION")
-    app_description: str = Field(default="AI Clinical Decision Support System", env="APP_DESCRIPTION")
+    app_description: str = Field(default="Evidence-backed medical information service", env="APP_DESCRIPTION")
     environment: str = Field(default="development", env="ENV")
     debug: bool = Field(default=False, env="DEBUG")
     
@@ -114,6 +114,17 @@ class ApplicationConfig(BaseSettings):
     max_patient_data_length: int = Field(default=10000, env="MAX_PATIENT_DATA_LENGTH")
     max_chat_history_length: int = Field(default=50000, env="MAX_CHAT_HISTORY_LENGTH")
     max_query_length: int = Field(default=2000, env="MAX_QUERY_LENGTH")
+
+    @field_validator('debug', mode='before')
+    def normalize_debug(cls, v):
+        """Accept common deployment-mode strings for DEBUG."""
+        if isinstance(v, str):
+            value = v.strip().lower()
+            if value in {'release', 'production', 'prod', 'false', '0', 'no', 'off'}:
+                return False
+            if value in {'development', 'dev', 'debug', 'true', '1', 'yes', 'on'}:
+                return True
+        return v
     
     @field_validator('environment')
     def validate_environment(cls, v):

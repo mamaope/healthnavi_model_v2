@@ -188,7 +188,7 @@
   padding: 0.25rem 0.75rem;
 }
 /* Empirico AI - Modern Design System v2.1 */
-/* Professional Clinical Decision Support Interface */
+/* Professional Medical Information Interface */
 /* 
  * DESIGN PHILOSOPHY:
  * - Medical-grade professionalism with approachable warmth
@@ -4328,12 +4328,12 @@ body,
 .ai-message .message-content a {
     color: var(--primary-color);
     text-decoration: none;
-    border-bottom: 1px solid transparent;
+    border-bottom: none;
     transition: all var(--transition-fast);
 }
 
 .ai-message .message-content a:hover {
-    border-bottom-color: var(--primary-color);
+    border-bottom: none;
     text-decoration: none;
 }
 
@@ -4650,6 +4650,7 @@ body,
 .ai-message .message-content a {
     color: var(--primary) !important;
     text-decoration: underline;
+    border-bottom: none !important;
     transition: color var(--transition-fast);
 }
 
@@ -11566,5 +11567,103 @@ textarea {
     .chat-textarea-input,
     .chat-input-box textarea {
         line-height: 1.45;
+    }
+}
+
+/* Empirico evidence answer presentation */
+.ai-message .message-content {
+    border-radius: 8px !important;
+    box-shadow: none !important;
+    padding: 24px 28px var(--space-5) !important;
+    line-height: 1.72 !important;
+    letter-spacing: 0 !important;
+    text-align: left !important;
+    text-justify: auto !important;
+    word-spacing: normal !important;
+    hyphens: none !important;
+    -webkit-hyphens: none !important;
+    -ms-hyphens: none !important;
+}
+
+.ai-message .message-content p {
+    font-size: 15px !important;
+    line-height: 1.76 !important;
+    margin: 0 0 1rem !important;
+    text-align: left !important;
+    text-align-last: left !important;
+    text-justify: auto !important;
+    word-spacing: normal !important;
+    hyphens: none !important;
+    -webkit-hyphens: none !important;
+    -ms-hyphens: none !important;
+}
+
+.ai-message .message-content h2,
+.ai-message .message-content h3 {
+    border-bottom: 1px solid var(--border-light) !important;
+    color: var(--text-primary) !important;
+    font-size: 1.05rem !important;
+    line-height: 1.35 !important;
+    margin: 1.6rem 0 0.75rem !important;
+    padding-bottom: 0.45rem !important;
+}
+
+.ai-message .message-content h2:first-child,
+.ai-message .message-content h3:first-child {
+    margin-top: 0 !important;
+}
+
+.ai-message .message-content ol {
+    padding-left: 1.75rem !important;
+    text-align: left !important;
+}
+
+.ai-message .message-content li {
+    line-height: 1.65 !important;
+    margin-bottom: 0.8rem !important;
+    padding-left: 0.2rem !important;
+    overflow-wrap: break-word;
+    text-align: left !important;
+    word-spacing: normal !important;
+}
+
+.ai-message .message-content a,
+.ai-message .message-content a:visited,
+.ai-message .message-content li a {
+    color: var(--primary) !important;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    text-decoration-color: currentColor !important;
+}
+
+.ai-message .message-content a:hover {
+    color: var(--primary-700) !important;
+}
+
+.ai-message .message-content .inline-citation-link {
+    color: var(--primary) !important;
+    font-weight: 600;
+    white-space: nowrap;
+    text-decoration: underline;
+}
+
+.ai-message .message-content .evidence-link {
+    color: var(--primary) !important;
+}
+
+.ai-message .message-content li,
+.ai-message .message-content li * {
+    word-break: normal;
+    word-spacing: normal !important;
+}
+
+@media (max-width: 768px) {
+    .ai-message .message-content {
+        padding: 18px 16px var(--space-5) !important;
+    }
+
+    .ai-message .message-content p {
+        font-size: 14px !important;
     }
 }

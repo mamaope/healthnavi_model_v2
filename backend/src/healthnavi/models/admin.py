@@ -1,5 +1,5 @@
 """
-Admin-related models for Empirico AI CDSS.
+Admin-related models for Empirico.
 Includes safety events, surveys, audit logs, and alerts.
 """
 

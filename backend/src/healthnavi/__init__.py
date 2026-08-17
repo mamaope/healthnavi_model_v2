@@ -1,7 +1,7 @@
 """
-HealthNavi AI CDSS - Clinical Decision Support System
+Empirico - Medical Information Service
 
-A FastAPI-based application for AI-powered clinical diagnosis and decision support.
+A FastAPI-based application for evidence-backed medical information.
 """
 
 __version__ = "2.0.0"

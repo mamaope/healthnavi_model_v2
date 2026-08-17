@@ -323,7 +323,7 @@ const MessageListComponent = function MessageList({ messages, showWelcomeMessage
           <div className="welcome-content">
             <h3>Welcome</h3>
             <p>
-              How can I assist you today? Ask clinical questions, review treatment options, or explore guidelines.
+              Ask a medical question, review treatment options, or explore evidence and guidelines.
             </p>
           </div>
         </div>

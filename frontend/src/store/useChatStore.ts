@@ -193,11 +193,10 @@ export function formatChatHistory(messages: ChatMessage[]): string {
     }
 
     if (message.author === 'assistant' && lastUserMessage) {
-      pairs.push(`Doctor: ${lastUserMessage}\nModel: ${message.content}`)
+      pairs.push(`User: ${lastUserMessage}\nEmpirico: ${message.content}`)
       lastUserMessage = null
     }
   })
 
   return pairs.join('\n\n')
 }
-

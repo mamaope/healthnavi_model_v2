@@ -1,3 +1,3 @@
 """
-API package for HealthNavi CDSS.
+API package for Empirico.
 """

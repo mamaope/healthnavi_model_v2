@@ -1,5 +1,5 @@
 """
-Admin Service for Empirico AI CDSS.
+Admin Service for Empirico.
 Provides metrics, analytics, and admin functionality.
 """
 

@@ -1,8 +1,5 @@
--- HealthNavi AI CDSS - Database Initialization Script
--- This script creates the initial database structure and sets up security
-
--- Create database if it doesn't exist (this will be handled by POSTGRES_DB)
--- CREATE DATABASE IF NOT EXISTS healthnavi_cdss;
+-- Empirico database initialization.
+-- The database itself is created by the official Postgres image from POSTGRES_DB.
 
 -- Create extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -18,22 +15,29 @@ END
 $$;
 
 -- Grant privileges to the application user
-GRANT ALL PRIVILEGES ON DATABASE healthnavi_cdss TO healthnavi_user;
+DO $$
+BEGIN
+    EXECUTE format('GRANT ALL PRIVILEGES ON DATABASE %I TO healthnavi_user', current_database());
+END
+$$;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO healthnavi_user;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO healthnavi_user;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO healthnavi_user;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO healthnavi_user;
 
 -- Set up security
-ALTER DATABASE healthnavi_cdss SET log_statement = 'all';
-ALTER DATABASE healthnavi_cdss SET log_min_duration_statement = 1000;
+DO $$
+BEGIN
+    EXECUTE format('ALTER DATABASE %I SET log_min_duration_statement = 1000', current_database());
+END
+$$;
 
 -- Create a read-only user for monitoring
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'healthnavi_monitor') THEN
         CREATE ROLE healthnavi_monitor WITH LOGIN PASSWORD 'monitor_password_change_me';
-        GRANT CONNECT ON DATABASE healthnavi_cdss TO healthnavi_monitor;
+        EXECUTE format('GRANT CONNECT ON DATABASE %I TO healthnavi_monitor', current_database());
         GRANT USAGE ON SCHEMA public TO healthnavi_monitor;
         GRANT SELECT ON ALL TABLES IN SCHEMA public TO healthnavi_monitor;
         ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO healthnavi_monitor;
@@ -63,5 +67,5 @@ $$;
 -- CREATE INDEX IF NOT EXISTS idx_security_resolved ON security_events(resolved);
 -- CREATE INDEX IF NOT EXISTS idx_security_created_at ON security_events(created_at);
 
--- Log successful initialization
-INSERT INTO pg_stat_statements_info (dealloc) VALUES (0) ON CONFLICT DO NOTHING;
+-- No pg_stat_statements setup here; local Postgres images do not load that
+-- extension by default, and referencing it aborts fresh container initialization.

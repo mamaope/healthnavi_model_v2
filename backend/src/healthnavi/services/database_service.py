@@ -1,5 +1,5 @@
 """
-Database service for HealthNavi AI CDSS.
+Database service for Empirico.
 """
 
 from sqlalchemy.orm import Session

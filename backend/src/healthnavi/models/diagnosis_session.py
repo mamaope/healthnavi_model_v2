@@ -1,5 +1,5 @@
 """
-Diagnosis Session and Chat Message models for Empirico AI CDSS.
+Diagnosis Session and Chat Message models for Empirico.
 """
 
 from datetime import datetime

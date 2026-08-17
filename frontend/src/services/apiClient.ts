@@ -1,4 +1,4 @@
-import { API_URL, STORAGE_KEYS } from '../config'
+import { API_URL, REQUEST_TIMEOUTS, STORAGE_KEYS } from '../config'
 import type {
   AuthSuccessResponse,
   ApiErrorResponse,
@@ -61,7 +61,7 @@ async function parseJson<T>(response: Response): Promise<T> {
 export function extractApiErrorMessage(payload: ApiErrorResponse, statusCode?: number): string {
   // Handle specific HTTP status codes with user-friendly messages
   if (statusCode === 504) {
-    return 'Request timed out. The diagnosis is taking longer than expected. This may happen during peak times. Please try again in a moment.'
+    return 'Request timed out. The evidence answer is taking longer than expected. Please try again in a moment.'
   }
   
   if (statusCode === 503) {
@@ -140,9 +140,11 @@ async function apiFetch<TResponse>(
     headers = buildHeaders(token, options.skipAuthHeader)
   }
 
-  // Create AbortController with reasonable timeout for diagnosis endpoint
+  // Create AbortController with enough room for evidence retrieval and model generation.
   const isDiagnosisEndpoint = path.includes('/diagnosis/diagnose')
-  const timeoutDuration = isDiagnosisEndpoint ? 90000 : 60000 // 90s for diagnosis, 60s for others
+  const timeoutDuration = isDiagnosisEndpoint
+    ? REQUEST_TIMEOUTS.diagnosisMs
+    : REQUEST_TIMEOUTS.defaultMs
   const timeoutController = new AbortController()
   const timeoutId = setTimeout(() => timeoutController.abort(), timeoutDuration)
   
@@ -172,7 +174,7 @@ async function apiFetch<TResponse>(
     if (error.name === 'AbortError' && timeoutController.signal.aborted) {
       throw new Error(
         isDiagnosisEndpoint
-          ? 'Request timed out after 90 seconds. The diagnosis is taking longer than expected. Please try again with a simpler query or contact support if the issue persists.'
+          ? 'I couldn’t complete this answer right now. Please try again.'
           : 'Request timed out. Please try again.'
       )
     }
@@ -407,7 +409,7 @@ export const chatApi = {
   },
 
   /**
-   * Stream diagnosis response in real-time.
+   * Stream the evidence answer in real time.
    * Returns an AsyncGenerator that yields text chunks as they are generated.
    */
   async *diagnoseStream(payload: {
@@ -437,9 +439,9 @@ export const chatApi = {
       headers['Authorization'] = `Bearer ${token}`
     }
 
-    // Create timeout controller (2 minutes for streaming)
+    // Create timeout controller with enough room for evidence retrieval.
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 120000)
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUTS.diagnosisStreamMs)
 
     let returnedSessionId: string | null = null
 
@@ -949,4 +951,3 @@ export const transcriptionApi = {
     })
   },
 }
-

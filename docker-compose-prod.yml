@@ -3,6 +3,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        INSTALL_TRANSCRIPTION: ${INSTALL_TRANSCRIPTION:-false}
     container_name: empirico_cdss_api
     ports:
       - "8050:8050"
@@ -11,13 +13,25 @@ services:
     volumes:
       - ./backend:/backend
       - ./logs:/backend/logs
-      - ./regal-autonomy-454806-d1-edf68610c57a.json:/backend/regal-autonomy-454806-d1-edf68610c57a.json
     environment:
-      - EVIDENCE_RETRIEVAL_TEST_MODE=true
-      - MODEL_SERVICE_BASE_URL=${MODEL_SERVICE_BASE_URL:-https://model.empirico.ai}
+      - MODEL_SERVICE_BASE_URL=${MODEL_SERVICE_BASE_URL:-https://empirico-model-service-e2dgjxq3uq-ew.a.run.app}
       - MODEL_SERVICE_API_KEY=${MODEL_SERVICE_API_KEY:-}
-      - MODEL_SERVICE_TIMEOUT_SECONDS=${MODEL_SERVICE_TIMEOUT_SECONDS:-180}
-      - GOOGLE_APPLICATION_CREDENTIALS=/backend/regal-autonomy-454806-d1-edf68610c57a.json
+      - MODEL_SERVICE_TIMEOUT_SECONDS=${MODEL_SERVICE_TIMEOUT_SECONDS:-90}
+      - EMPIRICO_QUICK_MODEL_TIMEOUT_SECONDS=${EMPIRICO_QUICK_MODEL_TIMEOUT_SECONDS:-45}
+      - EMPIRICO_DEEP_MODEL_TIMEOUT_SECONDS=${EMPIRICO_DEEP_MODEL_TIMEOUT_SECONDS:-120}
+      - EMPIRICO_QUICK_MODEL_NAME=${EMPIRICO_QUICK_MODEL_NAME:-gemini-2.5-flash}
+      - EMPIRICO_QUICK_MAX_OUTPUT_TOKENS=${EMPIRICO_QUICK_MAX_OUTPUT_TOKENS:-900}
+      - EMPIRICO_EVIDENCE_COUNTRY_CODE=${EMPIRICO_EVIDENCE_COUNTRY_CODE:-}
+      - EMPIRICO_SOURCE_PREFERENCE_HINTS=${EMPIRICO_SOURCE_PREFERENCE_HINTS:-Uganda Ministry of Health Uganda Clinical Guidelines health.go.ug library.health.go.ug CPHL IDI Uganda WHO AFRO East Africa Africa}
+      - EMPIRICO_SOURCE_PREFERENCE_TERMS=${EMPIRICO_SOURCE_PREFERENCE_TERMS:-uganda,ugandan,health.go.ug,library.health.go.ug,cphl.go.ug,idi.mak.ac.ug,elearning.idi.co.ug,uganda clinical guidelines,ministry of health uganda,who afro,afro.who.int,east africa,africa}
+      - EMPIRICO_EVIDENCE_PROVIDER_MODE=${EMPIRICO_EVIDENCE_PROVIDER_MODE:-web}
+      - EMPIRICO_QUICK_EVIDENCE_PROVIDER_MODE=${EMPIRICO_QUICK_EVIDENCE_PROVIDER_MODE:-crawl}
+      - EMPIRICO_DEEP_EVIDENCE_PROVIDER_MODE=${EMPIRICO_DEEP_EVIDENCE_PROVIDER_MODE:-web}
+      - EMPIRICO_QUICK_ENABLE_RETRIEVAL_PLANNER=${EMPIRICO_QUICK_ENABLE_RETRIEVAL_PLANNER:-false}
+      - EMPIRICO_DEEP_ENABLE_RETRIEVAL_PLANNER=${EMPIRICO_DEEP_ENABLE_RETRIEVAL_PLANNER:-true}
+      - EMPIRICO_QUICK_ENABLE_SEMANTIC_EVIDENCE_SELECTION=${EMPIRICO_QUICK_ENABLE_SEMANTIC_EVIDENCE_SELECTION:-false}
+      - EMPIRICO_DEEP_ENABLE_SEMANTIC_EVIDENCE_SELECTION=${EMPIRICO_DEEP_ENABLE_SEMANTIC_EVIDENCE_SELECTION:-false}
+      - EMPIRICO_FOLLOWUP_MODE=${EMPIRICO_FOLLOWUP_MODE:-local}
     command: sh -c "python3 /backend/scripts/fix_line_endings.py /backend/scripts/startup_prod.sh && chmod +x /backend/scripts/startup_prod.sh && bash /backend/scripts/startup_prod.sh"
     restart: unless-stopped
     depends_on:

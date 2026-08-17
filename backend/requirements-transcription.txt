@@ -1,0 +1,6 @@
+# Optional voice transcription dependencies.
+# Keep these out of the default Docker build because Torch/Whisper are large.
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+openai-whisper>=20231117
+torch>=2.0.0,<3.0.0
