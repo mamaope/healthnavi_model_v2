@@ -219,11 +219,14 @@ def _is_relevant_for_diversity(query: str, item: EvidenceItem) -> bool:
 def _is_relevant_result(query: str, item: EvidenceItem) -> bool:
     score = item.final_score or 0.0
     relevance = item.relevance_score or 0.0
-    if not _contains_core_query_term(_query_for_item(query, item), item):
-        return False
+    has_query_overlap = _contains_core_query_term(_query_for_item(query, item), item)
     if _source_key(item) == "crawl4ai" and item.evidence_type in {"guideline", "clinical_resource"}:
-        return score >= 0.08 and relevance >= 0.06
-    return score >= 0.14 and relevance >= 0.06
+        if has_query_overlap:
+            return score >= 0.08 and relevance >= 0.06
+        return score >= 0.24
+    if has_query_overlap:
+        return score >= 0.14 and relevance >= 0.06
+    return score >= 0.22
 
 
 def _contains_core_query_term(query: str, item: EvidenceItem) -> bool:

@@ -128,10 +128,13 @@ def _chunk_text(text: str, chunk_size: int = STREAM_CHUNK_SIZE) -> list[str]:
     remaining = text
     while len(remaining) > chunk_size:
         split_at = remaining.rfind(" ", 0, chunk_size)
-        if split_at < chunk_size // 2:
+        if split_at >= chunk_size // 2:
+            chunks.append(remaining[: split_at + 1])
+            remaining = remaining[split_at + 1 :]
+        else:
             split_at = chunk_size
-        chunks.append(remaining[:split_at])
-        remaining = remaining[split_at:].lstrip()
+            chunks.append(remaining[:split_at])
+            remaining = remaining[split_at:]
 
     if remaining:
         chunks.append(remaining)

@@ -1,12 +1,28 @@
 from __future__ import annotations
 
+import json
+import logging
+import os
+from functools import lru_cache
+from pathlib import Path
 from urllib.parse import urlparse
 
+logger = logging.getLogger(__name__)
 
-PRIMARY_CLINICAL_SOURCE_DOMAINS = {
+
+UGANDA_PRIMARY_SOURCE_DOMAINS = {
     "health.go.ug",
     "library.health.go.ug",
+    "nda.or.ug",
+    "uniph.go.ug",
     "cphl.go.ug",
+    "qadash.cphl.go.ug",
+    "uci.or.ug",
+    "ulii.org",
+}
+
+PRIMARY_CLINICAL_SOURCE_DOMAINS = {
+    *UGANDA_PRIMARY_SOURCE_DOMAINS,
     "afro.who.int",
     "africacdc.org",
     "repository.eac.int",
@@ -83,9 +99,43 @@ def source_trust_tier(source: str, url: str, text: str = "") -> int:
         return 1
     if source in {"pubmed", "europe_pmc"} or _matches_domain(host, ACADEMIC_DATABASE_DOMAINS):
         return 3
+    if _matches_domain(host, UGANDA_PRIMARY_SOURCE_DOMAINS):
+        return 0
     if _matches_domain(host, PRIMARY_CLINICAL_SOURCE_DOMAINS):
         return 1
+    if _matches_domain(host, crawl_catalog_domains()):
+        # Every domain in the crawl source catalog was curated with a named
+        # publisher, so it is at worst a primary clinical source. Without this
+        # the two domain lists drift and a curated ministry site can rank below
+        # an article database.
+        return 1
     return 9
+
+
+@lru_cache(maxsize=1)
+def crawl_catalog_domains() -> frozenset[str]:
+    """Domains of the curated crawl source catalog, empty if it cannot be read."""
+    configured = os.getenv("CRAWL_SOURCE_CATALOG_PATH") or ""
+    path = (
+        Path(configured)
+        if configured.strip()
+        else Path(__file__).resolve().parents[1] / "providers" / "crawl_sources.json"
+    )
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Crawl source catalog unavailable for source trust ranking: %s", exc)
+        return frozenset()
+
+    entries = raw.get("sources", []) if isinstance(raw, dict) else raw
+    domains = {
+        str(domain).strip().lower().removeprefix("www.")
+        for entry in entries
+        if isinstance(entry, dict)
+        for domain in entry.get("domains") or []
+        if str(domain).strip()
+    }
+    return frozenset(domains)
 
 
 def evidence_type_tier(evidence_type: str | None) -> int:

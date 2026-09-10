@@ -1,16 +1,36 @@
 [
   {
+    "name": "Uganda Ministry of Health Knowledge Management Portal",
+    "publisher": "Ministry of Health Uganda",
+    "domains": ["library.health.go.ug"],
+    "topics": ["uganda", "ministry of health", "knowledge management portal", "clinical guidelines", "uganda clinical guidelines", "standard treatment", "all diseases", "primary care", "hospital care", "essential medicines", "maternal health", "child health", "nutrition", "tb", "hiv", "hepatitis", "malaria", "noncommunicable disease", "infection prevention and control", "policy", "guideline", "protocol"],
+    "priority": 1.0,
+    "seed_urls": [
+      "https://library.health.go.ug/",
+      "https://library.health.go.ug/index.php/uganda-clinical-guidelines-2023",
+      "https://library.health.go.ug/publications-search?filter=clinical%20guidelines",
+      "https://library.health.go.ug/publications-search?filter=standard%20treatment",
+      "https://library.health.go.ug/publications-search?filter=essential%20medicines"
+    ],
+    "search_urls": [
+      "https://library.health.go.ug/publications-search?filter={query}",
+      "https://library.health.go.ug/index.php/search/node/{query}"
+    ]
+  },
+  {
     "name": "Uganda Clinical Guidelines",
     "publisher": "Ministry of Health Uganda",
-    "domains": ["differentiatedservicedelivery.org", "iris.who.int", "who.int"],
+    "domains": ["library.health.go.ug", "differentiatedservicedelivery.org", "iris.who.int", "who.int"],
     "topics": ["uganda", "clinical guidelines", "standard treatment", "all diseases", "primary care", "hospital care", "medicine", "surgery", "paediatrics", "maternal health", "child health", "emergency care", "infectious disease", "noncommunicable disease"],
     "priority": 1.0,
     "seed_urls": [
+      "https://library.health.go.ug/index.php/uganda-clinical-guidelines-2023",
       "https://www.differentiatedservicedelivery.org/wp-content/uploads/UCG-2023-Publication-Final-PDF-Version-1.pdf",
       "https://iris.who.int/discover?query=Uganda%20clinical%20guidelines",
       "https://www.who.int/search?query=Uganda%20clinical%20guidelines"
     ],
     "search_urls": [
+      "https://library.health.go.ug/publications-search?filter={query}",
       "https://iris.who.int/discover?query={query}",
       "https://www.who.int/search?query={query}"
     ]
@@ -63,16 +83,76 @@
     ]
   },
   {
+    "name": "Uganda National Drug Authority",
+    "publisher": "National Drug Authority Uganda",
+    "domains": ["nda.or.ug"],
+    "topics": ["uganda", "national drug authority", "drug register", "approved medicines", "prescribing", "smPC", "summary of product characteristics", "patient information leaflet", "pharmacovigilance", "drug safety", "recall", "safety label", "licensed products", "medicine regulation"],
+    "priority": 0.98,
+    "seed_urls": [
+      "https://www.nda.or.ug/",
+      "https://www.nda.or.ug/directorate-of-product-assessment-registration/",
+      "https://www.nda.or.ug/approved-medicines-product-information/",
+      "https://www.nda.or.ug/directorate-of-product-safety/"
+    ],
+    "search_urls": [
+      "https://www.nda.or.ug/?s={query}"
+    ]
+  },
+  {
+    "name": "Uganda National Institute of Public Health",
+    "publisher": "Uganda National Institute of Public Health",
+    "domains": ["uniph.go.ug"],
+    "topics": ["uganda", "public health", "surveillance", "outbreak", "epidemiology", "public health bulletin", "cholera", "measles", "mpox", "anthrax", "ebola", "disease trends", "investigation"],
+    "priority": 0.9,
+    "seed_urls": [
+      "https://uniph.go.ug/"
+    ],
+    "search_urls": [
+      "https://uniph.go.ug/?s={query}"
+    ]
+  },
+  {
     "name": "Uganda Central Public Health Laboratories",
     "publisher": "Ministry of Health Uganda",
-    "domains": ["cphl.go.ug"],
-    "topics": ["uganda", "laboratory", "diagnosis", "hiv", "tb", "malaria", "viral load", "guideline", "policy"],
-    "priority": 0.84,
+    "domains": ["cphl.go.ug", "qadash.cphl.go.ug"],
+    "topics": ["uganda", "national health laboratory and diagnostic services", "central public health laboratories", "laboratory", "diagnosis", "diagnostic algorithm", "specimen", "reference testing", "quality assurance", "accreditation", "test scope", "amr", "hiv", "tb", "malaria", "viral load", "guideline", "policy"],
+    "priority": 0.88,
     "seed_urls": [
-      "https://cphl.go.ug/web/"
+      "https://www.cphl.go.ug/",
+      "https://www.cphl.go.ug/about",
+      "https://cphl.go.ug/web/",
+      "https://qadash.cphl.go.ug/home/index?tab=accredited"
     ],
     "search_urls": [
       "https://cphl.go.ug/web/?s={query}"
+    ]
+  },
+  {
+    "name": "Uganda Cancer Institute",
+    "publisher": "Uganda Cancer Institute",
+    "domains": ["uci.or.ug"],
+    "topics": ["uganda", "cancer", "oncology", "national cancer control plan", "screening", "diagnosis", "treatment", "palliative care", "radiotherapy", "chemotherapy", "guideline", "policy"],
+    "priority": 0.86,
+    "seed_urls": [
+      "https://uci.or.ug/",
+      "https://uci.or.ug/download/uganda-national-cancer-control-plan/"
+    ],
+    "search_urls": [
+      "https://uci.or.ug/?s={query}"
+    ]
+  },
+  {
+    "name": "Uganda Legal Information Institute",
+    "publisher": "Uganda Legal Information Institute",
+    "domains": ["ulii.org"],
+    "topics": ["uganda", "health law", "medical law", "regulation", "controlled medicines", "public health law", "national drug policy", "national drug authority act", "prescribing restrictions", "legislation"],
+    "priority": 0.74,
+    "seed_urls": [
+      "https://ulii.org/",
+      "https://ulii.org/en/akn/ug/act/statute/1993/13/eng@2023-12-31"
+    ],
+    "search_urls": [
+      "https://ulii.org/search?search={query}"
     ]
   },
   {
@@ -364,6 +444,20 @@
     ],
     "search_urls": [
       "https://pmc.ncbi.nlm.nih.gov/?term={query}"
+    ]
+  },
+  {
+    "name": "UNICEF Uganda Health and Nutrition Resources",
+    "publisher": "UNICEF Uganda",
+    "domains": ["unicef.org"],
+    "topics": ["uganda", "unicef uganda", "ministry of health uganda", "paediatrics", "pediatrics", "child health", "nutrition", "maternal health", "newborn health", "infant feeding", "adolescent nutrition", "malnutrition", "wasting", "guideline", "report"],
+    "priority": 0.84,
+    "seed_urls": [
+      "https://www.unicef.org/uganda/",
+      "https://www.unicef.org/uganda/reports/guidelines-maternal-infant-young-child-and-adolescent-nutrition-miycan"
+    ],
+    "search_urls": [
+      "https://www.unicef.org/uganda/search?query={query}"
     ]
   },
   {

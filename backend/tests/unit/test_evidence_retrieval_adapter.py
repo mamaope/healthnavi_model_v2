@@ -1,5 +1,11 @@
 import asyncio
+import json
+import os
+import re
+import threading
 import time
+
+import pytest
 
 from healthnavi.evidence_retrieval.config import EvidenceRetrievalSettings, get_settings
 from healthnavi.evidence_retrieval.models import EvidenceItem, EvidenceSource
@@ -7,15 +13,23 @@ from healthnavi.evidence_retrieval.providers import crawl4ai_provider as crawl_p
 from healthnavi.evidence_retrieval.providers.crawl4ai_provider import (
     Crawl4AIProvider,
     CrawlSource,
+    _best_static_item_for_query,
     _best_snippet,
+    _content_matches_core_query,
+    _pdf_text_cache_path,
+    _read_pdf_text_cache,
     _read_static_cache,
+    load_crawl_sources,
     _source_selection_terms,
     _write_static_cache,
 )
 from healthnavi.evidence_retrieval.providers.official_health_api_provider import (
     _query_tokens as _official_health_api_query_tokens,
 )
-from healthnavi.evidence_retrieval.services.evidence_ranker import rank_evidence_items
+from healthnavi.evidence_retrieval.services.evidence_ranker import (
+    deduplicate_items,
+    rank_evidence_items,
+)
 from healthnavi.evidence_retrieval.services.query_builder import (
     build_provider_query,
     build_query_plan,
@@ -25,28 +39,76 @@ from healthnavi.evidence_retrieval.services.evidence_policy import (
 )
 from healthnavi.evidence_retrieval.services.evidence_search_service import EvidenceSearchService
 from healthnavi.services.evidence_retrieval_adapter import (
+    AnswerGenerationError,
     _active_source_preference_terms,
     _answer_looks_like_service_status,
     _answer_top_k,
-    _citations_for_answer,
     _citations_from_evidence,
-    _ensure_reference_urls,
+    _country_code_for_retrieval_query,
+    _evidence_request_plan_for_request,
     _evidence_country_code_for_search,
-    _evidence_context_for_prompt,
+    _evidence_search_top_k,
     _filter_evidence_items,
-    _include_global_evidence_when_helpful,
     _local_followup_questions,
     _local_evidence_provider_mode,
+    _max_output_tokens_for_mode,
+    _merge_evidence_items,
     _model_timeout_for_mode,
     _normalize_model_service_response,
+    _query_focused_snippet,
+    _rescue_evidence_search,
     _retrieval_planner_enabled,
     _retrieval_queries_for_request,
-    _sanitize_answer_style,
     _search_settings_for_mode,
-    _select_answer_evidence,
+    _search_retrieval_queries,
     _source_preference_terms,
+    _unique_evidence_passages,
     generate_model_service_response,
 )
+
+
+def _catalog_source_text(source: CrawlSource) -> str:
+    return " ".join(
+        (
+            source.name,
+            source.publisher,
+            " ".join(source.domains),
+            " ".join(source.topics),
+            " ".join(source.seed_urls),
+            " ".join(source.search_urls),
+        )
+    ).lower()
+
+
+def _catalog_source_is_uganda(source: CrawlSource) -> bool:
+    text = _catalog_source_text(source)
+    return (
+        "uganda" in text
+        or "health.go.ug" in text
+        or "library.health.go.ug" in text
+        or "nda.or.ug" in text
+        or "uniph.go.ug" in text
+        or "cphl.go.ug" in text
+        or "qadash.cphl.go.ug" in text
+        or "uci.or.ug" in text
+        or "ulii.org" in text
+        or "idi.mak.ac.ug" in text
+        or "elearning.idi.co.ug" in text
+    )
+
+
+def _catalog_source_mentions(source: CrawlSource, *terms: str) -> bool:
+    text = _catalog_source_text(source)
+    return any(term.lower() in text for term in terms)
+
+
+def _catalog_domains(sources: list[CrawlSource]) -> list[str]:
+    domains: list[str] = []
+    for source in sources:
+        for domain in source.domains:
+            if domain not in domains:
+                domains.append(domain)
+    return domains
 
 
 def test_local_provider_env_vars_are_read_by_empirico(monkeypatch):
@@ -130,7 +192,7 @@ def test_evidence_policy_orders_trusted_guidelines_before_article_databases():
     )
 
     assert ordered == [
-        (1, 0),
+        (0, 0),
         (1, 0),
         (1, 0),
         (3, 2),
@@ -138,7 +200,7 @@ def test_evidence_policy_orders_trusted_guidelines_before_article_databases():
     ]
 
 
-def test_crawl_source_selection_prefers_topic_specific_sources_without_local_default():
+def test_crawl_source_selection_uses_catalog_metadata_for_topic_relevance():
     settings = EvidenceRetrievalSettings(
         crawl_allowed_domains=[
             "who.int",
@@ -156,16 +218,41 @@ def test_crawl_source_selection_prefers_topic_specific_sources_without_local_def
     )
     provider = Crawl4AIProvider(settings)
 
-    tb_sources = [source.name for source in provider._select_sources("tuberculosis treatment regimen")]
-    nutrition_sources = [
-        source.name
-        for source in provider._select_sources("severe malnutrition children treatment")
-    ]
+    tb_sources = provider._select_sources("tuberculosis treatment regimen")
+    nutrition_sources = provider._select_sources("severe malnutrition children treatment")
 
-    assert tb_sources[0] == "WHO Tuberculosis Treatment Guidance"
-    assert "WHO HIV Updated Recommendations - NCBI Bookshelf" not in tb_sources
-    assert nutrition_sources[0] == "UNICEF Nutrition Guidance"
-    assert "Uganda Integrated Management of Acute Malnutrition Guidelines" in nutrition_sources
+    assert not _catalog_source_is_uganda(tb_sources[0])
+    assert _catalog_source_mentions(tb_sources[0], "tuberculosis", "tb")
+    assert any(
+        _catalog_source_mentions(source, "tuberculosis", "tb")
+        for source in tb_sources[:3]
+    )
+    assert not any(
+        _catalog_source_mentions(source, "hiv")
+        and not _catalog_source_mentions(source, "tuberculosis", "tb")
+        for source in tb_sources[:3]
+    )
+    assert _catalog_source_mentions(nutrition_sources[0], "malnutrition", "nutrition")
+    assert any(
+        not _catalog_source_is_uganda(source)
+        and _catalog_source_mentions(source, "malnutrition", "nutrition")
+        for source in nutrition_sources
+    )
+
+
+def test_crawl_catalog_contains_uganda_authority_source_hierarchy():
+    settings = EvidenceRetrievalSettings()
+    sources = load_crawl_sources(settings)
+    source_text = "\n".join(_catalog_source_text(source) for source in sources)
+
+    assert sources[0].name == "Uganda Ministry of Health Knowledge Management Portal"
+    assert "library.health.go.ug" in source_text
+    assert "nda.or.ug" in source_text
+    assert "uniph.go.ug" in source_text
+    assert "qadash.cphl.go.ug" in source_text
+    assert "uci.or.ug" in source_text
+    assert "ulii.org" in source_text
+    assert "unicef uganda" in source_text
 
 
 def test_crawl_source_selection_prioritizes_drug_monographs_for_dosage_queries():
@@ -181,15 +268,16 @@ def test_crawl_source_selection_prioritizes_drug_monographs_for_dosage_queries()
     )
     provider = Crawl4AIProvider(settings)
 
-    sources = [
-        source.name
-        for source in provider._select_sources(
-            "ceftriaxone severe pneumonia adult drug monograph prescribing information dosage dose route frequency"
-        )
-    ]
+    sources = provider._select_sources(
+        "ceftriaxone severe pneumonia adult drug monograph prescribing information dosage dose route frequency"
+    )
 
-    assert sources[:2] == ["MSF Essential Drugs", "DailyMed Drug Labels"]
-    assert "European Society of Cardiology Guidelines" not in sources
+    assert _catalog_source_mentions(sources[0], "drug", "dose", "dosage", "dosing", "route")
+    assert sum(
+        _catalog_source_mentions(source, "drug", "dose", "dosage", "dosing", "route")
+        for source in sources[:3]
+    ) >= 2
+    assert not any(_catalog_source_mentions(source, "cardiology") for source in sources)
 
 
 def test_crawl_source_selection_keeps_global_source_with_uganda_preferences():
@@ -256,15 +344,98 @@ def test_quick_crawl_source_selection_keeps_malnutrition_specific_sources():
     )
     provider = Crawl4AIProvider(settings)
 
-    sources = [
-        source.name
-        for source in provider._select_sources(
-            "treatment options severe malnutrition 5 child clinical guideline recommendation"
-        )
-    ]
+    sources = provider._select_sources(
+        "treatment options severe malnutrition 5 child clinical guideline recommendation"
+    )
 
-    assert "Uganda Integrated Management of Acute Malnutrition Guidelines" in sources
-    assert any(source in sources for source in ["UNICEF Nutrition Guidance", "World Health Organization"])
+    assert _catalog_source_mentions(sources[0], "malnutrition", "nutrition")
+    assert any(
+        not _catalog_source_is_uganda(source)
+        and _catalog_source_mentions(source, "malnutrition", "nutrition")
+        for source in sources
+    )
+
+
+def test_crawl_catalog_prioritizes_topical_sources_for_generic_clinical_queries():
+    settings = EvidenceRetrievalSettings(crawl_max_sources=4)
+    provider = Crawl4AIProvider(settings)
+    catalog_sources = provider.sources
+
+    queries = (
+        (
+            "What are the treatment options for severe malnutrition in children under 5?",
+            ("malnutrition", "nutrition"),
+        ),
+        ("How is uncomplicated malaria treated in adults?", ("malaria",)),
+        (
+            "What is recommended first-line ART for adults with HIV?",
+            ("hiv", "art", "antiretroviral"),
+        ),
+        (
+            "What is the first-line antihypertensive medication for stage 1 hypertension?",
+            ("hypertension", "cardiovascular"),
+        ),
+    )
+
+    for query, topic_terms in queries:
+        selected = provider._select_sources(query, catalog_sources)
+
+        assert len(selected) == 4
+        assert _catalog_source_mentions(selected[0], *topic_terms)
+        assert any(not _catalog_source_is_uganda(source) for source in selected)
+
+
+def test_crawl_catalog_honors_explicit_non_uganda_jurisdiction():
+    settings = EvidenceRetrievalSettings(crawl_max_sources=4)
+    provider = Crawl4AIProvider(settings)
+
+    selected = provider._select_sources(
+        "What is the first-line malaria treatment in Kenya?",
+        provider.sources,
+    )
+
+    assert selected
+    assert _catalog_source_mentions(selected[0], "kenya")
+    assert not any(
+        "ministry of health uganda" in _catalog_source_text(source)
+        for source in selected[:2]
+    )
+
+
+@pytest.mark.integration
+def test_live_crawl_retrieval_prioritizes_uganda_references(tmp_path):
+    enabled = os.getenv("EMPIRICO_LIVE_EVIDENCE_TESTS", "").strip().lower()
+    if enabled not in {"1", "true", "yes", "on"}:
+        pytest.skip("set EMPIRICO_LIVE_EVIDENCE_TESTS=true to run live/cached crawl retrieval")
+
+    catalog_sources = load_crawl_sources(EvidenceRetrievalSettings())
+    settings = EvidenceRetrievalSettings(
+        enable_crawl4ai=True,
+        enable_crawl4ai_browser=False,
+        crawl_allowed_domains=_catalog_domains(catalog_sources),
+        crawl_cache_dir=os.getenv("CRAWL_CACHE_DIR") or str(tmp_path),
+        crawl_max_sources=4,
+        crawl_max_pages=8,
+        crawl_time_budget_seconds=8,
+        retrieval_time_budget_seconds=10,
+        request_timeout_seconds=10,
+        max_results_per_provider=4,
+    )
+    provider = Crawl4AIProvider(settings, sources=catalog_sources)
+
+    items = provider.search(
+        "What are the treatment options for severe malnutrition in children under 5?",
+        max_results=4,
+    )
+
+    assert items
+    first = items[0].model_dump(mode="json")
+    first_text = " ".join(
+        str(first.get(field) or "")
+        for field in ("title", "journal_or_publisher", "url", "snippet")
+    ).lower()
+    assert "uganda" in first_text or "ministry of health uganda" in first_text
+    assert len({item.url or item.full_text_url or item.id for item in items}) <= 4
 
 
 def test_crawl_source_selection_includes_official_supplement_sources():
@@ -297,6 +468,22 @@ def test_crawl_source_selection_ignores_source_name_filler_terms():
     assert "hiv" in terms
     assert "treatment" in terms
     assert any("HIV" in source for source in sources)
+
+
+def test_crawl_content_focus_rejects_first_step_false_positive():
+    query = "What is the first-line antihypertensive medication for stage 1 hypertension?"
+    snippet = (
+        "Estimates of the resources needed for recommended interventions have been added "
+        "as a first step to guide the selection of intervention packages for malaria."
+    )
+
+    assert not _content_matches_core_query(
+        query=query,
+        title='Version updates to the "WHO guidelines for malaria"',
+        url="https://cdn.who.int/media/docs/default-source/malaria/version-updates.pdf",
+        snippet=snippet,
+        focus_terms={"hypertension", "firstline"},
+    )
 
 
 def test_static_seed_targets_keep_first_url_from_each_selected_source(monkeypatch):
@@ -505,6 +692,117 @@ def test_pdf_seed_items_use_extracted_pdf_text_when_available(monkeypatch, tmp_p
     assert items[0].journal_or_publisher == "Ministry of Health Uganda"
 
 
+def test_pdf_seed_items_keep_best_snippet_page_for_exact_reference_links(monkeypatch, tmp_path):
+    settings = EvidenceRetrievalSettings(
+        crawl_allowed_domains=["platform.who.int"],
+        crawl_cache_dir=str(tmp_path),
+        crawl_max_sources=1,
+    )
+    provider = Crawl4AIProvider(settings)
+    source = CrawlSource(
+        name="Uganda Integrated Management of Acute Malnutrition Guidelines",
+        publisher="Ministry of Health Uganda",
+        domains=("platform.who.int",),
+        topics=("uganda", "severe acute malnutrition", "children", "treatment"),
+        priority=1.0,
+        seed_urls=("https://platform.who.int/docs/default-source/uganda-imam-guideline.pdf",),
+        search_urls=(),
+    )
+
+    def fake_fetch_pdf_text(url, timeout, settings):
+        return (
+            url,
+            (
+                "Background and acknowledgements for the guideline.\n\n"
+                "Outpatient therapeutic care treats children with severe acute malnutrition "
+                "who have appetite and no medical complications with ready-to-use therapeutic "
+                "food, routine medicines, counselling, and follow-up."
+            ),
+            80,
+            [
+                (5, "Background and acknowledgements for the guideline."),
+                (
+                    61,
+                    "Outpatient therapeutic care treats children with severe acute malnutrition "
+                    "who have appetite and no medical complications with ready-to-use therapeutic "
+                    "food, routine medicines, counselling, and follow-up.",
+                ),
+            ],
+        )
+
+    monkeypatch.setattr(crawl_provider_module, "_fetch_pdf_text", fake_fetch_pdf_text)
+
+    items = provider._pdf_seed_items(
+        "What are the treatment options for severe malnutrition in children under 5?",
+        [source],
+        max_results=3,
+        deadline=time.perf_counter() + 5,
+    )
+    citations = _citations_from_evidence([items[0].model_dump()])
+
+    assert items[0].raw["page_start"] == 61
+    assert str(citations[0]["url"]).endswith("#page=61")
+
+
+def test_pdf_seed_items_fetch_candidates_in_parallel(monkeypatch, tmp_path):
+    settings = EvidenceRetrievalSettings(
+        crawl_allowed_domains=["example.org"],
+        crawl_cache_dir=str(tmp_path),
+        crawl_max_sources=3,
+        crawl_time_budget_seconds=2,
+        request_timeout_seconds=2,
+    )
+    provider = Crawl4AIProvider(
+        settings,
+        sources=[
+            CrawlSource(
+                name=f"Hypertension guideline {index}",
+                publisher="Example Ministry",
+                domains=("example.org",),
+                topics=("hypertension", "treatment", "guideline"),
+                priority=1.0,
+                seed_urls=(f"https://example.org/hypertension-treatment-{index}.pdf",),
+                search_urls=(),
+            )
+            for index in range(3)
+        ],
+    )
+    lock = threading.Lock()
+    active_fetches = 0
+    max_active_fetches = 0
+
+    def fake_fetch_pdf_text(url, timeout, settings):
+        nonlocal active_fetches, max_active_fetches
+        with lock:
+            active_fetches += 1
+            max_active_fetches = max(max_active_fetches, active_fetches)
+        time.sleep(0.08)
+        with lock:
+            active_fetches -= 1
+        return (
+            url,
+            "First-line hypertension treatment guidance names medicines and patient factors.",
+            4,
+            [(2, "First-line hypertension treatment guidance names medicines and patient factors.")],
+        )
+
+    monkeypatch.setattr(crawl_provider_module, "_fetch_pdf_text", fake_fetch_pdf_text)
+
+    started_at = time.perf_counter()
+    items = provider._pdf_seed_items(
+        "hypertension treatment guideline",
+        provider.sources,
+        max_results=3,
+        deadline=time.perf_counter() + 2,
+        focus_terms={"hypertension", "treatment", "guideline"},
+    )
+    elapsed = time.perf_counter() - started_at
+
+    assert len(items) == 3
+    assert max_active_fetches >= 2
+    assert elapsed < 0.18
+
+
 def test_static_crawl_follows_trusted_download_link_to_pdf_text(monkeypatch, tmp_path):
     settings = EvidenceRetrievalSettings(
         crawl_allowed_domains=["who.int", "iris.who.int"],
@@ -541,6 +839,16 @@ def test_static_crawl_follows_trusted_download_link_to_pdf_text(monkeypatch, tmp
                 "dihydropyridine calcium-channel blocker."
             ),
             48,
+            [
+                (30, "Background on hypertension diagnosis."),
+                (
+                    44,
+                    "Recommendation on initial treatment for adults with hypertension. "
+                    "For first-line antihypertensive medication, use a thiazide or "
+                    "thiazide-like diuretic, an ACE inhibitor or ARB, or a long-acting "
+                    "dihydropyridine calcium-channel blocker.",
+                ),
+            ],
         )
 
     monkeypatch.setattr(crawl_provider_module, "_read_static_cache", fake_read_static_cache)
@@ -562,8 +870,89 @@ def test_static_crawl_follows_trusted_download_link_to_pdf_text(monkeypatch, tmp
     assert item is not None
     assert item.raw["retrieval_mode"] == "linked_pdf_text"
     assert str(item.url) == document_url
+    assert item.raw["page_start"] == 44
     assert "thiazide-like diuretic" in str(item.snippet)
     assert "ACE inhibitor or ARB" in str(item.snippet)
+
+
+def test_pdf_text_cache_accepts_previous_schema_version(tmp_path):
+    settings = EvidenceRetrievalSettings(crawl_cache_dir=str(tmp_path), crawl_cache_ttl_seconds=604800)
+    document_url = "https://iris.who.int/server/api/core/bitstreams/example/content"
+    cache_path = _pdf_text_cache_path(settings, document_url)
+    assert cache_path is not None
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(
+        json.dumps(
+            {
+                "cache_version": 2,
+                "fetched_at": time.time(),
+                "original_url": document_url,
+                "final_url": document_url,
+                "pages_extracted": 58,
+                "text": (
+                    "For adults with hypertension requiring pharmacological treatment, "
+                    "use drugs from any of the following three classes as initial treatment: "
+                    "1. thiazide and thiazide-like agents 2. ACE inhibitors or ARBs "
+                    "3. long-acting dihydropyridine calcium channel blockers."
+                ),
+                "page_texts": [
+                    [
+                        44,
+                        (
+                            "For adults with hypertension requiring pharmacological treatment, "
+                            "use drugs from any of the following three classes as initial treatment."
+                        ),
+                    ]
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cached = _read_pdf_text_cache(settings, document_url)
+
+    assert cached is not None
+    assert cached[0] == document_url
+    assert cached[2] == 58
+    assert cached[3][0][0] == 44
+    assert "thiazide and thiazide-like agents" in cached[1]
+
+
+def test_static_item_prefers_linked_pdf_recommendation_over_landing_page_summary():
+    query = "What is the first-line antihypertensive medication for stage 1 hypertension?"
+    html_item = EvidenceItem(
+        id="crawl4ai:html",
+        source=EvidenceSource.CRAWL4AI,
+        title="Guideline for the pharmacological treatment of hypertension in adults",
+        snippet=(
+            "Hypertension can be defined using systolic and diastolic blood pressure levels. "
+            "This guideline provides evidence-based public health guidance on the initiation "
+            "of pharmacological agents for hypertension in adults."
+        ),
+        journal_or_publisher="WHO",
+        url="https://www.who.int/publications/i/item/9789240033986",
+        evidence_type="guideline",
+        raw={"retrieval_mode": "static_html"},
+    )
+    linked_pdf_item = EvidenceItem(
+        id="crawl4ai:pdf",
+        source=EvidenceSource.CRAWL4AI,
+        title="Guideline for the pharmacological treatment of hypertension in adults",
+        snippet=(
+            "Recommendation on initial treatment. For adults with hypertension requiring "
+            "pharmacological treatment, use any of the following three classes as initial "
+            "treatment: 1. thiazide and thiazide-like agents 2. ACE inhibitors or ARBs "
+            "3. long-acting dihydropyridine calcium channel blockers."
+        ),
+        journal_or_publisher="WHO",
+        url="https://iris.who.int/server/api/core/bitstreams/example/content",
+        evidence_type="guideline",
+        raw={"retrieval_mode": "linked_pdf_text", "generic_link_text": True},
+    )
+
+    selected = _best_static_item_for_query(query, html_item, linked_pdf_item)
+
+    assert selected is linked_pdf_item
 
 
 def test_static_crawl_keeps_html_when_pdf_link_is_lower_value(monkeypatch, tmp_path):
@@ -653,52 +1042,6 @@ def test_best_snippet_keeps_numbered_list_after_recommendation_colon():
     assert "thiazide and thiazide-like agents" in snippet
     assert "angiotensin-converting enzyme inhibitors" in snippet
     assert "calcium channel blockers" in snippet
-
-
-def test_answer_formatting_adds_paragraphs_and_repairs_spacing_artifacts():
-    answer = (
-        "Treatment options for severe malnutrition in children under 5 years include nutritional "
-        "supplementation with Ready-to-Use Supplementary Food (RUSF) orReady-to-Use Therapeutic "
-        "Food (RUTF), particularly for children after discharge[1]. Vitamin A supplementation is "
-        "also part of treatment for children with severe acute malnutrition[2]. The WHO Pocket "
-        "book provides guidance consistent with Integrated Managementof Childhood Illness "
-        "guidelines[3]. Children with danger signs need urgent assessment and stabilization[1]."
-    )
-    citations = [
-        {
-            "title": "5.4 Treatment of complicated cases | MSF Medical Guidelines",
-            "url": "https://medicalguidelines.msf.org/en/viewport/mme/english/5-4-treatment-of-complicated-cases-32408073.html",
-            "source_label": "Guideline Page",
-            "year": None,
-        },
-        {
-            "title": "Guideline: updates on the management of severe acute malnutrition in infants andchildren",
-            "url": "https://www.who.int/publications-detail-redirect/9789241506328",
-            "source_label": "",
-            "year": None,
-        },
-        {
-            "title": "WHO Pocket book of hospital care forchildren",
-            "url": "https://pmnch.who.int/resources/publications/m/item/who-pocket-book-of-hospital-care-for-children",
-            "source_label": "",
-            "year": None,
-        },
-    ]
-
-    rendered = _ensure_reference_urls(answer, citations)
-
-    assert "or Ready-to-Use" in rendered
-    assert "Integrated Management of Childhood Illness" in rendered
-    assert "for children" in rendered
-    assert "\n\nVitamin A supplementation" in rendered
-    assert (
-        "[1](https://medicalguidelines.msf.org/en/viewport/mme/english/"
-        "5-4-treatment-of-complicated-cases-32408073.html)"
-    ) in rendered
-    assert "[[1]](" not in rendered
-    assert "1. [Treatment of complicated cases" in rendered
-    assert "1. [5.4 Treatment" not in rendered
-    assert "Guideline Page, n.d." not in rendered
 
 
 def test_first_line_guideline_snippet_keeps_step_one_treatment_window():
@@ -812,11 +1155,11 @@ def test_guideline_snippet_prefers_recommendations_over_acknowledgements_noise()
     assert "acknowledges" not in snippet
 
 
-def test_evidence_country_hint_defaults_to_open_search(monkeypatch):
+def test_evidence_country_hint_defaults_to_uganda(monkeypatch):
     monkeypatch.delenv("EMPIRICO_EVIDENCE_COUNTRY_CODE", raising=False)
     monkeypatch.delenv("EMPIRICO_MODEL_SERVICE_COUNTRY_CODE", raising=False)
 
-    assert _evidence_country_code_for_search() is None
+    assert _evidence_country_code_for_search() == "UG"
 
 
 def test_evidence_country_hint_can_be_global(monkeypatch):
@@ -832,16 +1175,27 @@ def test_legacy_country_hint_is_still_honored(monkeypatch):
     assert _evidence_country_code_for_search() == "UG"
 
 
-def test_local_evidence_provider_mode_defaults_to_web(monkeypatch):
-    monkeypatch.delenv("EMPIRICO_EVIDENCE_PROVIDER_MODE", raising=False)
+def test_explicit_retrieval_query_country_overrides_uganda_default():
+    assert _country_code_for_retrieval_query("UG", "malaria treatment in Kenya") == "KE"
+    assert _country_code_for_retrieval_query("UG", "malaria treatment in Tanzania") == "TZ"
+    assert _country_code_for_retrieval_query("UG", "malaria treatment in Uganda") == "UG"
+    assert _country_code_for_retrieval_query("GLOBAL", "malaria treatment in Uganda") == "GLOBAL"
 
-    assert _local_evidence_provider_mode() == "web"
+
+def test_local_evidence_provider_mode_defaults_by_search_depth(monkeypatch):
+    monkeypatch.delenv("EMPIRICO_EVIDENCE_PROVIDER_MODE", raising=False)
+    monkeypatch.delenv("EMPIRICO_QUICK_EVIDENCE_PROVIDER_MODE", raising=False)
+    monkeypatch.delenv("EMPIRICO_DEEP_EVIDENCE_PROVIDER_MODE", raising=False)
+
+    assert _local_evidence_provider_mode(False) == "crawl"
+    assert _local_evidence_provider_mode(True) == "web"
 
 
 def test_local_evidence_provider_mode_honors_crawl_alias(monkeypatch):
     monkeypatch.setenv("EMPIRICO_EVIDENCE_PROVIDER_MODE", "crawl")
 
-    assert _local_evidence_provider_mode() == "crawl"
+    assert _local_evidence_provider_mode(False) == "crawl"
+    assert _local_evidence_provider_mode(True) == "crawl"
 
 
 def test_source_preference_terms_are_configurable(monkeypatch):
@@ -850,23 +1204,389 @@ def test_source_preference_terms_are_configurable(monkeypatch):
     assert _source_preference_terms() == ("health.go.ug", "who afro", "africa")
 
 
-def test_default_source_preference_terms_are_empty(monkeypatch):
+def test_default_source_preference_terms_are_uganda_first(monkeypatch):
     monkeypatch.delenv("EMPIRICO_SOURCE_PREFERENCE_TERMS", raising=False)
 
-    assert _source_preference_terms() == ()
+    terms = _source_preference_terms()
+
+    assert "uganda" in terms
+    assert "library.health.go.ug" in terms
+    assert "nda.or.ug" in terms
 
 
-def test_configured_source_preferences_activate_only_when_context_matches():
+def test_source_preferences_apply_by_default_unless_another_jurisdiction_is_explicit():
     terms = ("uganda", "health.go.ug", "who afro", "africa")
 
     assert _active_source_preference_terms(
         "first-line treatment for stage 1 hypertension",
         terms,
-    ) == ()
+    ) == terms
     assert _active_source_preference_terms(
         "HIV treatment guideline Uganda",
         terms,
     ) == terms
+    assert _active_source_preference_terms(
+        "HIV treatment guideline Kenya",
+        terms,
+    ) == ()
+
+
+def test_generic_query_uses_configured_local_source_preference(monkeypatch):
+    monkeypatch.setenv("EMPIRICO_QUICK_ENABLE_RETRIEVAL_PLANNER", "false")
+    monkeypatch.setenv(
+        "EMPIRICO_SOURCE_PREFERENCE_TERMS",
+        "uganda,health.go.ug,ministry of health uganda,who afro,africa",
+    )
+    question = "What is the first-line antihypertensive medication for stage 1 hypertension?"
+    configured_terms = _source_preference_terms()
+
+    assert _active_source_preference_terms(question, configured_terms) == configured_terms
+
+    queries = asyncio.run(
+        _retrieval_queries_for_request(
+            query=question,
+            patient_data="",
+            chat_history="",
+            deep_search=False,
+        )
+    )
+
+    assert queries == (question,)
+
+
+def test_direct_retrieval_preserves_explicit_other_jurisdiction(monkeypatch):
+    monkeypatch.setenv("EMPIRICO_QUICK_ENABLE_RETRIEVAL_PLANNER", "false")
+    question = "What is the first-line malaria treatment in Kenya?"
+
+    queries = asyncio.run(
+        _retrieval_queries_for_request(
+            query=question,
+            patient_data="",
+            chat_history="",
+            deep_search=False,
+        )
+    )
+
+    assert queries == (question,)
+
+
+def test_quick_defaults_use_uganda_crawl_and_planner(monkeypatch):
+    for key in (
+        "EMPIRICO_EVIDENCE_PROVIDER_MODE",
+        "EMPIRICO_QUICK_EVIDENCE_PROVIDER_MODE",
+        "EMPIRICO_ENABLE_RETRIEVAL_PLANNER",
+        "EMPIRICO_QUICK_ENABLE_RETRIEVAL_PLANNER",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    assert _local_evidence_provider_mode(False) == "crawl"
+    assert _retrieval_planner_enabled(False) is True
+    assert _evidence_country_code_for_search() == "UG"
+
+
+def test_quick_retrieval_stops_after_direct_query_when_sources_are_ready(monkeypatch):
+    calls: list[str] = []
+    first_query = "hypertension treatment"
+    second_query = "Uganda clinical guidelines Ministry of Health Uganda hypertension treatment"
+
+    async def fake_search_local_evidence(**kwargs):
+        calls.append(kwargs["query"])
+        if kwargs["query"] != first_query:
+            raise AssertionError("the fallback query should not run when four sources are ready")
+        return {
+            "items": [
+                {
+                    "source": "crawl4ai",
+                    "title": f"Hypertension treatment source {index}",
+                    "url": f"https://example.org/hypertension-treatment-{index}",
+                    "journal_or_publisher": "Guideline",
+                    "year": 2026 - index,
+                    "snippet": "Hypertension treatment guidance includes first-line medicines and patient factors.",
+                    "evidence_type": "guideline",
+                    "raw": {"retrieval_mode": "static_html"},
+                }
+                for index in range(1, 5)
+            ],
+            "provider_errors": [],
+            "timings_ms": {"total": 100.0},
+        }
+
+    monkeypatch.setenv("EMPIRICO_QUICK_RETRIEVAL_EARLY_STOP", "true")
+    monkeypatch.setattr(
+        "healthnavi.services.evidence_retrieval_adapter._search_local_evidence",
+        fake_search_local_evidence,
+    )
+
+    result = asyncio.run(
+        _search_retrieval_queries(
+            queries=(first_query, second_query),
+            top_k=8,
+            country_code=None,
+            deep_search=False,
+            source_preference_terms=(),
+            answer_top_k=4,
+        )
+    )
+
+    assert calls == [first_query]
+    assert len(result["items"]) == 4
+    assert result["timings_ms"]["early_stop"] is True
+    assert "query_2" not in result["timings_ms"]
+
+
+def test_quick_retrieval_runs_fallback_query_when_first_query_is_insufficient(monkeypatch):
+    calls: list[str] = []
+    first_query = "hypertension treatment"
+    second_query = "Uganda clinical guidelines Ministry of Health Uganda hypertension treatment"
+
+    async def fake_search_local_evidence(**kwargs):
+        calls.append(kwargs["query"])
+        item_count = 2 if kwargs["query"] == first_query else 3
+        return {
+            "items": [
+                {
+                    "source": "crawl4ai",
+                    "title": f"{kwargs['query']} source {index}",
+                    "url": f"https://example.org/{len(calls)}-{index}",
+                    "journal_or_publisher": "Guideline",
+                    "year": 2026 - index,
+                    "snippet": "Hypertension treatment guidance includes first-line medicines and patient factors.",
+                    "evidence_type": "guideline",
+                    "raw": {"retrieval_mode": "static_html"},
+                }
+                for index in range(1, item_count + 1)
+            ],
+            "provider_errors": [],
+            "timings_ms": {"total": 100.0},
+        }
+
+    monkeypatch.setenv("EMPIRICO_QUICK_RETRIEVAL_EARLY_STOP", "true")
+    monkeypatch.setattr(
+        "healthnavi.services.evidence_retrieval_adapter._search_local_evidence",
+        fake_search_local_evidence,
+    )
+
+    result = asyncio.run(
+        _search_retrieval_queries(
+            queries=(first_query, second_query),
+            top_k=8,
+            country_code=None,
+            deep_search=False,
+            source_preference_terms=(),
+            answer_top_k=4,
+        )
+    )
+
+    assert calls == [first_query, second_query]
+    assert len(result["items"]) == 5
+    assert "early_stop" not in result["timings_ms"]
+    assert "query_2" in result["timings_ms"]
+
+
+def test_duplicate_document_retrieval_preserves_distinct_passages():
+    generic_item = {
+        "id": "crawl4ai:https://example.org/hypertension-guideline.pdf",
+        "title": "Hypertension guideline",
+        "url": "https://example.org/hypertension-guideline.pdf",
+        "final_score": 0.7205,
+        "relevance_score": 0.212,
+        "snippet": (
+            "Hypertension can be defined using specific blood pressure levels. "
+            "The guideline provides public health guidance on hypertension care."
+        ),
+        "raw": {"query_used": "Uganda clinical guidelines hypertension"},
+    }
+    recommendation_item = {
+        **generic_item,
+        "final_score": 0.7314,
+        "relevance_score": 0.2404,
+        "snippet": (
+            "Recommendation on drug classes to be used as first-line agents: "
+            "thiazide and thiazide-like agents; ACE inhibitors or ARBs; "
+            "long-acting dihydropyridine calcium channel blockers."
+        ),
+        "raw": {"query_used": "first-line antihypertensive medication"},
+    }
+
+    merged = _merge_evidence_items([generic_item], [recommendation_item])
+
+    assert len(merged) == 2
+    assert [item["raw"]["query_used"] for item in merged] == [
+        "Uganda clinical guidelines hypertension",
+        "first-line antihypertensive medication",
+    ]
+    assert "thiazide and thiazide-like agents" in merged[1]["snippet"]
+    assert len(_unique_evidence_passages(merged, limit=4)) == 2
+
+
+def test_exact_duplicate_passages_keep_higher_scored_item():
+    weaker_item = {
+        "id": "crawl4ai:https://example.org/hypertension-guideline.pdf",
+        "title": "Hypertension guideline",
+        "url": "https://example.org/hypertension-guideline.pdf",
+        "final_score": 0.5,
+        "relevance_score": 0.2,
+        "snippet": "Initial hypertension treatment includes several first-line medicine classes.",
+    }
+    stronger_item = {
+        **weaker_item,
+        "final_score": 0.8,
+        "raw": {"query_used": "first-line hypertension medicines"},
+    }
+
+    merged = _merge_evidence_items([weaker_item], [stronger_item])
+
+    assert len(merged) == 1
+    assert merged[0]["final_score"] == 0.8
+    assert merged[0]["raw"]["query_used"] == "first-line hypertension medicines"
+
+
+def test_ranker_deduplicate_items_preserves_distinct_document_passages():
+    shared = {
+        "id": "crawl4ai:https://example.org/guideline.pdf",
+        "source": "crawl4ai",
+        "title": "Clinical guideline",
+        "url": "https://example.org/guideline.pdf",
+        "evidence_type": "guideline",
+    }
+    items = [
+        EvidenceItem(
+            **shared,
+            snippet="Diagnostic criteria are described in this passage.",
+            raw={"page_start": 10, "section_title": "Diagnosis"},
+        ),
+        EvidenceItem(
+            **shared,
+            snippet="Treatment options are described in this different passage.",
+            raw={"page_start": 22, "section_title": "Treatment"},
+        ),
+        EvidenceItem(
+            **shared,
+            snippet="Treatment options are described in this different passage.",
+            raw={"page_start": 22, "section_title": "Treatment"},
+        ),
+    ]
+
+    deduped = deduplicate_items(items)
+
+    assert len(deduped) == 2
+    assert [item.raw["section_title"] for item in deduped] == ["Diagnosis", "Treatment"]
+
+
+def test_quick_retrieval_hedges_when_direct_query_is_slow(monkeypatch):
+    calls: list[str] = []
+    first_query = "hypertension treatment"
+    second_query = "Uganda clinical guidelines Ministry of Health Uganda hypertension treatment"
+
+    async def fake_search_local_evidence(**kwargs):
+        calls.append(kwargs["query"])
+        if kwargs["query"] == first_query:
+            await asyncio.sleep(0.15)
+        return {
+            "items": [
+                {
+                    "source": "crawl4ai",
+                    "title": f"{kwargs['query']} source {index}",
+                    "url": f"https://example.org/{kwargs['query'].replace(' ', '-')}-{index}",
+                    "journal_or_publisher": "Guideline",
+                    "year": 2026 - index,
+                    "snippet": "Hypertension treatment guidance includes first-line medicines and patient factors.",
+                    "evidence_type": "guideline",
+                    "raw": {"retrieval_mode": "static_html"},
+                }
+                for index in range(1, 5)
+            ],
+            "provider_errors": [],
+            "timings_ms": {"total": 100.0},
+        }
+
+    monkeypatch.setenv("EMPIRICO_QUICK_RETRIEVAL_EARLY_STOP", "true")
+    monkeypatch.setenv("EMPIRICO_QUICK_RETRIEVAL_EARLY_STOP_WAIT_SECONDS", "0.01")
+    monkeypatch.setattr(
+        "healthnavi.services.evidence_retrieval_adapter._search_local_evidence",
+        fake_search_local_evidence,
+    )
+
+    result = asyncio.run(
+        _search_retrieval_queries(
+            queries=(first_query, second_query),
+            top_k=8,
+            country_code=None,
+            deep_search=False,
+            source_preference_terms=(),
+            answer_top_k=4,
+        )
+    )
+
+    assert calls == [first_query, second_query]
+    assert len(result["items"]) == 8
+    assert "early_stop" not in result["timings_ms"]
+    assert "query_1" in result["timings_ms"]
+    assert "query_2" in result["timings_ms"]
+
+
+def test_quick_rescue_uses_remaining_latency_budget(monkeypatch):
+    captured_calls: list[dict] = []
+
+    async def fake_search_retrieval_queries(**kwargs):
+        captured_calls.append(kwargs)
+        return {"items": [], "provider_errors": [], "timings_ms": {}}
+
+    monkeypatch.setenv("EMPIRICO_ENABLE_EVIDENCE_RESCUE", "true")
+    monkeypatch.setenv("EMPIRICO_QUICK_EVIDENCE_PROVIDER_MODE", "crawl")
+    monkeypatch.setenv("EMPIRICO_QUICK_RESCUE_MIN_SECONDS", "1")
+    monkeypatch.setattr(
+        "healthnavi.services.evidence_retrieval_adapter._search_retrieval_queries",
+        fake_search_retrieval_queries,
+    )
+
+    result = asyncio.run(
+        _rescue_evidence_search(
+            queries=("hypertension treatment",),
+            top_k=8,
+            country_code=None,
+            deep_search=False,
+            answer_top_k=4,
+            latency_deadline=time.perf_counter() + 5,
+        )
+    )
+
+    assert result["items"] == []
+    assert len(captured_calls) == 1
+    assert captured_calls[0]["provider_mode"] == "web"
+    rescue_settings = captured_calls[0]["search_settings"]
+    assert rescue_settings.retrieval_time_budget_seconds < 5
+    assert rescue_settings.retrieval_time_budget_seconds <= 4.5
+    assert rescue_settings.crawl_time_budget_seconds <= rescue_settings.retrieval_time_budget_seconds
+
+
+def test_quick_rescue_skips_when_latency_budget_is_spent(monkeypatch):
+    async def fail_search_retrieval_queries(**kwargs):
+        raise AssertionError("rescue search should not run after the quick budget is spent")
+
+    monkeypatch.setenv("EMPIRICO_ENABLE_EVIDENCE_RESCUE", "true")
+    monkeypatch.setenv("EMPIRICO_QUICK_EVIDENCE_PROVIDER_MODE", "crawl")
+    monkeypatch.setattr(
+        "healthnavi.services.evidence_retrieval_adapter._search_retrieval_queries",
+        fail_search_retrieval_queries,
+    )
+
+    result = asyncio.run(
+        _rescue_evidence_search(
+            queries=("hypertension treatment",),
+            top_k=8,
+            country_code=None,
+            deep_search=False,
+            answer_top_k=4,
+            latency_deadline=time.perf_counter() + 0.5,
+        )
+    )
+
+    assert result == {
+        "items": [],
+        "provider_errors": [],
+        "timings_ms": {"skipped": "latency_budget"},
+    }
 
 
 def test_retrieval_query_planner_uses_model_json(monkeypatch):
@@ -896,13 +1616,68 @@ def test_retrieval_query_planner_uses_model_json(monkeypatch):
     )
 
     assert queries == (
+        "30 year old female in Kampala has HIV, what is the treatment for her?",
         "adult HIV treatment Kampala",
         "HIV antiretroviral therapy guideline Uganda",
-        "30 year old female in Kampala has HIV, what is the treatment for her?",
     )
 
 
-def test_quick_response_uses_single_local_retrieval_query(monkeypatch):
+def test_evidence_request_planner_returns_question_plan_and_queries(monkeypatch):
+    async def fake_post_model_response(payload, timeout_seconds):
+        assert payload["prompt_type"] == "empirico_retrieval_query_plan"
+        assert "clinical_question" in payload["prompt"]
+        assert "answer_requirements" in payload["prompt"]
+        assert "Infer the clinical task semantically" in payload["prompt"]
+        return {
+            "answer": json.dumps(
+                {
+                    "clinical_question": "What does low TSH with high free T4 mean?",
+                    "task": "laboratory interpretation",
+                    "population": "",
+                    "condition": "low TSH with high free T4",
+                    "requested_output": "interpretation and next steps",
+                    "answer_requirements": [
+                        "most likely interpretation",
+                        "important differential explanations",
+                        "relevant next investigations",
+                    ],
+                    "evidence_goals": [
+                        "thyroid function test interpretation",
+                        "confirmatory investigation guidance",
+                    ],
+                    "queries": [
+                        "low TSH high free T4 interpretation",
+                        "thyroid function test interpretation guideline",
+                    ],
+                }
+            )
+        }
+
+    monkeypatch.setenv("EMPIRICO_QUICK_ENABLE_RETRIEVAL_PLANNER", "true")
+    monkeypatch.setattr(
+        "healthnavi.services.evidence_retrieval_adapter._post_model_response",
+        fake_post_model_response,
+    )
+
+    plan, queries = asyncio.run(
+        _evidence_request_plan_for_request(
+            query="What does low TSH with high free T4 mean?",
+            patient_data="",
+            chat_history="",
+            deep_search=False,
+        )
+    )
+
+    assert plan["task"] == "laboratory interpretation"
+    assert "most likely interpretation" in plan["answer_requirements"]
+    assert queries == (
+        "What does low TSH with high free T4 mean?",
+        "low TSH high free T4 interpretation",
+        "thyroid function test interpretation guideline",
+    )
+
+
+def test_quick_response_uses_direct_retrieval_and_relevant_source_contract(monkeypatch):
     retrieval_calls = []
 
     async def fake_search_retrieval_queries(**kwargs):
@@ -926,15 +1701,38 @@ def test_quick_response_uses_single_local_retrieval_query(monkeypatch):
     async def fake_post_model_response(payload, timeout_seconds):
         assert payload["prompt_type"] == "empirico_quick_search"
         assert payload["model"] == "gemini-2.5-flash-lite"
-        assert payload["max_output_tokens"] == 900
+        assert payload["max_output_tokens"] == 2000
+        assert payload["temperature"] == 0.2
+        assert payload["prompt"].startswith("You are Empirico")
+        assert "This deployment serves clinicians in Uganda" in payload["prompt"]
+        assert "This is a quick answer" in payload["prompt"]
+        assert (
+            "## QUESTION\nWhat is the first-line antihypertensive medication for stage 1 hypertension?"
+            in payload["prompt"]
+        )
+        assert (
+            "[1] Guideline for pharmacological treatment of hypertension in adults (WHO, 2021)"
+            in payload["prompt"]
+        )
+        assert "Excerpt: Initial treatment can include thiazide-like agents" in payload["prompt"]
         return {
-            "answer": "Use a thiazide/thiazide-like diuretic, ACE inhibitor or ARB, or long-acting dihydropyridine CCB when medication is indicated [1].",
+            "answer": (
+                "There is no single universal first-line antihypertensive for every adult with stage 1 hypertension; "
+                "when medication is indicated, use a thiazide or thiazide-like diuretic, an ACE inhibitor or ARB, "
+                "or a long-acting dihydropyridine calcium-channel blocker [1].\n\n"
+                "In practice, common examples include hydrochlorothiazide or chlorthalidone/indapamide for the "
+                "thiazide group, enalapril or lisinopril for ACE inhibitors, losartan for an ARB, and amlodipine "
+                "or long-acting nifedipine for a dihydropyridine CCB. Choose between them using age, pregnancy "
+                "status, kidney disease, diabetes, drug interactions, adverse-effect risk, baseline potassium or "
+                "creatinine concerns, and local availability [1]."
+            ),
             "diagnosis_complete": True,
         }
 
     monkeypatch.setenv("EMPIRICO_FOLLOWUP_MODE", "off")
     monkeypatch.setenv("EMPIRICO_QUICK_MODEL_NAME", "gemini-2.5-flash-lite")
-    monkeypatch.setenv("EMPIRICO_QUICK_MAX_OUTPUT_TOKENS", "900")
+    monkeypatch.delenv("EMPIRICO_QUICK_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.setenv("EMPIRICO_QUICK_SEARCH_TOP_K", "8")
     monkeypatch.setenv("EMPIRICO_QUICK_ENABLE_RETRIEVAL_PLANNER", "false")
     monkeypatch.setattr(
         "healthnavi.services.evidence_retrieval_adapter._search_retrieval_queries",
@@ -958,12 +1756,311 @@ def test_quick_response_uses_single_local_retrieval_query(monkeypatch):
     assert retrieval_calls[0]["queries"] == (
         "What is the first-line antihypertensive medication for stage 1 hypertension?",
     )
-    assert retrieval_calls[0]["top_k"] == 6
+    assert "uganda" in retrieval_calls[0]["source_preference_terms"]
+    assert "library.health.go.ug" in retrieval_calls[0]["source_preference_terms"]
+    assert retrieval_calls[0]["top_k"] == 8
     assert retrieval_calls[0]["deep_search"] is False
-    assert "[1](https://iris.who.int/example)" in answer
+    assert _answer_top_k(False) == 4
+    assert "[1](https://iris.who.int/example" in answer
     assert complete is True
     assert prompt_type == "empirico_quick_search"
     assert followups == []
+
+
+def test_quick_answer_call_is_not_starved_by_latency_target(monkeypatch):
+    model_timeouts: list[float] = []
+
+    async def fake_search_retrieval_queries(**kwargs):
+        return {
+            "items": [
+                {
+                    "source": "crawl4ai",
+                    "title": "Uganda cough guideline",
+                    "url": "https://health.go.ug/cough",
+                    "journal_or_publisher": "Ministry of Health Uganda",
+                    "year": 2025,
+                    "snippet": "Cough assessment considers duration, fever, breathing difficulty, and danger signs.",
+                    "evidence_type": "guideline",
+                    "raw": {"retrieval_mode": "static_html"},
+                }
+            ],
+            "provider_errors": [],
+            "timings_ms": {"total": 100.0},
+        }
+
+    async def fake_post_model_response(payload, timeout_seconds):
+        model_timeouts.append(timeout_seconds)
+        return {
+            "answer": (
+                "Assess cough by duration and danger signs such as fever or difficulty breathing [1]."
+            ),
+            "diagnosis_complete": True,
+        }
+
+    monkeypatch.setenv("EMPIRICO_FOLLOWUP_MODE", "off")
+    monkeypatch.setenv("EMPIRICO_QUICK_ENABLE_RETRIEVAL_PLANNER", "false")
+    monkeypatch.setenv("EMPIRICO_QUICK_LATENCY_TARGET_SECONDS", "5")
+    monkeypatch.setenv("EMPIRICO_QUICK_MODEL_TIMEOUT_SECONDS", "45")
+    monkeypatch.setattr(
+        "healthnavi.services.evidence_retrieval_adapter._search_retrieval_queries",
+        fake_search_retrieval_queries,
+    )
+    monkeypatch.setattr(
+        "healthnavi.services.evidence_retrieval_adapter._post_model_response",
+        fake_post_model_response,
+    )
+
+    answer, complete, prompt_type, followups = asyncio.run(
+        generate_model_service_response(
+            query="What danger signs matter with cough?",
+            chat_history="",
+            patient_data="",
+            deep_search=False,
+        )
+    )
+
+    # The quick latency target bounds retrieval, never the answer call itself.
+    assert model_timeouts == [45.0]
+    assert "[1](https://health.go.ug/cough" in answer
+    assert complete is True
+    assert prompt_type == "empirico_quick_search"
+    assert followups == []
+
+
+def test_quick_response_deduplicates_and_compacts_references(monkeypatch):
+    async def fake_search_retrieval_queries(**kwargs):
+        return {
+            "items": [
+                {
+                    "source": "crawl4ai",
+                    "title": "Uganda hypertension guideline",
+                    "url": "https://health.go.ug/hypertension",
+                    "journal_or_publisher": "Ministry of Health Uganda",
+                    "year": 2023,
+                    "snippet": "Hypertension treatment guidance for adults.",
+                    "evidence_type": "guideline",
+                    "raw": {"retrieval_mode": "static_html"},
+                },
+                {
+                    "source": "crawl4ai",
+                    "title": "Uganda hypertension guideline",
+                    "url": "https://health.go.ug/hypertension",
+                    "journal_or_publisher": "Ministry of Health Uganda",
+                    "year": 2023,
+                    "snippet": "Duplicate passage restating hypertension treatment guidance for adults.",
+                    "evidence_type": "guideline",
+                    "raw": {"retrieval_mode": "static_html"},
+                },
+                {
+                    "source": "crawl4ai",
+                    "title": "WHO hypertension guideline",
+                    "url": "https://www.who.int/hypertension-guideline",
+                    "journal_or_publisher": "WHO",
+                    "year": 2025,
+                    "snippet": "Current hypertension guideline recommendations.",
+                    "evidence_type": "guideline",
+                    "raw": {"retrieval_mode": "static_html"},
+                },
+                {
+                    "source": "pubmed",
+                    "title": "Hypertension treatment review",
+                    "url": "https://pubmed.ncbi.nlm.nih.gov/123/",
+                    "journal_or_publisher": "Lancet",
+                    "year": 2024,
+                    "abstract": "Review of hypertension treatment choices.",
+                    "evidence_type": "review",
+                },
+                {
+                    "source": "europe_pmc",
+                    "title": "Hypertension medication evidence",
+                    "url": "https://europepmc.org/article/MED/456",
+                    "journal_or_publisher": "NEJM",
+                    "year": 2024,
+                    "abstract": "Evidence on hypertension medication selection.",
+                    "evidence_type": "journal_article",
+                },
+            ],
+            "provider_errors": [],
+            "timings_ms": {"total": 100.0},
+        }
+
+    async def fake_post_model_response(payload, timeout_seconds):
+        assert payload["prompt_type"] == "empirico_quick_search"
+        # Uganda guideline first, then WHO, then article-database results. The two
+        # passages from the same Uganda page are offered as one source with both excerpts.
+        assert "[1] Uganda hypertension guideline (Ministry of Health Uganda, 2023)" in payload["prompt"]
+        assert (
+            "Hypertension treatment guidance for adults. [...] Duplicate passage restating "
+            "hypertension treatment guidance for adults." in payload["prompt"]
+        )
+        assert "[2] WHO hypertension guideline (WHO, 2025)" in payload["prompt"]
+        assert "[3] Hypertension treatment review (Lancet, 2024)" in payload["prompt"]
+        assert "[4] Hypertension medication evidence (NEJM, 2024)" in payload["prompt"]
+        assert "[5]" not in payload["prompt"]
+        return {
+            "answer": (
+                "Use guideline-supported first-line antihypertensive options when medication is indicated [2][1].\n\n"
+                "Supporting review evidence can help when options are otherwise similar [3]."
+            ),
+            "diagnosis_complete": True,
+        }
+
+    monkeypatch.setenv("EMPIRICO_FOLLOWUP_MODE", "off")
+    monkeypatch.setenv("EMPIRICO_QUICK_ENABLE_RETRIEVAL_PLANNER", "false")
+    monkeypatch.setattr(
+        "healthnavi.services.evidence_retrieval_adapter._search_retrieval_queries",
+        fake_search_retrieval_queries,
+    )
+    monkeypatch.setattr(
+        "healthnavi.services.evidence_retrieval_adapter._post_model_response",
+        fake_post_model_response,
+    )
+
+    answer, _, _, _ = asyncio.run(
+        generate_model_service_response(
+            query="What is first-line treatment for hypertension?",
+            chat_history="",
+            patient_data="",
+            deep_search=False,
+        )
+    )
+
+    # The model cited WHO first, so display numbering follows first use in the answer,
+    # and only cited sources appear in References.
+    assert "1. [WHO hypertension guideline]" in answer
+    assert "2. [Uganda hypertension guideline]" in answer
+    assert "3. [Hypertension treatment review]" in answer
+    assert "[1](https://www.who.int/hypertension-guideline" in answer
+    assert "[2](https://health.go.ug/hypertension" in answer
+    assert "[3](https://pubmed.ncbi.nlm.nih.gov/123/" in answer
+    assert "Hypertension medication evidence" not in answer
+    assert "Duplicate hypertension" not in answer
+
+
+def test_quick_response_uses_uncited_model_fallback_when_live_evidence_empty(monkeypatch):
+    retrieval_calls = []
+
+    async def fake_search_retrieval_queries(**kwargs):
+        retrieval_calls.append(kwargs)
+        return {"items": [], "provider_errors": ["timeout"], "timings_ms": {}}
+
+    async def fake_post_model_response(payload, timeout_seconds):
+        if payload["prompt_type"] == "empirico_quick_search_no_references":
+            assert "first-line antihypertensive medication" in payload["prompt"]
+            return {
+                "answer": (
+                    "When the evidence retriever is unavailable, provide a cautious answer "
+                    "and tell the user to verify it against a current local guideline."
+                ),
+                "diagnosis_complete": True,
+            }
+        if payload["prompt_type"] == "empirico_quick_answer_detail_expansion":
+            return {
+                "answer": (
+                    "When drug treatment is indicated, use a guideline-supported first-line antihypertensive option "
+                    "rather than assuming one drug class fits all adults with stage 1 hypertension [1].\n\n"
+                    "A quick answer should still check patient factors such as pregnancy, kidney disease, diabetes, "
+                    "electrolyte risk, cough or angioedema history, oedema, drug interactions, and local availability "
+                    "before selecting the exact medicine [1]."
+                ),
+                "diagnosis_complete": True,
+            }
+        assert payload["prompt_type"] == "empirico_quick_search"
+        assert "AVAILABLE SOURCES:" in payload["prompt"]
+        assert "EVIDENCE BASE:" in payload["prompt"]
+        assert "[1]" in payload["prompt"]
+        return {
+            "answer": "When drug treatment is indicated, use a guideline-supported first-line antihypertensive option and adjust for patient factors [1].",
+            "diagnosis_complete": True,
+        }
+
+    monkeypatch.setenv("EMPIRICO_FOLLOWUP_MODE", "off")
+    monkeypatch.setenv("EMPIRICO_QUICK_ENABLE_RETRIEVAL_PLANNER", "false")
+    monkeypatch.setenv("EMPIRICO_QUICK_EVIDENCE_PROVIDER_MODE", "crawl")
+    monkeypatch.setattr(
+        "healthnavi.services.evidence_retrieval_adapter._search_retrieval_queries",
+        fake_search_retrieval_queries,
+    )
+    monkeypatch.setattr(
+        "healthnavi.services.evidence_retrieval_adapter._post_model_response",
+        fake_post_model_response,
+    )
+
+    answer, complete, prompt_type, followups = asyncio.run(
+        generate_model_service_response(
+            query="What is the first-line antihypertensive medication for stage 1 hypertension?",
+            chat_history="",
+            patient_data="",
+            deep_search=False,
+        )
+    )
+
+    assert len(retrieval_calls) == 2
+    assert retrieval_calls[1]["provider_mode"] == "web"
+    assert "couldn't retrieve" not in answer.lower()
+    assert "try again" not in answer.lower()
+    assert "**References**" not in answer
+    assert complete is True
+    assert prompt_type == "empirico_quick_search"
+    assert followups == []
+
+
+def test_status_model_answer_raises_instead_of_stitching_evidence(monkeypatch):
+    calls: list[str] = []
+
+    async def fake_search_retrieval_queries(**kwargs):
+        return {
+            "items": [
+                {
+                    "source": "crawl4ai",
+                    "title": "Hypertension guideline",
+                    "url": "https://www.who.int/publications/i/item/9789240033986",
+                    "journal_or_publisher": "WHO",
+                    "year": 2025,
+                    "snippet": (
+                        "For adults with hypertension requiring pharmacological treatment, "
+                        "use thiazide and thiazide-like agents, ACE inhibitors or ARBs, "
+                        "or long-acting dihydropyridine calcium channel blockers as initial treatment."
+                    ),
+                    "evidence_type": "guideline",
+                    "raw": {"retrieval_mode": "static_html"},
+                }
+            ],
+            "provider_errors": [],
+            "timings_ms": {},
+        }
+
+    async def fake_post_model_response(payload, timeout_seconds):
+        calls.append(payload["prompt_type"])
+        return {"answer": "The model service is temporarily busy. Please try again."}
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setenv("EMPIRICO_FOLLOWUP_MODE", "off")
+    monkeypatch.setenv("EMPIRICO_QUICK_ENABLE_RETRIEVAL_PLANNER", "false")
+    monkeypatch.setattr(
+        "healthnavi.services.evidence_retrieval_adapter._search_retrieval_queries",
+        fake_search_retrieval_queries,
+    )
+    monkeypatch.setattr(
+        "healthnavi.services.evidence_retrieval_adapter._post_model_response",
+        fake_post_model_response,
+    )
+    monkeypatch.setattr("healthnavi.services.evidence_retrieval_adapter.asyncio.sleep", no_sleep)
+
+    with pytest.raises(AnswerGenerationError):
+        asyncio.run(
+            generate_model_service_response(
+                query="What is the first-line antihypertensive medication for stage 1 hypertension?",
+                chat_history="",
+                patient_data="",
+                deep_search=False,
+            )
+        )
+
+    # One retry, then give up: raw evidence text is never shown as if it were an answer.
+    assert calls == ["empirico_quick_search", "empirico_quick_search"]
 
 
 def test_retrieval_query_planner_falls_back_to_user_question(monkeypatch):
@@ -989,7 +2086,7 @@ def test_retrieval_query_planner_falls_back_to_user_question(monkeypatch):
     )
 
 
-def test_deep_broadens_retrieval_while_quick_uses_original_query(monkeypatch):
+def test_quick_and_deep_can_broaden_retrieval_with_generic_planner(monkeypatch):
     monkeypatch.delenv("EMPIRICO_QUICK_ENABLE_RETRIEVAL_PLANNER", raising=False)
     monkeypatch.delenv("EMPIRICO_DEEP_ENABLE_RETRIEVAL_PLANNER", raising=False)
     question = "How is uncomplicated malaria treated in adults?"
@@ -1025,12 +2122,16 @@ def test_deep_broadens_retrieval_while_quick_uses_original_query(monkeypatch):
         )
     )
 
-    assert quick_queries == (question,)
+    assert quick_queries == (
+        question,
+        "standard initial treatment guideline",
+        "adult treatment regimen",
+    )
     assert deep_queries == (
+        question,
         "standard initial treatment guideline",
         "adult treatment regimen",
         "practical dosing details",
-        question,
     )
 
 
@@ -1069,7 +2170,7 @@ def test_fallback_retrieval_queries_are_neutral_and_do_not_guess_answers(monkeyp
 def test_retrieval_planner_auto_is_generic_not_condition_triggered(monkeypatch):
     monkeypatch.setenv("EMPIRICO_QUICK_ENABLE_RETRIEVAL_PLANNER", "auto")
 
-    assert not _retrieval_planner_enabled(False)
+    assert _retrieval_planner_enabled(False)
 
     monkeypatch.setenv("EMPIRICO_DEEP_ENABLE_RETRIEVAL_PLANNER", "auto")
 
@@ -1084,50 +2185,6 @@ def test_retrieval_planner_auto_is_generic_not_condition_triggered(monkeypatch):
     assert not _retrieval_planner_enabled(False)
 
 
-def test_semantic_evidence_selector_uses_model_source_numbers(monkeypatch):
-    async def fake_post_model_response(payload, timeout_seconds):
-        assert payload["prompt_type"] == "empirico_evidence_source_selection"
-        assert "Return only valid JSON" in payload["prompt"]
-        assert "Retrieved sources:" in payload["prompt"]
-        return {"answer": '{"source_numbers":[2]}'}
-
-    monkeypatch.setenv("EMPIRICO_ENABLE_SEMANTIC_EVIDENCE_SELECTION", "true")
-    monkeypatch.setattr(
-        "healthnavi.services.evidence_retrieval_adapter._post_model_response",
-        fake_post_model_response,
-    )
-    evidence = [
-        {
-            "source": "crawl4ai",
-            "title": "Tangential implementation report",
-            "url": "https://example.org/report",
-            "snippet": "Implementation background without treatment details.",
-            "evidence_type": "guideline",
-        },
-        {
-            "source": "crawl4ai",
-            "title": "Direct first-line treatment guideline",
-            "url": "https://www.who.int/publications/example",
-            "snippet": "First-line treatment uses the preferred regimen and alternatives.",
-            "evidence_type": "guideline",
-        },
-    ]
-
-    selected = asyncio.run(
-        _select_answer_evidence(
-            query="What is the first-line treatment?",
-            patient_data="",
-            chat_history="",
-            evidence=evidence,
-            deep_search=False,
-            answer_top_k=4,
-        )
-    )
-
-    assert selected[0] == evidence[1]
-    assert selected[1:] == [evidence[0]]
-
-
 def test_quick_mode_uses_bounded_retrieval_settings(monkeypatch):
     monkeypatch.setenv("EMPIRICO_QUICK_SEARCH_TOP_K", "9")
     monkeypatch.setenv("EMPIRICO_QUICK_ANSWER_TOP_K", "3")
@@ -1137,6 +2194,7 @@ def test_quick_mode_uses_bounded_retrieval_settings(monkeypatch):
     monkeypatch.setenv("EMPIRICO_QUICK_CRAWL_MAX_SOURCES", "6")
     monkeypatch.setenv("EMPIRICO_QUICK_CRAWL_MAX_PAGES", "8")
     monkeypatch.setenv("EMPIRICO_QUICK_MAX_RESULTS_PER_PROVIDER", "5")
+    monkeypatch.delenv("EMPIRICO_QUICK_MAX_OUTPUT_TOKENS", raising=False)
     get_settings.cache_clear()
 
     settings = _search_settings_for_mode(False)
@@ -1148,7 +2206,49 @@ def test_quick_mode_uses_bounded_retrieval_settings(monkeypatch):
     assert settings.crawl_max_sources == 6
     assert settings.crawl_max_pages == 8
     assert settings.max_results_per_provider == 5
-    assert _answer_top_k(False) == 6
+    assert _answer_top_k(False) == 4
+    assert _answer_top_k(True) == 8
+    assert _evidence_search_top_k(False) == 9
+    assert _max_output_tokens_for_mode(False) == 2000
+
+
+def test_multi_branch_plan_disables_quick_retrieval_early_stop(monkeypatch):
+    calls: list[str] = []
+
+    async def fake_search_local_evidence(**kwargs):
+        calls.append(kwargs["query"])
+        return {
+            "items": [
+                {
+                    "source": "crawl4ai",
+                    "title": "Clinical guideline",
+                    "url": f"https://example.org/{len(calls)}",
+                    "snippet": "Clinical treatment guidance.",
+                    "evidence_type": "guideline",
+                }
+                for _ in range(4)
+            ],
+            "provider_errors": [],
+            "timings_ms": {},
+        }
+
+    monkeypatch.setenv("EMPIRICO_QUICK_RETRIEVAL_EARLY_STOP", "true")
+    monkeypatch.setattr(
+        "healthnavi.services.evidence_retrieval_adapter._search_local_evidence",
+        fake_search_local_evidence,
+    )
+    asyncio.run(
+        _search_retrieval_queries(
+            queries=("first branch", "second branch"),
+            top_k=8,
+            country_code=None,
+            deep_search=False,
+            answer_top_k=4,
+            coverage_required=True,
+        )
+    )
+
+    assert calls == ["first branch", "second branch"]
 
 
 def test_quick_mode_ignores_stale_tiny_retrieval_overrides(monkeypatch):
@@ -1163,16 +2263,18 @@ def test_quick_mode_ignores_stale_tiny_retrieval_overrides(monkeypatch):
     monkeypatch.setenv("EMPIRICO_QUICK_REQUEST_TIMEOUT_SECONDS", "4")
     monkeypatch.setenv("EMPIRICO_QUICK_CRAWL_MAX_SOURCES", "4")
     monkeypatch.setenv("EMPIRICO_QUICK_CRAWL_MAX_PAGES", "6")
+    monkeypatch.setenv("EMPIRICO_QUICK_MAX_RESULTS_PER_PROVIDER", "4")
     get_settings.cache_clear()
 
     settings = _search_settings_for_mode(False)
     get_settings.cache_clear()
 
-    assert settings.retrieval_time_budget_seconds == 16
-    assert settings.crawl_time_budget_seconds == 14
-    assert settings.request_timeout_seconds == 20
-    assert settings.crawl_max_sources == 8
-    assert settings.crawl_max_pages == 14
+    assert settings.retrieval_time_budget_seconds == 10
+    assert settings.crawl_time_budget_seconds == 8
+    assert settings.request_timeout_seconds == 12
+    assert settings.crawl_max_sources == 4
+    assert settings.crawl_max_pages == 8
+    assert settings.max_results_per_provider == 4
 
 
 def test_quick_mode_uses_base_retrieval_settings_when_mode_overrides_absent(monkeypatch):
@@ -1199,9 +2301,9 @@ def test_quick_mode_uses_base_retrieval_settings_when_mode_overrides_absent(monk
     assert settings.retrieval_time_budget_seconds == 10
     assert settings.crawl_time_budget_seconds == 8
     assert settings.request_timeout_seconds == 12
-    assert settings.crawl_max_sources == 6
+    assert settings.crawl_max_sources == 4
     assert settings.crawl_max_pages == 8
-    assert settings.max_results_per_provider == 6
+    assert settings.max_results_per_provider == 4
 
 
 def test_retrieval_defaults_allow_web_crawl_to_finish():
@@ -1211,13 +2313,13 @@ def test_retrieval_defaults_allow_web_crawl_to_finish():
     assert settings.crawl_time_budget_seconds == 14
 
 
-def test_model_timeout_uses_global_timeout_when_mode_override_absent(monkeypatch):
+def test_model_timeout_uses_per_mode_defaults_when_override_absent(monkeypatch):
     monkeypatch.setenv("EMPIRICO_QUICK_MODEL_TIMEOUT_SECONDS", "")
     monkeypatch.setenv("EMPIRICO_DEEP_MODEL_TIMEOUT_SECONDS", "")
     monkeypatch.setenv("MODEL_SERVICE_TIMEOUT_SECONDS", "180")
 
-    assert _model_timeout_for_mode(False) == 180
-    assert _model_timeout_for_mode(True) == 180
+    assert _model_timeout_for_mode(False) == 30
+    assert _model_timeout_for_mode(True) == 120
 
 
 def test_model_timeout_mode_override_is_capped_by_global_timeout(monkeypatch):
@@ -1232,8 +2334,8 @@ def test_model_timeout_ignores_stale_tiny_mode_overrides(monkeypatch):
     monkeypatch.setenv("EMPIRICO_QUICK_MODEL_TIMEOUT_SECONDS", "4.7")
     monkeypatch.setenv("EMPIRICO_DEEP_MODEL_TIMEOUT_SECONDS", "8")
 
-    assert _model_timeout_for_mode(False) == 180
-    assert _model_timeout_for_mode(True) == 180
+    assert _model_timeout_for_mode(False) == 30
+    assert _model_timeout_for_mode(True) == 120
 
 
 def test_local_followups_avoid_second_model_call_for_dosage_questions():
@@ -1265,107 +2367,6 @@ def test_model_service_response_normalizes_common_gcp_envelopes():
     )["answer"] == "Follow current guideline recommendations [1]."
 
 
-def test_sanitize_answer_style_removes_provided_evidence_phrasing():
-    answer = (
-        "Based on the provided evidence, The provided evidence supports thiazide "
-        "diuretics as one first-line option [1]."
-    )
-
-    cleaned = _sanitize_answer_style(answer)
-
-    assert "provided evidence" not in cleaned.lower()
-    assert "cited source" not in cleaned.lower()
-    assert cleaned.startswith("Thiazide diuretics")
-
-
-def test_sanitize_answer_style_removes_appendix_and_current_evidence_phrasing():
-    answer = (
-        "The cited sources indicates that ceftriaxone is used for severe pneumonia [1]. "
-        "However, the specific dosage is notdetailed within the provided text and refers "
-        "to Appendix 13, which is not available in the current evidence [1]."
-    )
-
-    cleaned = _sanitize_answer_style(answer)
-
-    assert cleaned.startswith("Ceftriaxone")
-    assert "cited source" not in cleaned.lower()
-    assert "provided text" not in cleaned.lower()
-    assert "current evidence" not in cleaned.lower()
-    assert "appendix 13" not in cleaned.lower()
-    assert "notdetailed" not in cleaned.lower()
-
-
-def test_sanitize_answer_style_removes_empty_source_disclaimer():
-    answer = (
-        "The cited sources does not specify a single first-line medication. "
-        "It indicates that initial therapy can use thiazide diuretics, ACE inhibitors, "
-        "ARBs, or long-acting calcium-channel blockers [1]."
-    )
-
-    cleaned = _sanitize_answer_style(answer)
-
-    assert cleaned.startswith("Initial therapy can use")
-    assert "cited source" not in cleaned.lower()
-    assert "does not specify" not in cleaned.lower()
-
-
-def test_sanitize_answer_style_removes_provided_information_disclaimer():
-    answer = (
-        "The provided information does not specify whether she is pregnant. "
-        "DTG-based antiretroviral therapy is the preferred first-line approach [1]."
-    )
-
-    cleaned = _sanitize_answer_style(answer)
-
-    assert cleaned == "DTG-based antiretroviral therapy is the preferred first-line approach [1]."
-    assert "provided information" not in cleaned.lower()
-    assert "does not specify" not in cleaned.lower()
-
-
-def test_sanitize_answer_style_removes_source_name_attribution():
-    answer = (
-        "For adults with hypertension requiring pharmacological treatment, "
-        "the World Health Organization (WHO) recommends using thiazide-like agents [1]."
-    )
-
-    cleaned = _sanitize_answer_style(answer)
-
-    assert "World Health Organization" not in cleaned
-    assert "WHO recommends" not in cleaned
-    assert cleaned.startswith("For adults with hypertension requiring pharmacological treatment, use")
-
-    direct_object = _sanitize_answer_style(
-        "For a 30-year-old female with HIV, the World Health Organization (WHO) "
-        "recommends a dolutegravir-based regimen as first-line ART [1]."
-    )
-    assert "World Health Organization" not in direct_object
-    assert "WHO" not in direct_object
-    assert direct_object.startswith("For a 30-year-old female with HIV, a dolutegravir-based")
-
-    initiating = _sanitize_answer_style(
-        "For adults with hypertension requiring pharmacological treatment, "
-        "the World Health Organization (WHO) recommends initiating treatment "
-        "with thiazide-like agents [1]."
-    )
-    assert "World Health Organization" not in initiating
-    assert "WHO" not in initiating
-    assert initiating.startswith("For adults with hypertension requiring pharmacological treatment, initiate")
-
-
-def test_sanitize_answer_style_removes_source_name_support_sentence():
-    answer = (
-        "Use TDF + 3TC + DTG as preferred first-line ART for adults [1]. "
-        "The World Health Organization (WHO) has consistently supported the adoption "
-        "of DTG as a preferred option in first- and second-line ART [1]."
-    )
-
-    cleaned = _sanitize_answer_style(answer)
-
-    assert "World Health Organization" not in cleaned
-    assert "supported the adoption" not in cleaned
-    assert cleaned == "Use TDF + 3TC + DTG as preferred first-line ART for adults [1]."
-
-
 def test_service_status_answers_are_not_treated_as_medical_answers():
     assert _answer_looks_like_service_status(
         "The model service is temporarily busy. Please try again."
@@ -1375,213 +2376,155 @@ def test_service_status_answers_are_not_treated_as_medical_answers():
     )
 
 
-def test_reference_urls_are_rebuilt_and_inline_markers_linked():
-    answer = (
-        "Immediate ART is generally recommended after diagnosis [1, 2].\n\n"
-        "**References**\n"
-        "- old model reference"
-    )
-    citations = [
-        {
-            "title": "Adult HIV guideline",
-            "url": "https://example.org/hiv",
-            "source_label": "Guideline Page",
-            "year": 2025,
-        },
-        {
-            "title": "ART review",
-            "url": "https://example.org/art-review",
-            "source_label": "PubMed",
-            "year": 2024,
-        },
-    ]
-
-    rendered = _ensure_reference_urls(answer, citations)
-
-    assert (
-        "Immediate ART is generally recommended after diagnosis "
-        "[1](https://example.org/hiv) [2](https://example.org/art-review)."
-    ) in rendered
-    assert "[[1]](" not in rendered
-    assert "old model reference" not in rendered
-    assert "1. [Adult HIV guideline](https://example.org/hiv) - Guideline Page, 2025 - https://example.org/hiv" in rendered
-    assert "2. [ART review](https://example.org/art-review) - PubMed, 2024 - https://example.org/art-review" in rendered
-
-
-def test_reference_urls_rewrite_model_supplied_inline_links():
-    answer = "Use DTG-based ART as first-line treatment [2](https://untrusted.example/source)."
-    citations = [
-        {
-            "title": "Background source",
-            "url": "https://example.org/background",
-            "source_label": "PubMed",
-            "year": 2022,
-        },
-        {
-            "title": "HIV treatment guideline",
-            "url": "https://example.org/hiv-guideline",
-            "source_label": "Guideline Page",
-            "year": 2025,
-        },
-    ]
-
-    rendered = _ensure_reference_urls(answer, citations)
-
-    assert "https://untrusted.example/source" not in rendered
-    assert "Use DTG-based ART as first-line treatment [1](https://example.org/hiv-guideline)." in rendered
-    assert "Background source" not in rendered
-    assert "1. [HIV treatment guideline](https://example.org/hiv-guideline)" in rendered
-
-
-def test_reference_urls_omit_placeholder_metadata_when_missing():
-    answer = "Use IPTp in eligible malaria-endemic pregnancy settings [1]."
-    citations = [
-        {
-            "title": "Intermittent preventive treatment to reduce malaria risk",
-            "url": "https://www.who.int/tools/elena/interventions/iptp-pregnancy",
-            "source_label": "Guideline Page",
-            "year": None,
-        },
-    ]
-
-    rendered = _ensure_reference_urls(answer, citations)
-
-    assert (
-        "Use IPTp in eligible malaria-endemic pregnancy settings "
-        "[1](https://www.who.int/tools/elena/interventions/iptp-pregnancy)."
-    ) in rendered
-    assert "[[1]](" not in rendered
-    assert "Guideline Page, n.d." not in rendered
-    assert (
-        "1. [Intermittent preventive treatment to reduce malaria risk]"
-        "(https://www.who.int/tools/elena/interventions/iptp-pregnancy)"
-        " - https://www.who.int/tools/elena/interventions/iptp-pregnancy"
-    ) in rendered
-
-
-def test_reference_urls_compact_to_only_cited_sources():
-    answer = "Use intravenous artesunate for severe malaria in pregnancy [3]."
-    citations = [
-        {
-            "title": "Background article",
-            "url": "https://example.org/background",
-            "source_label": "Semantic Scholar",
-            "year": 2022,
-        },
-        {
-            "title": "General malaria review",
-            "url": "https://example.org/review",
-            "source_label": "PubMed",
-            "year": 2023,
-        },
-        {
-            "title": "Severe malaria pregnancy review",
-            "url": "https://example.org/severe-malaria-pregnancy",
-            "source_label": "Semantic Scholar",
-            "year": 2025,
-        },
-    ]
-
-    rendered = _ensure_reference_urls(answer, citations)
-
-    assert (
-        "Use intravenous artesunate for severe malaria in pregnancy "
-        "[1](https://example.org/severe-malaria-pregnancy)."
-    ) in rendered
-    assert "[[1]](" not in rendered
-    assert "[3]" not in rendered
-    assert "Background article" not in rendered
-    assert "General malaria review" not in rendered
-    assert "1. [Severe malaria pregnancy review](https://example.org/severe-malaria-pregnancy)" in rendered
-
-
-def test_citations_follow_nested_v3_reference_fields(monkeypatch):
-    monkeypatch.setenv("MODEL_SERVICE_BASE_URL", "https://model.empirico.ai")
+def test_html_citations_use_text_fragment_when_no_page_is_available():
     item = {
         "source": "crawl4ai",
-        "raw": {
-            "document_title": "Uganda Clinical Guidelines 2023",
-            "public_source_url": "/v1/references/uganda_clinical_guidelines_2023:0042:abc123",
-            "page_start": 42,
-            "section_title": "Nutrition | Severe acute malnutrition",
-            "publisher": "Ministry of Health Uganda",
-            "publication_year": 2023,
-        },
-        "snippet": "Treatment includes stabilization and therapeutic feeding.",
+        "title": "Hypertension pharmacological treatment guideline",
+        "url": "https://www.who.int/publications/i/item/9789240033986",
+        "snippet": (
+            "For adults with hypertension requiring pharmacological treatment, use a "
+            "thiazide-like diuretic, an ACE inhibitor or ARB, or a long-acting calcium channel blocker."
+        ),
+        "journal_or_publisher": "WHO",
         "evidence_type": "guideline",
+        "raw": {"retrieval_mode": "static_html"},
     }
 
     citations = _citations_from_evidence([item])
-    context = _evidence_context_for_prompt([item])
 
-    assert citations[0]["url"] == (
-        "https://model.empirico.ai/v1/references/"
-        "uganda_clinical_guidelines_2023:0042:abc123#page=42"
-    )
-    assert "Uganda Clinical Guidelines 2023, p. 42" in str(citations[0]["title"])
-    assert "Severe acute malnutrition" in str(citations[0]["title"])
-    assert citations[0]["source_label"] == "Ministry of Health Uganda"
-    assert citations[0]["year"] == 2023
-    assert "Source: Ministry of Health Uganda; Year: 2023; URL:" in context
+    assert "#:~:text=" in str(citations[0]["url"])
+    assert "For%20adults%20with%20hypertension" in str(citations[0]["url"])
 
 
-def test_quick_evidence_context_keeps_treatment_intent_sentences():
-    item = {
-        "source": "crawl4ai",
-        "title": "Update of recommendations on first- and second-line antiretroviral regimens",
-        "url": "https://www.who.int/publications/i/item/WHO-CDS-HIV-19.15",
-        "snippet": (
-            "Number of pages 15. Reference numbers WHO/CDS/HIV/19.15. "
-            "The updated recommendations support dolutegravir as the preferred "
-            "antiretroviral drug in first- and second-line regimens for people with HIV."
+def test_query_focused_snippet_prefers_direct_answer_segments_for_practical_query():
+    snippet = _query_focused_snippet(
+        (
+            "Malaria in pregnancy can lead to stillbirth and low birth weight. "
+            "Prevention includes insecticide-treated mosquito nets and intermittent preventive treatment. "
+            "Confirmed uncomplicated malaria in pregnancy should receive prompt effective antimalarial treatment. "
+            "Severe malaria in pregnancy requires urgent parenteral antimalarial therapy."
         ),
-        "evidence_type": "clinical_resource",
-    }
-
-    context = _evidence_context_for_prompt(
-        [item],
-        deep_search=False,
-        query="30 year old female in Kampala has HIV, what is the treatment?",
+        "According to WHO malaria guidelines, how should malaria in pregnancy be treated?",
+        500,
     )
 
-    assert "dolutegravir" in context
-    assert "preferred antiretroviral drug" in context
+    assert "Confirmed uncomplicated malaria" in snippet
+    assert "Severe malaria in pregnancy requires" in snippet
 
 
-def test_model_service_references_join_when_answer_cites_beyond_local_sources(monkeypatch):
-    monkeypatch.setenv("MODEL_SERVICE_BASE_URL", "https://model.empirico.ai")
-    answer = "Use the signed model-service reference for the exact source [2]."
-    local_citations = [
+def test_treatment_query_ranking_downranks_prevention_only_sources(monkeypatch):
+    monkeypatch.setenv("EMPIRICO_EVIDENCE_PROVIDER_MODE", "web")
+    items = [
         {
-            "title": "Local web source",
-            "url": "https://www.who.int/example",
-            "source_label": "WHO",
-            "year": 2024,
-        }
+            "source": "crawl4ai",
+            "title": "Intermittent preventive treatment of malaria in pregnancy",
+            "url": "https://www.who.int/malaria-prevention-pregnancy",
+            "snippet": "Pregnant women should use mosquito nets and receive IPTp to prevent malaria.",
+            "evidence_type": "guideline",
+            "raw": {"retrieval_mode": "static_html"},
+        },
+        {
+            "source": "crawl4ai",
+            "title": "Guidelines for the treatment of malaria in pregnancy",
+            "url": "https://www.who.int/malaria-treatment-pregnancy",
+            "snippet": "Confirmed malaria in pregnancy should be treated with prompt effective antimalarial therapy.",
+            "evidence_type": "guideline",
+            "raw": {"retrieval_mode": "static_html"},
+        },
     ]
-    model_data = {
-        "references": [
-            {
-                "citation_label": "HealthNavy knowledge base source",
-                "signed_reference_url": "/v1/references/kb:0007:abc123",
-                "page_start": 7,
-                "source_label": "HealthNavy KB",
-                "year": 2025,
-            }
-        ]
+
+    filtered = _filter_evidence_items(
+        items,
+        query="According to WHO malaria guidelines, how should malaria in pregnancy be treated?",
+    )
+
+    assert [item["title"] for item in filtered] == [
+        "Guidelines for the treatment of malaria in pregnancy",
+        "Intermittent preventive treatment of malaria in pregnancy",
+    ]
+
+
+def test_quick_retrieval_does_not_early_stop_on_tangential_first_results(monkeypatch):
+    calls: list[str] = []
+    first_query = "national clinical policy implementation"
+    second_query = "malaria pregnancy treatment"
+
+    async def fake_search_local_evidence(**kwargs):
+        calls.append(kwargs["query"])
+        if kwargs["query"] == first_query:
+            items = [
+                {
+                    "source": "crawl4ai",
+                    "title": f"Broad health systems source {index}",
+                    "url": f"https://example.org/broad-{index}",
+                    "journal_or_publisher": "Guideline",
+                    "snippet": "This implementation document covers service delivery planning and reporting workflows.",
+                    "evidence_type": "guideline",
+                    "raw": {"retrieval_mode": "static_html"},
+                }
+                for index in range(1, 5)
+            ]
+        else:
+            items = [
+                {
+                    "source": "crawl4ai",
+                    "title": "Malaria pregnancy treatment guideline",
+                    "url": "https://example.org/treatment",
+                    "journal_or_publisher": "Guideline",
+                    "snippet": "Confirmed malaria in pregnancy should be treated with prompt effective antimalarial therapy.",
+                    "evidence_type": "guideline",
+                    "raw": {"retrieval_mode": "static_html"},
+                }
+            ]
+        return {"items": items, "provider_errors": [], "timings_ms": {"total": 10.0}}
+
+    monkeypatch.setenv("EMPIRICO_QUICK_RETRIEVAL_EARLY_STOP", "true")
+    monkeypatch.setattr(
+        "healthnavi.services.evidence_retrieval_adapter._search_local_evidence",
+        fake_search_local_evidence,
+    )
+
+    result = asyncio.run(
+        _search_retrieval_queries(
+            queries=(first_query, second_query),
+            top_k=8,
+            country_code=None,
+            deep_search=False,
+            source_preference_terms=(),
+            answer_top_k=4,
+        )
+    )
+
+    assert calls == [first_query, second_query]
+    assert "query_2" in result["timings_ms"]
+
+
+def test_citations_recover_provider_url_aliases_and_url_ids():
+    alias_item = {
+        "source": "crawl4ai",
+        "title": "Hypertension guideline",
+        "snippet": "Initial treatment guidance for hypertension.",
+        "evidence_type": "guideline",
+        "raw": {
+            "canonical_url": "https://www.who.int/publications/i/item/9789240033986",
+            "publisher": "WHO",
+            "publication_year": 2025,
+        },
+    }
+    id_item = {
+        "id": "crawl4ai:https://health.go.ug/downloads/hypertension",
+        "source": "crawl4ai",
+        "title": "Uganda hypertension guidance",
+        "snippet": "Uganda hypertension treatment guidance.",
+        "evidence_type": "guideline",
     }
 
-    citations = _citations_for_answer(answer, local_citations, model_data)
-    rendered = _ensure_reference_urls(answer, citations)
+    citations = _citations_from_evidence([alias_item, id_item])
 
-    assert (
-        "Use the signed model-service reference for the exact source "
-        "[1](https://model.empirico.ai/v1/references/kb:0007:abc123#page=7)."
-    ) in rendered
-    assert "[[1]](" not in rendered
-    assert "Local web source" not in rendered
-    assert "knowledge base source" in rendered
-    assert "HealthNavy KB, 2025" in rendered
+    assert citations[0]["url"] == "https://www.who.int/publications/i/item/9789240033986"
+    assert citations[0]["source_label"] == "WHO"
+    assert citations[0]["year"] == 2025
+    assert citations[1]["url"] == "https://health.go.ug/downloads/hypertension"
 
 
 def test_web_mode_filters_unsupported_and_seed_references(monkeypatch):
@@ -1930,6 +2873,52 @@ def test_filter_evidence_prefers_more_recent_equivalent_guideline(monkeypatch):
     assert filtered[0]["url"] == "https://www.who.int/publications/current-hypertension-guideline"
 
 
+def test_filter_evidence_orders_local_guidance_then_recent_global_sources(monkeypatch):
+    monkeypatch.setenv("EMPIRICO_EVIDENCE_PROVIDER_MODE", "web")
+    preference_terms = ("uganda", "health.go.ug", "ministry of health uganda", "who afro", "africa")
+    items = [
+        {
+            "source": "crawl4ai",
+            "title": "WHO older hypertension guideline",
+            "url": "https://www.who.int/publications/older-hypertension-guideline",
+            "snippet": "Hypertension and antihypertensive treatment guidance.",
+            "evidence_type": "guideline",
+            "year": 2021,
+            "raw": {"retrieval_mode": "static_html"},
+        },
+        {
+            "source": "crawl4ai",
+            "title": "Uganda hypertension guideline",
+            "url": "https://health.go.ug/hypertension",
+            "snippet": "Ministry of Health Uganda hypertension treatment guidance.",
+            "evidence_type": "guideline",
+            "year": 2023,
+            "raw": {"retrieval_mode": "static_html"},
+        },
+        {
+            "source": "crawl4ai",
+            "title": "WHO current hypertension guideline",
+            "url": "https://www.who.int/publications/current-hypertension-guideline",
+            "snippet": "Hypertension and antihypertensive treatment guidance.",
+            "evidence_type": "guideline",
+            "year": 2025,
+            "raw": {"retrieval_mode": "static_html"},
+        },
+    ]
+
+    filtered = _filter_evidence_items(
+        items,
+        query="What is the first-line antihypertensive medication?",
+        source_preference_terms=preference_terms,
+    )
+
+    assert [item["title"] for item in filtered] == [
+        "Uganda hypertension guideline",
+        "WHO current hypertension guideline",
+        "WHO older hypertension guideline",
+    ]
+
+
 def test_filter_evidence_prefers_direct_title_match_over_incidental_body_match(monkeypatch):
     monkeypatch.setenv("EMPIRICO_EVIDENCE_PROVIDER_MODE", "web")
     items = [
@@ -1963,101 +2952,569 @@ def test_filter_evidence_prefers_direct_title_match_over_incidental_body_match(m
     assert filtered[0]["url"] == "https://www.who.int/publications/i/item/9789240033986"
 
 
-def test_global_evidence_can_join_uganda_preferred_results_for_generic_queries(monkeypatch):
+def test_filter_evidence_drops_trusted_but_wrong_topic_sources(monkeypatch):
     monkeypatch.setenv("EMPIRICO_EVIDENCE_PROVIDER_MODE", "web")
-    preference_terms = ("uganda", "health.go.ug", "africa")
-    local_items = [
+    items = [
         {
             "source": "crawl4ai",
-            "title": "Uganda hypertension guidance",
-            "url": "https://health.go.ug/hypertension",
-            "snippet": "Uganda guidance for hypertension.",
+            "title": "Background review2",
+            "url": "https://cdn.who.int/media/docs/default-source/nutritionlibrary/publications/malnutrition/guideline-updates-on-the-management-of-severe-acute-malnutrition-in-infants-and-children/review2.pdf",
+            "snippet": "Severe acute malnutrition management in infants and children.",
             "evidence_type": "guideline",
-            "raw": {"retrieval_mode": "static_html"},
-        },
-        {
-            "source": "semantic_scholar",
-            "title": "Africa hypertension review",
-            "url": "https://www.semanticscholar.org/paper/africa-hypertension",
-            "abstract": "Hypertension evidence from African settings.",
-            "evidence_type": "review",
+            "raw": {"retrieval_mode": "linked_pdf_text", "publisher": "WHO"},
         },
         {
             "source": "crawl4ai",
-            "title": "Uganda cardiovascular care",
-            "url": "https://health.go.ug/cardiovascular",
-            "snippet": "Uganda cardiovascular care information.",
+            "title": "Guideline for the pharmacological treatment of hypertension in adults",
+            "url": "https://iris.who.int/server/api/core/bitstreams/f062769d-f075-4a00-87af-0a2106e0bd04/content",
+            "snippet": "First-line pharmacological treatment of hypertension in adults.",
             "evidence_type": "guideline",
-            "raw": {"retrieval_mode": "static_html"},
+            "raw": {"retrieval_mode": "linked_pdf_text", "publisher": "WHO"},
         },
     ]
-    global_item = {
-        "source": "crawl4ai",
-        "title": "WHO hypertension guideline",
-        "url": "https://www.who.int/publications/example-hypertension",
-        "snippet": "Global WHO hypertension guideline recommendations.",
-        "evidence_type": "guideline",
-        "raw": {"retrieval_mode": "static_html"},
-    }
 
-    blended = _include_global_evidence_when_helpful(
-        query="first-line treatment for stage 1 hypertension",
-        evidence=local_items,
-        raw_evidence=[*local_items, global_item],
-        source_preference_terms=preference_terms,
-        answer_top_k=3,
+    filtered = _filter_evidence_items(
+        items,
+        query="What is the first-line antihypertensive medication for stage 1 hypertension?",
+        source_preference_terms=("uganda", "africa", "who afro"),
     )
 
-    assert [item["title"] for item in blended] == [
-        "Uganda hypertension guidance",
-        "Africa hypertension review",
-        "WHO hypertension guideline",
+    assert [item["title"] for item in filtered] == [
+        "Guideline for the pharmacological treatment of hypertension in adults",
     ]
 
 
-def test_global_evidence_does_not_replace_strong_explicit_uganda_results(monkeypatch):
+def test_filter_evidence_drops_local_fallback_sources_with_only_generic_overlap(monkeypatch):
     monkeypatch.setenv("EMPIRICO_EVIDENCE_PROVIDER_MODE", "web")
-    preference_terms = ("uganda", "health.go.ug", "africa")
-    local_items = [
+    items = [
         {
             "source": "crawl4ai",
-            "title": "Uganda malaria guideline",
-            "url": "https://health.go.ug/malaria",
-            "snippet": "Uganda malaria treatment guidance.",
+            "title": "Guideline for the pharmacological treatment of hypertension in adults",
+            "url": "https://iris.who.int/server/api/core/bitstreams/f062769d-f075-4a00-87af-0a2106e0bd04/content",
+            "journal_or_publisher": "WHO",
+            "snippet": (
+                "For adults with hypertension requiring pharmacological treatment, use drugs "
+                "from any of the following three classes as initial treatment: thiazide and "
+                "thiazide-like agents, ACE inhibitors or ARBs, or long-acting dihydropyridine "
+                "calcium channel blockers."
+            ),
             "evidence_type": "guideline",
-            "raw": {"retrieval_mode": "static_html"},
+            "raw": {"retrieval_mode": "linked_pdf_text"},
         },
         {
             "source": "crawl4ai",
-            "title": "Uganda malaria pregnancy guide",
-            "url": "https://health.go.ug/malaria-pregnancy",
-            "snippet": "Uganda severe malaria pregnancy guidance.",
+            "title": "Uganda Integrated Management of Acute Malnutrition Guidelines",
+            "url": "https://platform.who.int/docs/default-source/uganda-imam-guideline.pdf",
+            "journal_or_publisher": "Ministry of Health Uganda",
+            "snippet": (
+                "Children with severe acute malnutrition may reach this stage of treatment "
+                "with shock, dehydration, and heart failure. Give oxygen and fluids as described."
+            ),
             "evidence_type": "guideline",
-            "raw": {"retrieval_mode": "static_html"},
+            "raw": {"retrieval_mode": "pdf_text"},
         },
         {
-            "source": "semantic_scholar",
-            "title": "Africa severe malaria in pregnancy review",
-            "url": "https://www.semanticscholar.org/paper/africa-malaria-pregnancy",
-            "abstract": "African malaria-endemic settings.",
-            "evidence_type": "review",
+            "source": "crawl4ai",
+            "title": "WHO HIV updated recommendations",
+            "url": "https://iris.who.int/server/api/core/bitstreams/hiv-guideline/content",
+            "journal_or_publisher": "WHO",
+            "snippet": (
+                "People established on ART may have fewer medication refills; hypertension "
+                "screening can be integrated into chronic care."
+            ),
+            "evidence_type": "guideline",
+            "raw": {"retrieval_mode": "linked_pdf_text"},
         },
     ]
-    global_item = {
-        "source": "crawl4ai",
-        "title": "WHO malaria guideline",
-        "url": "https://www.who.int/publications/example-malaria",
-        "snippet": "Global WHO malaria treatment guidance.",
-        "evidence_type": "guideline",
-        "raw": {"retrieval_mode": "static_html"},
-    }
 
-    blended = _include_global_evidence_when_helpful(
-        query="severe malaria in pregnancy treatment in Uganda",
-        evidence=local_items,
-        raw_evidence=[*local_items, global_item],
-        source_preference_terms=preference_terms,
-        answer_top_k=3,
+    filtered = _filter_evidence_items(
+        items,
+        query="What is the first-line antihypertensive medication for stage 1 hypertension?",
+        source_preference_terms=("uganda", "ministry of health uganda", "africa"),
     )
 
-    assert blended == local_items
+    assert [item["title"] for item in filtered] == [
+        "Guideline for the pharmacological treatment of hypertension in adults",
+    ]
+
+
+
+
+def test_answer_candidates_order_guidelines_first_and_cap_passages_per_document():
+    from healthnavi.services.evidence_retrieval_adapter import _answer_candidates
+
+    def crawl(title, url, snippet, score, page=None):
+        item = {
+            "source": "crawl4ai",
+            "title": title,
+            "url": f"{url}#page={page}" if page else url,
+            "journal_or_publisher": "WHO",
+            "snippet": snippet,
+            "evidence_type": "clinical_resource",
+            "final_score": score,
+            "raw": {"retrieval_mode": "linked_pdf_text"},
+        }
+        return item
+
+    who_pdf = "https://iris.who.int/bitstreams/abc/content"
+    items = [
+        {
+            "source": "pubmed",
+            "title": "Dyslipidemia among adults living with HIV on dolutegravir in Kampala, Uganda",
+            "url": "https://pubmed.ncbi.nlm.nih.gov/1/",
+            "journal_or_publisher": "PLoS One",
+            "year": 2024,
+            "abstract": "HIV treatment cohort in Kampala Uganda on dolutegravir based antiretroviral therapy.",
+            "evidence_type": "journal_article",
+            "final_score": 0.9,
+        },
+        crawl("Consolidated HIV guidelines", who_pdf, "HIV treatment: preferred first-line ART is TDF + 3TC + DTG.", 0.71, page=44),
+        crawl("Consolidated HIV guidelines", who_pdf, "HIV treatment: second-line ART after failure.", 0.70, page=90),
+        crawl("Consolidated HIV guidelines", who_pdf, "HIV treatment: monitoring viral load.", 0.69, page=120),
+        crawl("Consolidated HIV guidelines", who_pdf, "HIV treatment: paediatric dosing tables.", 0.68, page=150),
+        crawl("Consolidated HIV guidelines", who_pdf, "HIV treatment: preferred first-line ART is TDF + 3TC + DTG.", 0.60, page=44),
+        {
+            "source": "official_health_api",
+            "title": "World Bank indicator: Adults newly infected with HIV",
+            "url": "https://api.worldbank.org/v2/country/UGA/indicator/SH.HIV.INCD",
+            "snippet": "Latest value: 38000 (2024)",
+            "evidence_type": "official_indicator",
+            "final_score": 0.75,
+        },
+    ]
+
+    candidates = _answer_candidates(
+        items,
+        query="What is the first-line HIV treatment for an adult woman?",
+        source_preference_terms=("uganda", "kampala"),
+        deep_search=False,
+    )
+
+    titles = [(c["title"], c["url"]) for c in candidates]
+    # WHO guideline passages come before the Kampala cohort study despite the place name.
+    assert titles[0][0] == "Consolidated HIV guidelines"
+    assert [title for title, _ in titles].index("Consolidated HIV guidelines") < next(
+        index for index, (title, _) in enumerate(titles) if title.startswith("Dyslipidemia")
+    )
+    # Exact duplicate passage dropped and at most three passages per document kept.
+    assert sum(1 for title, _ in titles if title == "Consolidated HIV guidelines") == 3
+    assert f"{who_pdf}#page=150" not in [url for _, url in titles]
+    # Statistics indicators are not offered for a treatment question.
+    assert not any("World Bank" in title for title, _ in titles)
+
+
+def test_answer_candidates_return_nothing_when_no_passage_matches_the_question():
+    from healthnavi.services.evidence_retrieval_adapter import _answer_candidates
+
+    items = [
+        {
+            "source": "crawl4ai",
+            "title": "Ceftriaxone injectable",
+            "url": "https://medicalguidelines.msf.org/ceftriaxone",
+            "snippet": "Doses greater than 2 g should be given by IV infusion only.",
+            "evidence_type": "guideline",
+            "final_score": 0.5,
+            "raw": {"retrieval_mode": "static_html"},
+        },
+        {
+            "source": "official_health_api",
+            "title": "World Bank indicator: Anti-malarial drug use by pregnant women",
+            "url": "https://api.worldbank.org/v2/country/UGA/indicator/SH.MLR.SPFN.Q2.ZS",
+            "snippet": "Latest value: 12 (2019)",
+            "evidence_type": "official_indicator",
+            "final_score": 0.7,
+        },
+    ]
+
+    # Off-topic pages and statistics indicators are not offered to the model, so the
+    # answer path falls through to rescue retrieval and then an uncited answer.
+    candidates = _answer_candidates(
+        items,
+        query="Can I give metronidazole to a patient on warfarin?",
+        source_preference_terms=(),
+        deep_search=False,
+    )
+
+    assert candidates == []
+
+
+def test_answer_sources_merge_passages_from_the_same_location():
+    from healthnavi.services.evidence_retrieval_adapter import _answer_sources, _citations_from_evidence
+
+    evidence = [
+        {
+            "source": "crawl4ai",
+            "title": "Consolidated HIV guidelines",
+            "url": "https://iris.who.int/x/content#page=23",
+            "snippet": "First passage on page 23.",
+            "evidence_type": "guideline",
+            "raw": {"retrieval_mode": "linked_pdf_text", "page": 23},
+        },
+        {
+            "source": "crawl4ai",
+            "title": "Consolidated HIV guidelines",
+            "url": "https://iris.who.int/x/content#page=23",
+            "snippet": "Second passage on page 23.",
+            "evidence_type": "guideline",
+            "raw": {"retrieval_mode": "linked_pdf_text", "page": 23},
+        },
+        {
+            "source": "crawl4ai",
+            "title": "Consolidated HIV guidelines",
+            "url": "https://iris.who.int/x/content#page=24",
+            "snippet": "Passage on page 24.",
+            "evidence_type": "guideline",
+            "raw": {"retrieval_mode": "linked_pdf_text", "page": 24},
+        },
+    ]
+    citations = _citations_from_evidence(evidence)
+    assert len(citations) == 3
+
+    sources = _answer_sources(evidence, citations, deep_search=False, query="HIV first-line ART")
+
+    assert [s["number"] for s in sources] == [1, 2]
+    assert sources[0]["url"].endswith("#page=23")
+    assert "First passage on page 23. [...] Second passage on page 23." == sources[0]["excerpt"]
+    assert sources[1]["excerpt"] == "Passage on page 24."
+    assert "same_document_as" not in sources[0]
+    assert sources[1]["same_document_as"] == 1
+
+
+def test_answer_candidates_limit_distinct_documents_to_reference_cap_plus_two(monkeypatch):
+    from healthnavi.services.evidence_retrieval_adapter import _answer_candidates, _max_references
+
+    monkeypatch.delenv("EMPIRICO_QUICK_MAX_REFERENCES", raising=False)
+    monkeypatch.delenv("EMPIRICO_QUICK_CONTEXT_SOURCES", raising=False)
+    assert _max_references(False) == 4
+    assert _max_references(True) == 8
+
+    items = [
+        {
+            "source": "crawl4ai",
+            "title": f"Malaria guideline {index}",
+            "url": f"https://iris.who.int/malaria-{index}",
+            "snippet": "Severe malaria treatment: IV artesunate first, then oral ACT.",
+            "evidence_type": "guideline",
+            "final_score": 0.9 - index / 100,
+            "raw": {"retrieval_mode": "static_html"},
+        }
+        for index in range(10)
+    ]
+
+    candidates = _answer_candidates(
+        items,
+        query="treatment of severe malaria",
+        source_preference_terms=(),
+        deep_search=False,
+    )
+
+    assert len(candidates) == 6
+    assert [c["title"] for c in candidates] == [f"Malaria guideline {index}" for index in range(6)]
+
+
+def test_document_year_falls_back_to_the_year_named_in_the_title_or_url():
+    from healthnavi.services.evidence_retrieval_adapter import _document_year
+
+    # Metadata year wins when present.
+    assert _document_year({"title": "Some guideline 2016", "url": "https://x/y", "year": 2024}) == 2024
+    # Otherwise the latest year in the title or URL path.
+    assert (
+        _document_year(
+            {
+                "title": "Uganda Clinical Guidelines",
+                "url": "https://www.differentiatedservicedelivery.org/wp-content/uploads/UCG-2023-Publication-Final-PDF-Version-1.pdf",
+            }
+        )
+        == 2023
+    )
+    assert (
+        _document_year(
+            {
+                "title": "Uganda IMAM Guidelines",
+                "url": "https://platform.who.int/docs/UGA-CH-38-03-GUIDELINE-2016-eng-IMAM-Guidelines-for-Uganda-Jan-2016.pdf#page=88",
+            }
+        )
+        == 2016
+    )
+    # Numbers inside a text-fragment anchor are not dates.
+    assert _document_year({"title": "News", "url": "https://who.int/news/x#:~:text=1999%20and%202001"}) == 0
+    assert _document_year({"title": "Untitled guidance", "url": "https://iris.who.int/bitstreams/abc/content"}) == 0
+
+
+def test_candidate_order_prefers_the_current_edition_without_overriding_authority():
+    from healthnavi.services.evidence_retrieval_adapter import _answer_candidates
+
+    def guideline(title, url, score):
+        return {
+            "source": "crawl4ai",
+            "title": title,
+            "url": url,
+            "journal_or_publisher": "Ministry of Health Uganda",
+            "snippet": "Severe acute malnutrition treatment for children under five.",
+            "evidence_type": "guideline",
+            "final_score": score,
+            "raw": {"retrieval_mode": "linked_pdf_text"},
+        }
+
+    items = [
+        # Older edition retrieved with the better score.
+        guideline("Uganda IMAM Guidelines", "https://platform.who.int/docs/UGA-GUIDELINE-2016-eng-IMAM-Jan-2016.pdf", 0.90),
+        guideline("Uganda Clinical Guidelines", "https://www.differentiatedservicedelivery.org/uploads/UCG-2023-Final.pdf", 0.70),
+        guideline("Consolidated guidance", "https://iris.who.int/bitstreams/undated/content", 0.80),
+        {
+            "source": "pubmed",
+            "title": "Management of severe acute malnutrition: a 2026 review",
+            "url": "https://pubmed.ncbi.nlm.nih.gov/99/",
+            "journal_or_publisher": "Lancet",
+            "year": 2026,
+            "abstract": "Review of severe acute malnutrition treatment in children under five.",
+            "evidence_type": "review",
+            "final_score": 0.95,
+        },
+    ]
+
+    ordered = _answer_candidates(
+        items,
+        query="treatment options for severe malnutrition in children under 5",
+        source_preference_terms=("uganda",),
+        deep_search=True,
+    )
+
+    titles = [item["title"] for item in ordered]
+    # 2023 national guidance first, then undated guidance, then the 2016 edition.
+    assert titles[:3] == ["Uganda Clinical Guidelines", "Consolidated guidance", "Uganda IMAM Guidelines"]
+    # A very recent journal review still ranks below guideline-tier sources.
+    assert titles[3].startswith("Management of severe acute malnutrition")
+
+
+def test_curated_catalog_domains_outrank_article_databases():
+    from healthnavi.evidence_retrieval.services.evidence_policy import (
+        crawl_catalog_domains,
+        source_trust_tier,
+    )
+
+    # The catalog is the curated list of sources the crawler is allowed to visit,
+    # so every one of its domains must be at least primary-clinical tier. Before
+    # this, the host of the current Uganda Clinical Guidelines PDF scored below PubMed.
+    assert crawl_catalog_domains()
+    for domain in crawl_catalog_domains():
+        assert source_trust_tier("crawl4ai", f"https://{domain}/document.pdf") <= 3
+
+    assert source_trust_tier("crawl4ai", "https://www.differentiatedservicedelivery.org/uploads/UCG-2023.pdf") == 1
+    assert source_trust_tier("crawl4ai", "https://library.health.go.ug/x") == 0
+    assert source_trust_tier("pubmed", "https://pubmed.ncbi.nlm.nih.gov/123/") == 3
+    assert source_trust_tier("crawl4ai", "https://unlisted-blog.example.com/post") == 9
+
+
+def test_clinical_specificity_separates_actionable_passages_from_pathway_prose():
+    from healthnavi.evidence_retrieval.services.clinical_specificity import (
+        clinical_specificity_score,
+    )
+
+    pathway_prose = (
+        "Inpatient Therapeutic Care involves medical and nutritional therapy with "
+        "psychosocial support, and has a stabilization phase and a rehabilitation phase."
+    )
+    actionable = (
+        "Give F-75 at 130 ml/kg/day in 8 feeds and amoxicillin 40 mg/kg every 12 hours "
+        "for 5 days, then transition to RUTF."
+    )
+    mechanism = (
+        "Dolutegravir inhibits the integrase enzyme and prevents insertion of viral DNA "
+        "into the host genome."
+    )
+
+    assert clinical_specificity_score(pathway_prose) == 0.0
+    assert clinical_specificity_score(actionable) >= 0.6
+    # Inert for qualitative questions: no candidate scores, so nothing is reordered.
+    assert clinical_specificity_score(mechanism) == 0.0
+    assert clinical_specificity_score("") == 0.0
+
+
+def test_specificity_breaks_ties_without_overriding_source_authority():
+    from healthnavi.services.evidence_retrieval_adapter import _answer_candidates
+
+    def passage(title, url, snippet, score):
+        return {
+            "source": "crawl4ai",
+            "title": title,
+            "url": url,
+            "journal_or_publisher": "Ministry of Health Uganda",
+            "snippet": snippet,
+            "evidence_type": "guideline",
+            "final_score": score,
+            "raw": {"retrieval_mode": "linked_pdf_text"},
+        }
+
+    items = [
+        passage(
+            "National guideline",
+            "https://library.health.go.ug/g.pdf#page=59",
+            "Severe acute malnutrition is managed through an outpatient therapeutic programme "
+            "offering home-based treatment and rehabilitation.",
+            0.90,
+        ),
+        passage(
+            "National guideline",
+            "https://library.health.go.ug/g.pdf#page=73",
+            "For severe acute malnutrition give amoxicillin 40 mg/kg every 12 hours for 5 days "
+            "with RUTF providing 150 kcal/kg/day.",
+            0.60,
+        ),
+        {
+            "source": "pubmed",
+            "title": "Trial of therapeutic feeds",
+            "url": "https://pubmed.ncbi.nlm.nih.gov/7/",
+            "journal_or_publisher": "Lancet",
+            "year": 2025,
+            "abstract": "Severe acute malnutrition treated with 100 ml/kg/day of F-100 every 4 hours for 7 days.",
+            "evidence_type": "clinical_trial",
+            "final_score": 0.99,
+        },
+    ]
+
+    ordered = _answer_candidates(
+        items,
+        query="treatment for severe acute malnutrition",
+        source_preference_terms=(),
+        deep_search=True,
+    )
+
+    # Within the guideline, the dosing page outranks its pathway page despite the
+    # lower retrieval score.
+    guideline_pages = [
+        item["url"].rsplit("#", 1)[-1] for item in ordered if item["source"] == "crawl4ai"
+    ]
+    assert guideline_pages == ["page=73", "page=59"]
+    # The journal article never precedes the guideline it competes with.
+    assert ordered[0]["source"] == "crawl4ai"
+
+
+def test_candidates_take_the_best_passage_of_each_document_before_a_second_from_any():
+    from healthnavi.services.evidence_retrieval_adapter import _answer_candidates
+
+    def passage(doc, page, snippet, score):
+        return {
+            "source": "crawl4ai",
+            "title": f"Uganda guideline on acute malnutrition, volume {doc}",
+            "url": f"https://library.health.go.ug/{doc}.pdf#page={page}",
+            "journal_or_publisher": "Ministry of Health Uganda",
+            "snippet": snippet,
+            "evidence_type": "guideline",
+            "final_score": score,
+            "raw": {"retrieval_mode": "linked_pdf_text"},
+        }
+
+    items = [
+        passage("a", 10, "Give amoxicillin 40 mg/kg every 12 hours for 5 days in malnutrition.", 0.95),
+        passage("a", 11, "Give amoxicillin 40 mg/kg twice daily for 5 days in acute malnutrition.", 0.94),
+        passage("a", 12, "Amoxicillin dosing 40 mg/kg every 12 hours continues for 5 days.", 0.93),
+        passage("b", 3, "Admit malnutrition with complications, treat as outpatient when appetite is intact.", 0.50),
+    ]
+
+    candidates = _answer_candidates(
+        items,
+        query="treatment of acute malnutrition in children",
+        source_preference_terms=(),
+        deep_search=False,
+    )
+
+    # Breadth before depth: the second document appears before the first document's
+    # second page, so a long guideline cannot spend every slot on one viewpoint.
+    assert candidates[0]["url"].endswith("a.pdf#page=10")
+    assert candidates[1]["url"].endswith("b.pdf#page=3")
+
+
+def test_second_passage_from_a_document_is_the_complementary_one():
+    from healthnavi.services.evidence_retrieval_adapter import _answer_candidates
+
+    def passage(page, snippet, score):
+        return {
+            "source": "crawl4ai",
+            "title": "National guideline on severe acute malnutrition",
+            "url": f"https://library.health.go.ug/g.pdf#page={page}",
+            "journal_or_publisher": "Ministry of Health Uganda",
+            "snippet": snippet,
+            "evidence_type": "guideline",
+            "final_score": score,
+            "raw": {"retrieval_mode": "linked_pdf_text"},
+        }
+
+    items = [
+        passage(91, "Transition from F-75 to RUTF over 2-3 days at 100-135 kcal/kg/day.", 0.95),
+        passage(92, "Continue RUTF at 100-135 kcal/kg/day, topping up with F-75 over 2-3 days.", 0.94),
+        passage(59, "Decide the malnutrition pathway: complicated cases are admitted, uncomplicated cases with appetite are treated at home.", 0.60),
+    ]
+
+    candidates = _answer_candidates(
+        items,
+        query="treatment of severe acute malnutrition",
+        source_preference_terms=(),
+        deep_search=False,
+    )
+
+    pages = [item["url"].rsplit("=", 1)[-1] for item in candidates]
+    # Page 92 repeats page 91; the triage page adds something, so it is taken first
+    # even though it scored lower in retrieval.
+    assert pages[:2] == ["91", "59"]
+
+
+def test_contentless_passages_do_not_take_candidate_slots():
+    from healthnavi.services.evidence_retrieval_adapter import _answer_candidates
+
+    def passage(page, snippet):
+        return {
+            "source": "crawl4ai",
+            "title": "National malnutrition guideline",
+            "url": f"https://library.health.go.ug/g.pdf#page={page}",
+            "journal_or_publisher": "Ministry of Health Uganda",
+            "snippet": snippet,
+            "evidence_type": "guideline",
+            "final_score": 0.9 - page / 1000,
+            "raw": {"retrieval_mode": "linked_pdf_text"},
+        }
+
+    items = [
+        passage(3, "Management of Severe Acute Malnutrition in children: working towards results at scale"),
+        passage(65, "Per DALY $26 -- $42 $53 - Per life-year saved - - - $125 (119-152) Source: Sadler et al."),
+        passage(
+            91,
+            "Do not give IV fluids routinely in severe acute malnutrition. IV fluids can cause fluid "
+            "overload and heart failure in a severely malnourished child, so use ReSoMal orally instead.",
+        ),
+    ]
+
+    candidates = _answer_candidates(
+        items,
+        query="treatment of severe acute malnutrition in children",
+        source_preference_terms=(),
+        deep_search=False,
+    )
+
+    # A cover page and a cost table match the query lexically but say nothing clinical.
+    assert [item["url"].rsplit("=", 1)[-1] for item in candidates] == ["91"]
+
+
+def test_contentless_filter_never_empties_the_candidate_set():
+    from healthnavi.services.evidence_retrieval_adapter import _answer_candidates
+
+    thin_only = [
+        {
+            "source": "crawl4ai",
+            "title": "Malnutrition guideline cover",
+            "url": "https://library.health.go.ug/g.pdf#page=1",
+            "journal_or_publisher": "Ministry of Health Uganda",
+            "snippet": "Severe acute malnutrition guideline",
+            "evidence_type": "guideline",
+            "final_score": 0.9,
+            "raw": {"retrieval_mode": "static_html"},
+        }
+    ]
+
+    # Better a thin source than none: the filter is a preference, not a hard gate.
+    assert _answer_candidates(
+        thin_only,
+        query="severe acute malnutrition treatment",
+        source_preference_terms=(),
+        deep_search=False,
+    ) == thin_only

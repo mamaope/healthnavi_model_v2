@@ -23,14 +23,51 @@ from healthnavi.evidence_retrieval.services.evidence_policy import (
     evidence_policy_sort_key,
 )
 from healthnavi.evidence_retrieval.services.evidence_ranker import lexical_overlap_score
+from healthnavi.evidence_retrieval.services.clinical_specificity import (
+    clinical_specificity_score,
+)
 
 logger = logging.getLogger(__name__)
 MAX_PDF_BYTES = 12_000_000
 MAX_PDF_PAGES = 120
 MAX_PDF_TEXT_CHARS = 220_000
-PDF_TEXT_CACHE_VERSION = 2
+PDF_TEXT_CACHE_VERSION = 3
+MIN_PDF_TEXT_CACHE_VERSION = 2
 MAX_LINKED_DOCUMENT_CANDIDATES = 3
-PDF_SNIPPET_SEGMENTS = 3
+PDF_SNIPPET_SEGMENTS = 6
+GENERAL_QUERY_STOPWORDS = {
+    "about",
+    "after",
+    "and",
+    "are",
+    "can",
+    "does",
+    "details",
+    "for",
+    "from",
+    "how",
+    "in",
+    "information",
+    "into",
+    "is",
+    "list",
+    "most",
+    "of",
+    "options",
+    "should",
+    "specific",
+    "the",
+    "their",
+    "them",
+    "these",
+    "this",
+    "under",
+    "what",
+    "when",
+    "where",
+    "which",
+    "with",
+}
 
 
 @dataclass(frozen=True)
@@ -63,6 +100,17 @@ class CrawlTarget:
     publisher: str
     source_name: str
     is_search_page: bool = False
+
+
+@dataclass(frozen=True)
+class PdfSeedCandidate:
+    source_index: int
+    url_index: int
+    source: CrawlSource
+    url: str
+    title: str
+    score: float
+    relevance: float
 
 
 class Crawl4AIProvider(BaseEvidenceProvider):
@@ -157,9 +205,19 @@ class Crawl4AIProvider(BaseEvidenceProvider):
         eligible_sources = eligible_sources if eligible_sources is not None else self._eligible_sources()
         selection_terms = _source_selection_terms(query, eligible_sources)
         query_terms = _core_query_terms(query)
+        query_countries = _query_country_codes(query)
+        preferred_country = _source_preference_country_for_query(query, self.country_code)
         selection_query = query
         scored: list[tuple[float, CrawlSource]] = []
         for source in eligible_sources:
+            source_countries = _source_countries(source)
+            if query_countries and source_countries and source_countries.isdisjoint(query_countries):
+                continue
+            source_match_terms = (
+                query_terms
+                if query_countries and source_countries
+                else selection_terms or query_terms
+            )
             topic_text = " ".join(
                 (
                     *source.topics,
@@ -168,21 +226,25 @@ class Crawl4AIProvider(BaseEvidenceProvider):
                 )
             )
             overlap = lexical_overlap_score(selection_query, topic_text)
-            match_count = _source_topic_match_count(query_terms, source)
+            match_count = _source_topic_match_count(source_match_terms, source)
             if match_count <= 0 and not _source_is_catalog_broad(source):
                 continue
             if (
-                len(query_terms) > 1
+                len(source_match_terms) > 1
                 and match_count < 2
                 and not _source_is_catalog_broad(source)
             ):
                 continue
-            topic_signal = _source_topic_signal(selection_terms or query_terms, source)
+            topic_signal = _source_topic_signal(source_match_terms, source)
+            country_bonus = _source_country_preference_bonus(source, preferred_country)
+            if query_countries and _source_matches_country_preference(source, preferred_country):
+                country_bonus += 0.45
             score = (
                 overlap
                 + (0.18 * topic_signal)
                 + (0.04 if source.search_urls else 0.0)
                 + (source.priority * 0.12)
+                + country_bonus
             )
             scored.append((score, source))
 
@@ -455,8 +517,8 @@ class Crawl4AIProvider(BaseEvidenceProvider):
         focus_terms: set[str] | None = None,
     ) -> list[EvidenceItem]:
         focus_terms = focus_terms or _source_selection_terms(query, sources)
-        items: list[EvidenceItem] = []
-        for source in sources:
+        candidates: list[PdfSeedCandidate] = []
+        for source_index, source in enumerate(sources):
             scored_urls = [
                 (
                     lexical_overlap_score(
@@ -466,11 +528,12 @@ class Crawl4AIProvider(BaseEvidenceProvider):
                     + _query_topic_bonus(query, url)
                     + _core_url_bonus(query, url)
                     + (source.priority * 0.18),
+                    url_index,
                     url,
                 )
-                for url in source.seed_urls
+                for url_index, url in enumerate(source.seed_urls)
             ]
-            for score, url in sorted(scored_urls, reverse=True):
+            for score, url_index, url in sorted(scored_urls, reverse=True):
                 if not _is_probable_pdf(url) or not self._is_allowed_url(url):
                     continue
                 title = _title_hint(url)
@@ -478,40 +541,86 @@ class Crawl4AIProvider(BaseEvidenceProvider):
                 relevance = max(lexical_overlap_score(query, evidence_text), score)
                 if relevance < 0.08 or not _content_matches_core_query(query, title, url, evidence_text, focus_terms):
                     continue
-                pdf_item = _fetch_pdf_seed_item(
+                candidates.append(
+                    PdfSeedCandidate(
+                        source_index=source_index,
+                        url_index=url_index,
+                        source=source,
+                        url=url,
+                        title=title,
+                        score=score,
+                        relevance=relevance,
+                    )
+                )
+
+        if not candidates:
+            return []
+
+        items: list[EvidenceItem] = []
+        completion_timeout = max(_remaining_seconds(deadline) - 0.25, 0.0)
+        if completion_timeout <= 0:
+            return [
+                _pdf_seed_metadata_item(candidate)
+                for candidate in candidates[:max_results]
+            ]
+
+        max_workers = min(4, max(len(candidates), 1))
+        executor = ThreadPoolExecutor(max_workers=max_workers)
+        try:
+            futures = {
+                executor.submit(
+                    _fetch_pdf_seed_item,
                     query=query,
-                    source=source,
-                    url=url,
-                    source_score=score,
+                    source=candidate.source,
+                    url=candidate.url,
+                    source_score=candidate.score,
                     deadline=deadline,
                     settings=self.settings,
                     focus_terms=focus_terms,
+                ): candidate
+                for candidate in candidates
+            }
+            completed_candidates: set[PdfSeedCandidate] = set()
+            try:
+                completed = as_completed(futures, timeout=completion_timeout)
+                for future in completed:
+                    candidate = futures[future]
+                    completed_candidates.add(candidate)
+                    pdf_items = future.result()
+                    if not pdf_items:
+                        items.append(_pdf_seed_metadata_item(candidate))
+                        continue
+                    items.extend(pdf_items)
+            except FuturesTimeoutError:
+                logger.info(
+                    "pdf seed crawl returned %d partial items after deadline with %d pending PDFs",
+                    len(items),
+                    sum(1 for future in futures if not future.done()),
                 )
-                if pdf_item is not None:
-                    items.append(pdf_item)
+            for future, candidate in futures.items():
+                if candidate in completed_candidates:
                     continue
-                items.append(
-                    EvidenceItem(
-                        id=f"crawl4ai:{_canonical_url(url)}",
-                        source=EvidenceSource.CRAWL4AI,
-                        title=title,
-                        snippet=(
-                            f"{source.name} from {source.publisher}. "
-                            f"Approved guideline catalogue PDF. Topics: {', '.join(source.topics[:12])}."
-                        ),
-                        authors=[],
-                        journal_or_publisher=source.publisher,
-                        url=url,
-                        full_text_url=url,
-                        open_access=True,
-                        evidence_type="guideline",
-                        relevance_score=round(relevance, 4),
-                        raw={
-                            "source_name": source.name,
-                            "retrieval_mode": "pdf_seed_metadata",
-                        },
-                    )
-                )
+                if future.done():
+                    try:
+                        pdf_items = future.result()
+                    except Exception as exc:
+                        logger.debug("pdf seed crawl failed for %s: %s", candidate.url, exc)
+                        pdf_items = []
+                    if pdf_items:
+                        items.extend(pdf_items)
+                    else:
+                        items.append(_pdf_seed_metadata_item(candidate))
+                    continue
+                future.cancel()
+                if len(items) < max_results:
+                    items.append(_pdf_seed_metadata_item(candidate))
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+        if not items:
+            items = [
+                _pdf_seed_metadata_item(candidate)
+                for candidate in candidates[:max_results]
+            ]
         items.sort(key=lambda item: item.relevance_score or 0.0, reverse=True)
         return _dedupe_items(items)[:max_results]
 
@@ -693,6 +802,47 @@ def _source_allowed_for_country(source: CrawlSource, country_code: str | None) -
     return not source_countries or country_code in source_countries
 
 
+def _source_country_preference_bonus(
+    source: CrawlSource,
+    preferred_country: str | None,
+) -> float:
+    if not preferred_country:
+        return 0.0
+    if _source_matches_country_preference(source, preferred_country):
+        return 0.54
+    if not _source_countries(source):
+        return 0.03
+    return 0.0
+
+
+def _source_matches_country_preference(
+    source: CrawlSource,
+    preferred_country: str | None,
+) -> bool:
+    return bool(preferred_country and preferred_country in _source_countries(source))
+
+
+def _source_preference_country_for_query(
+    query: str,
+    configured_country_code: str | None,
+) -> str | None:
+    query_countries = _query_country_codes(query)
+    if len(query_countries) == 1:
+        return next(iter(query_countries))
+    if len(query_countries) > 1:
+        return None
+    return _normalize_country_code(configured_country_code)
+
+
+def _query_country_codes(query: str) -> set[str]:
+    text = query.lower()
+    return {
+        code
+        for code, markers in _COUNTRY_MARKERS.items()
+        if any(marker in text for marker in markers)
+    }
+
+
 def _source_countries(source: CrawlSource) -> set[str]:
     haystack = " ".join(
         (
@@ -731,7 +881,13 @@ _COUNTRY_MARKERS = {
         "uganda",
         "ugandan",
         "health.go.ug",
+        "library.health.go.ug",
+        "nda.or.ug",
+        "uniph.go.ug",
         "cphl.go.ug",
+        "qadash.cphl.go.ug",
+        "uci.or.ug",
+        "ulii.org",
         "idi.mak.ac.ug",
         "elearning.idi.co.ug",
         "uga-",
@@ -886,6 +1042,7 @@ def _fetch_static_target(
 ) -> EvidenceItem | None:
     headers = {"User-Agent": "EmpiricoEvidenceRetrieval/0.1"}
     cached = _read_static_cache(settings, target.url)
+    retrieval_mode = "static_html_cache" if cached is not None else ""
     if cached is None:
         try:
             with httpx.Client(timeout=timeout, follow_redirects=True, headers=headers) as client:
@@ -893,17 +1050,20 @@ def _fetch_static_target(
                 response.raise_for_status()
         except httpx.HTTPError as exc:
             logger.debug("static guideline fetch failed for %s: %s", target.url, exc)
-            return None
-        final_url = str(response.url)
-        content_type = response.headers.get("content-type", "").lower()
-        html = response.text
-        _write_static_cache(settings, target.url, final_url, content_type, html)
-        retrieval_mode = "static_html"
-    else:
+            cached = _read_static_cache(settings, target.url, allow_stale=True)
+            if cached is None:
+                return None
+            retrieval_mode = "static_html_stale_cache"
+        else:
+            final_url = str(response.url)
+            content_type = response.headers.get("content-type", "").lower()
+            html = response.text
+            _write_static_cache(settings, target.url, final_url, content_type, html)
+            retrieval_mode = "static_html"
+    if cached is not None:
         final_url = str(cached.get("final_url") or target.url)
         content_type = str(cached.get("content_type") or "").lower()
         html = str(cached.get("html") or "")
-        retrieval_mode = "static_html_cache"
 
     if "text/html" not in content_type and "application/xhtml" not in content_type:
         return None
@@ -989,11 +1149,15 @@ def _fetch_linked_document_item(
         if fetched is None:
             continue
 
-        final_url, pdf_text, pages_extracted = fetched
+        unpacked = _unpack_pdf_text_result(fetched)
+        if unpacked is None:
+            continue
+        final_url, pdf_text, pages_extracted, page_texts = unpacked
         title = _document_title_from_context(page_title, link_text, final_url)
-        snippet = _best_snippet(
+        snippet, snippet_page = _best_pdf_snippet_with_page(
             query,
             pdf_text,
+            page_texts,
             max_chars=2400,
             max_segments=PDF_SNIPPET_SEGMENTS,
         )
@@ -1014,6 +1178,18 @@ def _fetch_linked_document_item(
             url=final_url,
             text=f"{title} {target.publisher} {snippet}",
         )
+        raw = {
+            "source_name": target.source_name,
+            "retrieval_mode": "linked_pdf_text",
+            "generic_link_text": _is_generic_document_link_text(link_text),
+            "source_page_url": base_url,
+            "source_trust_tier": policy_tier,
+            "evidence_type_tier": type_tier,
+            "pdf_pages_extracted": pages_extracted,
+        }
+        if snippet_page is not None and snippet_page > 0:
+            raw["page_start"] = snippet_page
+            raw["page_label"] = f"p. {snippet_page}"
         return EvidenceItem(
             id=f"crawl4ai:{_canonical_url(final_url)}",
             source=EvidenceSource.CRAWL4AI,
@@ -1027,15 +1203,7 @@ def _fetch_linked_document_item(
             open_access=True,
             evidence_type=evidence_type,
             relevance_score=round(relevance, 4),
-            raw={
-                "source_name": target.source_name,
-                "retrieval_mode": "linked_pdf_text",
-                "generic_link_text": _is_generic_document_link_text(link_text),
-                "source_page_url": base_url,
-                "source_trust_tier": policy_tier,
-                "evidence_type_tier": type_tier,
-                "pdf_pages_extracted": pages_extracted,
-            },
+            raw=raw,
         )
     return None
 
@@ -1062,9 +1230,13 @@ def _static_item_query_quality(query: str, item: EvidenceItem) -> float:
     score += 0.12 * _query_overlap_count(core_terms, _text_tokens(text))
     if item.evidence_type == "guideline":
         score += 0.18
+    if _paragraph_contains_inline_list(snippet):
+        score += 0.35
     if _paragraph_looks_like_low_value_pdf_context(snippet.lower()):
         score -= 0.45
     raw = item.raw if isinstance(item.raw, dict) else {}
+    if raw.get("retrieval_mode") == "linked_pdf_text":
+        score += 0.12
     if raw.get("retrieval_mode") == "linked_pdf_text" and raw.get("generic_link_text"):
         score -= 0.05 if _title_or_url_matches_query(query, item.title, str(item.url)) else 0.35
     if not _is_probable_pdf(str(item.url)):
@@ -1207,60 +1379,105 @@ def _fetch_pdf_seed_item(
     deadline: float,
     settings: EvidenceRetrievalSettings,
     focus_terms: set[str],
-) -> EvidenceItem | None:
+) -> list[EvidenceItem]:
     remaining = _remaining_seconds(deadline)
     if remaining <= 1.0:
-        return None
+        return []
 
     timeout = min(float(settings.request_timeout_seconds), 6.0, remaining)
     fetched = _fetch_pdf_text(url, timeout, settings)
     if fetched is None:
-        return None
+        return []
 
-    final_url, pdf_text, pages_extracted = fetched
+    unpacked = _unpack_pdf_text_result(fetched)
+    if unpacked is None:
+        return []
+    final_url, pdf_text, pages_extracted, page_texts = unpacked
     title = source.name or _title_hint(final_url)
-    snippet = _best_snippet(
+    passages = _best_pdf_passages_with_pages(
         query,
         pdf_text,
+        page_texts,
         max_chars=2400,
         max_segments=PDF_SNIPPET_SEGMENTS,
     )
-    if not snippet or not _content_matches_core_query(query, title, final_url, snippet, focus_terms):
-        return None
+    items: list[EvidenceItem] = []
+    for passage_index, (snippet, snippet_page, passage_score) in enumerate(passages, start=1):
+        if not snippet or not _content_matches_core_query(query, title, final_url, snippet, focus_terms):
+            continue
 
-    relevance = max(
-        lexical_overlap_score(query, f"{title} {source.publisher} {snippet}"),
-        source_score,
-    )
-    if relevance < 0.06:
-        return None
+        reserved_passage_bonus = (
+            0.75
+            if passage_index <= 2 and snippet_page is not None and snippet_page > 0
+            else 0.0
+        )
+        relevance = max(
+            lexical_overlap_score(query, f"{title} {source.publisher} {snippet}"),
+            source_score,
+            passage_score + reserved_passage_bonus,
+        )
+        if relevance < 0.06:
+            continue
 
-    evidence_type = _evidence_type(final_url, title, snippet)
-    policy_tier, type_tier = evidence_policy_sort_key(
-        source=EvidenceSource.CRAWL4AI.value,
-        evidence_type=evidence_type,
-        url=final_url,
-        text=f"{title} {source.publisher} {snippet}",
-    )
-    return EvidenceItem(
-        id=f"crawl4ai:{_canonical_url(final_url)}",
-        source=EvidenceSource.CRAWL4AI,
-        title=title,
-        abstract=None,
-        snippet=snippet,
-        authors=[],
-        journal_or_publisher=source.publisher,
-        url=final_url,
-        full_text_url=final_url,
-        open_access=True,
-        evidence_type=evidence_type,
-        relevance_score=round(relevance, 4),
-        raw={
+        evidence_type = _evidence_type(final_url, title, snippet)
+        policy_tier, type_tier = evidence_policy_sort_key(
+            source=EvidenceSource.CRAWL4AI.value,
+            evidence_type=evidence_type,
+            url=final_url,
+            text=f"{title} {source.publisher} {snippet}",
+        )
+        raw = {
             "source_name": source.name,
             "retrieval_mode": "pdf_text",
             "source_trust_tier": policy_tier,
             "evidence_type_tier": type_tier,
             "pdf_pages_extracted": pages_extracted,
+            "passage_rank": passage_index,
+            "passage_id": f"{_canonical_url(final_url)}:{snippet_page or passage_index}:{passage_index}",
+        }
+        if snippet_page is not None and snippet_page > 0:
+            raw["page_start"] = snippet_page
+            raw["page_label"] = f"p. {snippet_page}"
+        items.append(
+            EvidenceItem(
+                id=f"crawl4ai:{_canonical_url(final_url)}#passage={snippet_page or passage_index}-{passage_index}",
+                source=EvidenceSource.CRAWL4AI,
+                title=title,
+                abstract=None,
+                snippet=snippet,
+                authors=[],
+                journal_or_publisher=source.publisher,
+                url=final_url,
+                full_text_url=final_url,
+                open_access=True,
+                evidence_type=evidence_type,
+                relevance_score=round(relevance, 4),
+                raw=raw,
+            )
+        )
+    return items
+
+
+def _pdf_seed_metadata_item(candidate: PdfSeedCandidate) -> EvidenceItem:
+    source = candidate.source
+    return EvidenceItem(
+        id=f"crawl4ai:{_canonical_url(candidate.url)}",
+        source=EvidenceSource.CRAWL4AI,
+        title=candidate.title,
+        snippet=(
+            f"{source.name} from {source.publisher}. "
+            f"Approved guideline catalogue PDF. Topics: {', '.join(source.topics[:12])}."
+        ),
+        authors=[],
+        journal_or_publisher=source.publisher,
+        url=candidate.url,
+        full_text_url=candidate.url,
+        open_access=True,
+        evidence_type="guideline",
+        relevance_score=round(candidate.relevance, 4),
+        raw={
+            "source_name": source.name,
+            "retrieval_mode": "pdf_seed_metadata",
         },
     )
 
@@ -1269,7 +1486,7 @@ def _fetch_pdf_text(
     url: str,
     timeout: float,
     settings: EvidenceRetrievalSettings,
-) -> tuple[str, str, int] | None:
+) -> tuple[str, str, int, list[tuple[int, str]]] | None:
     cached = _read_pdf_text_cache(settings, url)
     if cached is not None:
         return cached
@@ -1281,7 +1498,7 @@ def _fetch_pdf_text(
             response.raise_for_status()
     except httpx.HTTPError as exc:
         logger.debug("pdf guideline fetch failed for %s: %s", url, exc)
-        return None
+        return _read_pdf_text_cache(settings, url, allow_stale=True)
 
     content = response.content
     content_type = response.headers.get("content-type", "").lower()
@@ -1299,13 +1516,13 @@ def _fetch_pdf_text(
     extracted = _extract_pdf_text(content)
     if extracted is None:
         return None
-    text, pages_extracted = extracted
+    text, pages_extracted, page_texts = extracted
     final_url = str(response.url)
-    _write_pdf_text_cache(settings, url, final_url, text, pages_extracted)
-    return final_url, text, pages_extracted
+    _write_pdf_text_cache(settings, url, final_url, text, pages_extracted, page_texts)
+    return final_url, text, pages_extracted, page_texts
 
 
-def _extract_pdf_text(content: bytes) -> tuple[str, int] | None:
+def _extract_pdf_text(content: bytes) -> tuple[str, int, list[tuple[int, str]]] | None:
     try:
         from PyPDF2 import PdfReader
     except Exception:
@@ -1320,7 +1537,8 @@ def _extract_pdf_text(content: bytes) -> tuple[str, int] | None:
 
     text_parts: list[str] = []
     pages_extracted = 0
-    for page in reader.pages[:MAX_PDF_PAGES]:
+    page_texts: list[tuple[int, str]] = []
+    for page_number, page in enumerate(reader.pages[:MAX_PDF_PAGES], start=1):
         try:
             page_text = page.extract_text() or ""
         except Exception:
@@ -1329,6 +1547,7 @@ def _extract_pdf_text(content: bytes) -> tuple[str, int] | None:
         if not cleaned:
             continue
         text_parts.append(cleaned)
+        page_texts.append((page_number, cleaned))
         pages_extracted += 1
         if sum(len(part) for part in text_parts) >= MAX_PDF_TEXT_CHARS:
             break
@@ -1336,13 +1555,289 @@ def _extract_pdf_text(content: bytes) -> tuple[str, int] | None:
     text = "\n\n".join(text_parts)[:MAX_PDF_TEXT_CHARS]
     if len(text) < 120:
         return None
-    return text, pages_extracted
+    return text, pages_extracted, page_texts
+
+
+def _unpack_pdf_text_result(
+    fetched: object,
+) -> tuple[str, str, int, list[tuple[int, str]]] | None:
+    if not isinstance(fetched, tuple) or len(fetched) < 3:
+        return None
+    final_url = str(fetched[0])
+    pdf_text = str(fetched[1])
+    try:
+        pages_extracted = int(fetched[2])
+    except (TypeError, ValueError):
+        pages_extracted = 0
+    page_texts: list[tuple[int, str]] = []
+    if len(fetched) >= 4 and isinstance(fetched[3], list):
+        for entry in fetched[3]:
+            page_number: int | None = None
+            page_text = ""
+            if isinstance(entry, dict):
+                try:
+                    page_number = int(entry.get("page_number") or entry.get("page") or 0)
+                except (TypeError, ValueError):
+                    page_number = None
+                page_text = str(entry.get("text") or "")
+            elif isinstance(entry, tuple) and len(entry) >= 2:
+                try:
+                    page_number = int(entry[0])
+                except (TypeError, ValueError):
+                    page_number = None
+                page_text = str(entry[1] or "")
+            if page_number and page_text.strip():
+                page_texts.append((page_number, page_text))
+    if not page_texts and pdf_text.strip():
+        page_texts = _synthetic_pdf_text_chunks(pdf_text)
+    return final_url, pdf_text, pages_extracted, page_texts
+
+
+def _synthetic_pdf_text_chunks(
+    pdf_text: str,
+    *,
+    chunk_chars: int = 4200,
+    overlap_chars: int = 500,
+) -> list[tuple[int, str]]:
+    compact = pdf_text.strip()
+    if not compact:
+        return []
+    chunks: list[tuple[int, str]] = []
+    start = 0
+    chunk_index = 1
+    while start < len(compact):
+        end = min(start + chunk_chars, len(compact))
+        if end < len(compact):
+            boundary = compact.rfind("\n\n", start + chunk_chars // 2, end)
+            if boundary > start:
+                end = boundary
+        chunk = compact[start:end].strip()
+        if chunk:
+            chunks.append((-chunk_index, chunk))
+            chunk_index += 1
+        if end >= len(compact):
+            break
+        start = max(end - overlap_chars, start + 1)
+    return chunks
+
+
+def _best_pdf_snippet_with_page(
+    query: str,
+    pdf_text: str,
+    page_texts: list[tuple[int, str]],
+    max_chars: int = 1200,
+    max_segments: int = 2,
+) -> tuple[str, int | None]:
+    if not page_texts:
+        return _best_snippet(query, pdf_text, max_chars=max_chars, max_segments=max_segments), None
+
+    core_terms = _core_query_terms(query)
+    candidates: list[tuple[float, int, str, float]] = []
+    for page_number, page_text in page_texts:
+        snippet = _best_snippet(
+            query,
+            page_text,
+            max_chars=min(max_chars, 1400),
+            max_segments=1,
+        )
+        if not snippet:
+            continue
+        score = _snippet_score(query, snippet, core_terms)
+        score += lexical_overlap_score(query, snippet)
+        candidates.append((score, page_number, snippet))
+
+    if not candidates:
+        return _best_snippet(query, pdf_text, max_chars=max_chars, max_segments=max_segments), None
+
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    selected = candidates[:max_segments]
+    best_page = selected[0][1]
+    ordered_snippets = [snippet for _score, _page, snippet in sorted(selected, key=lambda item: item[1])]
+    return _compact_text(" ... ".join(ordered_snippets), max_chars), best_page
+
+
+def _best_pdf_passages_with_pages(
+    query: str,
+    pdf_text: str,
+    page_texts: list[tuple[int, str]],
+    max_chars: int = 1200,
+    max_segments: int = 3,
+) -> list[tuple[str, int | None, float]]:
+    if not page_texts:
+        snippet = _best_snippet(query, pdf_text, max_chars=max_chars, max_segments=max_segments)
+        if not snippet:
+            return []
+        return [(snippet, None, _snippet_score(query, snippet, _core_query_terms(query)))]
+
+    core_terms = _core_query_terms(query)
+    candidates: list[tuple[float, int, str]] = []
+    for page_number, page_text in page_texts:
+        snippet = _best_snippet(
+            query,
+            page_text,
+            max_chars=min(max_chars, 1400),
+            max_segments=1,
+        )
+        snippet = _pdf_section_opening_snippet_if_helpful(
+            query=query,
+            page_text=page_text,
+            snippet=snippet,
+            max_chars=max_chars,
+        )
+        if not snippet:
+            continue
+        score = _snippet_score(query, snippet, core_terms)
+        score += lexical_overlap_score(query, snippet)
+        score += _pdf_passage_structure_bonus(query, page_text, snippet)
+        candidates.append((
+            score,
+            page_number,
+            snippet,
+            _pdf_section_opening_priority(query, page_text),
+        ))
+
+    if not candidates:
+        snippet = _best_snippet(query, pdf_text, max_chars=max_chars, max_segments=max_segments)
+        if not snippet:
+            return []
+        return [(snippet, None, _snippet_score(query, snippet, core_terms))]
+
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    selected: list[tuple[str, int | None, float]] = []
+    opening_candidates = sorted(
+        (candidate for candidate in candidates if candidate[3] > 0),
+        key=lambda item: (item[3], item[0]),
+        reverse=True,
+    )
+    reserved_openings = 2 if max_segments >= 5 else 1
+    for score, page_number, snippet, _priority in opening_candidates[:reserved_openings]:
+        compact = _compact_text(snippet, max_chars)
+        if compact and not any(_similar_snippet(compact, existing) for existing, _page, _score in selected):
+            selected.append((compact, page_number, score))
+
+    for score, page_number, snippet, _priority in candidates:
+        compact = _compact_text(snippet, max_chars)
+        if not compact:
+            continue
+        if any(_similar_snippet(compact, existing) for existing, _page, _score in selected):
+            continue
+        selected.append((compact, page_number, score))
+        if len(selected) >= max_segments:
+            break
+    return selected
+
+
+def _pdf_section_opening_snippet_if_helpful(
+    *,
+    query: str,
+    page_text: str,
+    snippet: str,
+    max_chars: int,
+) -> str:
+    body_text = _pdf_page_body_text(page_text)
+    if not _looks_like_pdf_section_opening(body_text):
+        return snippet
+    meaningful_terms = _meaningful_query_terms(query)
+    if meaningful_terms and _query_overlap_count(meaningful_terms, _text_tokens(body_text[:1600])) < 2:
+        return snippet
+
+    opening = _compact_text(body_text, max_chars)
+    if not opening:
+        return snippet
+    if not snippet:
+        return opening
+    if _similar_snippet(opening[: min(len(opening), 1200)], snippet):
+        return opening
+    return opening
+
+
+def _pdf_passage_structure_bonus(query: str, page_text: str, snippet: str) -> float:
+    meaningful_terms = _meaningful_query_terms(query)
+    if not meaningful_terms:
+        return 0.0
+    body_text = _pdf_page_body_text(page_text)
+    overlap_count = _query_overlap_count(
+        meaningful_terms,
+        _text_tokens(f"{body_text[:1600]} {snippet[:800]}"),
+    )
+    if overlap_count < 2:
+        return 0.0
+
+    bonus = 0.0
+    if _looks_like_pdf_section_opening(body_text):
+        bonus += min(0.35, 0.08 + (0.04 * overlap_count))
+    if _paragraph_contains_inline_list(snippet):
+        bonus += 0.12
+    return bonus
+
+
+def _pdf_section_opening_priority(query: str, page_text: str) -> float:
+    body_text = _pdf_page_body_text(page_text)
+    if not _looks_like_pdf_section_opening(body_text):
+        return 0.0
+    meaningful_terms = _meaningful_query_terms(query)
+    if not meaningful_terms:
+        return 0.0
+    leading = _compact_text(body_text, 700)
+    overlap_count = _query_overlap_count(meaningful_terms, _text_tokens(leading))
+    if overlap_count < 3:
+        return 0.0
+    priority = overlap_count / max(len(meaningful_terms), 1)
+    if "overview" not in meaningful_terms and re.search(
+        r"\b(?:chapter\s+one|overview|background)\b",
+        leading.lower()[:260],
+    ):
+        priority *= 0.35
+    return priority
+
+
+def _pdf_page_body_text(page_text: str) -> str:
+    compact = _compact_text(page_text, max(len(page_text), 1))
+    if not compact:
+        return ""
+    return re.sub(
+        r"^(?:JANUARY\s+2016\s+)?GUIDELINES\s+FOR\s+N?TEGRATED\s+MANAGEMENT\s+OF\s+ACUTE\s+MALNUTRITION\s+IN\s+UGANDA\s*\d+\s*(?:JANUARY\s+2016\s+)?",
+        "",
+        compact,
+        count=1,
+        flags=re.IGNORECASE,
+    ).strip()
+
+
+def _looks_like_pdf_section_opening(page_text: str) -> bool:
+    leading = _compact_text(page_text, 900)
+    if not leading:
+        return False
+    lowered = leading.lower()
+    if _paragraph_looks_like_low_value_pdf_context(lowered):
+        return False
+    if re.search(r"\bchapter\s+(?:[a-z]+|\d+)\b", lowered):
+        return True
+    if re.search(r"\b(?:figure|table)\s+\d+\b", lowered[:320]):
+        return False
+    section_match = re.search(
+        r"\b\d+(?:\.\d+){1,3}\s+[A-Z][A-Za-z][A-Za-z0-9 /,()&-]{8,}",
+        leading,
+    )
+    if not section_match:
+        return False
+    preceding = leading[: section_match.start()]
+    return not re.search(r"(?:^|\s)[-*•]\s+\S+", preceding)
+
+
+def _compact_text(text: str, max_length: int) -> str:
+    compact = " ".join(text.split())
+    if len(compact) <= max_length:
+        return compact
+    return compact[: max_length - 3].rstrip() + "..."
 
 
 def _read_pdf_text_cache(
     settings: EvidenceRetrievalSettings,
     url: str,
-) -> tuple[str, str, int] | None:
+    *,
+    allow_stale: bool = False,
+) -> tuple[str, str, int, list[tuple[int, str]]] | None:
     cache_path = _pdf_text_cache_path(settings, url)
     if cache_path is None or not cache_path.exists():
         return None
@@ -1350,18 +1845,41 @@ def _read_pdf_text_cache(
         payload = json.loads(cache_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    if int(payload.get("cache_version") or 0) != PDF_TEXT_CACHE_VERSION:
+    try:
+        cache_version = int(payload.get("cache_version") or 0)
+    except (TypeError, ValueError):
+        return None
+    if not MIN_PDF_TEXT_CACHE_VERSION <= cache_version <= PDF_TEXT_CACHE_VERSION:
         return None
     fetched_at = float(payload.get("fetched_at") or 0.0)
     ttl = max(settings.crawl_cache_ttl_seconds, 0)
-    if ttl and time.time() - fetched_at > ttl:
+    if ttl and not allow_stale and time.time() - fetched_at > ttl:
         return None
     text = str(payload.get("text") or "")
     final_url = str(payload.get("final_url") or url)
     pages_extracted = int(payload.get("pages_extracted") or 0)
     if not text:
         return None
-    return final_url, text, pages_extracted
+    page_texts: list[tuple[int, str]] = []
+    raw_pages = payload.get("page_texts")
+    if isinstance(raw_pages, list):
+        for entry in raw_pages:
+            if isinstance(entry, dict):
+                raw_page_number = entry.get("page_number")
+                raw_page_text = entry.get("text")
+            elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                raw_page_number = entry[0]
+                raw_page_text = entry[1]
+            else:
+                continue
+            try:
+                page_number = int(raw_page_number or 0)
+            except (TypeError, ValueError):
+                continue
+            page_text = str(raw_page_text or "")
+            if page_number > 0 and page_text:
+                page_texts.append((page_number, page_text))
+    return final_url, text, pages_extracted, page_texts
 
 
 def _write_pdf_text_cache(
@@ -1370,6 +1888,7 @@ def _write_pdf_text_cache(
     final_url: str,
     text: str,
     pages_extracted: int,
+    page_texts: list[tuple[int, str]],
 ) -> None:
     cache_path = _pdf_text_cache_path(settings, original_url)
     if cache_path is None:
@@ -1385,6 +1904,10 @@ def _write_pdf_text_cache(
                     "fetched_at": time.time(),
                     "pages_extracted": pages_extracted,
                     "text": text[:MAX_PDF_TEXT_CHARS],
+                    "page_texts": [
+                        {"page_number": page_number, "text": page_text}
+                        for page_number, page_text in page_texts
+                    ],
                 }
             ),
             encoding="utf-8",
@@ -1398,7 +1921,12 @@ def _pdf_text_cache_path(settings: EvidenceRetrievalSettings, url: str) -> Path 
     return cache_path.with_suffix(".pdftext.json") if cache_path is not None else None
 
 
-def _read_static_cache(settings: EvidenceRetrievalSettings, url: str) -> dict[str, object] | None:
+def _read_static_cache(
+    settings: EvidenceRetrievalSettings,
+    url: str,
+    *,
+    allow_stale: bool = False,
+) -> dict[str, object] | None:
     cache_path = _static_cache_path(settings, url)
     if cache_path is None or not cache_path.exists():
         return None
@@ -1408,7 +1936,7 @@ def _read_static_cache(settings: EvidenceRetrievalSettings, url: str) -> dict[st
         return None
     fetched_at = float(payload.get("fetched_at") or 0.0)
     ttl = max(settings.crawl_cache_ttl_seconds, 0)
-    if ttl and time.time() - fetched_at > ttl:
+    if ttl and not allow_stale and time.time() - fetched_at > ttl:
         return None
     if not payload.get("html"):
         return None
@@ -1620,6 +2148,10 @@ def _core_query_terms(query: str) -> set[str]:
     return _text_tokens(query)
 
 
+def _meaningful_query_terms(query: str) -> set[str]:
+    return {token for token in _text_tokens(query) if token not in GENERAL_QUERY_STOPWORDS}
+
+
 def _text_tokens(value: str) -> set[str]:
     normalized = re.sub(r"(?<=\w)[-‐‑‒–—](?=\w)", "", value.lower())
     return {
@@ -1648,8 +2180,9 @@ def _required_query_overlap(query_terms: set[str]) -> int:
 def _terms_match(left: str, right: str) -> bool:
     if left == right:
         return True
-    if len(left) >= 4 and len(right) >= 4:
-        return left.startswith(right) or right.startswith(left)
+    shorter, longer = (left, right) if len(left) <= len(right) else (right, left)
+    if len(shorter) >= 6 and len(shorter) / max(len(longer), 1) >= 0.75:
+        return longer.startswith(shorter)
     return False
 
 
@@ -1797,12 +2330,44 @@ def _dedupe_items(items: list[EvidenceItem]) -> list[EvidenceItem]:
     seen: set[str] = set()
     deduped: list[EvidenceItem] = []
     for item in items:
-        key = _canonical_url(str(item.url))
+        key = _item_passage_key(item)
         if key in seen:
             continue
         seen.add(key)
         deduped.append(item)
     return deduped
+
+
+def _item_passage_key(item: EvidenceItem) -> str:
+    raw = item.raw if isinstance(item.raw, dict) else {}
+    passage_id = str(raw.get("passage_id") or "").strip()
+    if passage_id:
+        return f"passage:{passage_id}"
+    section = " ".join(
+        str(part)
+        for part in (
+            raw.get("page_start"),
+            raw.get("page_label"),
+            raw.get("section_title"),
+            raw.get("section"),
+            raw.get("heading"),
+        )
+        if part
+    )
+    text = " ".join(part for part in (item.abstract or "", item.snippet or "") if part)
+    fingerprint = hashlib.sha1(
+        re.sub(r"\s+", " ", text.lower()).strip()[:1000].encode()
+    ).hexdigest()[:16] if text else ""
+    normalized_section = re.sub(r"\s+", " ", section.lower()).strip()
+    return "|".join(
+        part
+        for part in (
+            f"url:{_canonical_url(str(item.url))}",
+            f"section:{normalized_section}" if normalized_section else "",
+            f"text:{fingerprint}" if fingerprint else "",
+        )
+        if part
+    )
 
 
 def _remaining_seconds(deadline: float) -> float:
@@ -1960,6 +2525,10 @@ def _snippet_score(query: str, paragraph: str, core_terms: set[str]) -> float:
     paragraph_text = paragraph.lower()
     if _paragraph_contains_inline_list(paragraph):
         score += 0.6
+    # A page that states doses, thresholds, frequencies or durations is more use
+    # at the bedside than one that only names the pathway. Both mention the
+    # condition, so lexical overlap cannot separate them.
+    score += 0.45 * clinical_specificity_score(paragraph)
     if _paragraph_looks_like_low_value_pdf_context(paragraph_text):
         score -= 0.6
     return score

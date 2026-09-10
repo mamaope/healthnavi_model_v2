@@ -7,33 +7,35 @@ service.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
 import re
+import time
 from typing import Any, Optional
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
 
 from healthnavi.core.constants import (
-    BOLDING_RULES,
     DEEP_SEARCH_MAX_OUTPUT_TOKENS,
-    DEEP_SEARCH_PROMPT,
-    EXAM_HANDLING,
-    GLOBAL_CONDUCT_RULES,
-    PHARMACOLOGY_RULES,
-    PREEMPTIVE_REASONING_RULES,
-    QUERY_CLASSIFICATION_RULES,
     QUICK_SEARCH_MAX_OUTPUT_TOKENS,
-    QUICK_SEARCH_PROMPT,
-    ROLE_INSTRUCTIONS,
-    SECURITY_AND_EVIDENCE_RULES,
+)
+from healthnavi.services.answer_composer import (
+    build_answer_prompt,
+    citation_document_key,
+    citation_location_key,
+    clean_reference_title,
+    finalize_answer,
 )
 from healthnavi.evidence_retrieval.services.evidence_search_service import (
     EvidenceSearchService,
 )
-from healthnavi.evidence_retrieval.config import get_settings
+from healthnavi.evidence_retrieval.config import EvidenceRetrievalSettings, get_settings
+from healthnavi.evidence_retrieval.services.clinical_specificity import (
+    clinical_specificity_score,
+)
 from healthnavi.evidence_retrieval.services.evidence_policy import (
     evidence_policy_sort_key,
 )
@@ -41,6 +43,7 @@ from healthnavi.evidence_retrieval.services.evidence_policy import (
 logger = logging.getLogger(__name__)
 DEFAULT_MODEL_SERVICE_BASE_URL = "https://empirico-model-service-e2dgjxq3uq-ew.a.run.app"
 USER_SAFE_GENERATION_ERROR = "I couldn't complete this answer right now. Please try again."
+DEFAULT_QUICK_LATENCY_TARGET_SECONDS = 14.5
 WEB_EVIDENCE_SOURCES = {
     "crawl4ai",
     "official_health_api",
@@ -57,8 +60,109 @@ SOURCE_PRIORITY = {
     "semantic_scholar": 3,
     "official_health_api": 4,
 }
-DEFAULT_SOURCE_PREFERENCE_HINTS = ""
-DEFAULT_SOURCE_PREFERENCE_TERMS: tuple[str, ...] = ()
+DEFAULT_QUICK_ANSWER_SOURCES = 4
+DEFAULT_DEEP_ANSWER_SOURCES = 8
+DEFAULT_SOURCE_PREFERENCE_HINTS = (
+    "Uganda Ministry of Health Knowledge Management Portal, Uganda Clinical Guidelines, "
+    "National Drug Authority Uganda, UNIPH, CPHL/NHLDS, Uganda specialist institutions, "
+    "WHO AFRO, East Africa, and Africa before global fallback sources when relevant"
+)
+DEFAULT_SOURCE_PREFERENCE_TERMS: tuple[str, ...] = (
+    "uganda",
+    "ugandan",
+    "health.go.ug",
+    "library.health.go.ug",
+    "nda.or.ug",
+    "uniph.go.ug",
+    "cphl.go.ug",
+    "qadash.cphl.go.ug",
+    "uci.or.ug",
+    "ulii.org",
+    "idi.mak.ac.ug",
+    "elearning.idi.co.ug",
+    "uganda clinical guidelines",
+    "ministry of health uganda",
+    "national drug authority uganda",
+    "uganda national institute of public health",
+    "uganda cancer institute",
+    "who afro",
+    "afro.who.int",
+    "east africa",
+    "africa",
+)
+LOCAL_SOURCE_PREFERENCE_TERMS = {
+    "uganda",
+    "ugandan",
+    "health.go.ug",
+    "library.health.go.ug",
+    "nda.or.ug",
+    "uniph.go.ug",
+    "cphl.go.ug",
+    "qadash.cphl.go.ug",
+    "uci.or.ug",
+    "ulii.org",
+    "idi.mak.ac.ug",
+    "elearning.idi.co.ug",
+    "uganda clinical guidelines",
+    "ministry of health uganda",
+    "national drug authority uganda",
+    "uganda national institute of public health",
+    "uganda cancer institute",
+}
+REGIONAL_SOURCE_PREFERENCE_TERMS = {
+    "who afro",
+    "afro.who.int",
+    "east africa",
+    "africa",
+}
+ALTERNATE_JURISDICTION_TERMS = {
+    "kenya",
+    "kenyan",
+    "tanzania",
+    "tanzanian",
+    "rwanda",
+    "rwandan",
+    "burundi",
+    "burundian",
+    "south sudan",
+    "sudan",
+    "ethiopia",
+    "ethiopian",
+    "eritrea",
+    "congo",
+    "drc",
+    "democratic republic of congo",
+    "zambia",
+    "zambian",
+    "malawi",
+    "malawian",
+    "south africa",
+    "south african",
+    "nigeria",
+    "nigerian",
+    "ghana",
+    "ghanaian",
+    "india",
+    "indian",
+    "united states",
+    "usa",
+    "u s",
+    "u s a",
+    "america",
+    "american",
+    "canada",
+    "canadian",
+    "united kingdom",
+    "uk",
+    "u k",
+    "britain",
+    "british",
+    "england",
+    "europe",
+    "european",
+    "australia",
+    "australian",
+}
 QUERY_TERM_STOPWORDS = {
     "a",
     "about",
@@ -155,6 +259,7 @@ SNIPPET_ANSWER_SIGNAL_PATTERNS = (
 SNIPPET_METADATA_PATTERNS = (
     r"\b(?:number of pages|reference numbers?|copyright|download|skip to main content)\b",
     r"\b(?:isbn|issn|license|creative commons|all rights reserved)\b",
+    r"\b(?:pico questions?|gdg|guideline development|evidence-to-decision|analytic framework)\b",
 )
 SNIPPET_NON_INITIAL_PATTERNS = (
     r"\b(?:second[-\s]?line|subsequent|salvage|rescue|switch|switching)\b",
@@ -166,10 +271,16 @@ TRUSTED_CRAWL_METADATA_DOMAINS = (
     "health.go.ug",
     "iris.who.int",
     "library.health.go.ug",
+    "nda.or.ug",
+    "uniph.go.ug",
     "platform.who.int",
+    "cphl.go.ug",
+    "qadash.cphl.go.ug",
+    "uci.or.ug",
+    "ulii.org",
 )
 SOURCE_LABELS = {
-    "crawl4ai": "Crawled Source",
+    "crawl4ai": "Guideline page",
     "official_health_api": "Official Health API",
     "pubmed": "PubMed",
     "europe_pmc": "Europe PMC",
@@ -188,20 +299,22 @@ async def generate_model_service_response(
     prompt_type = "empirico_deep_search" if deep_search else "empirico_quick_search"
     country_code = _evidence_country_code_for_search()
     search_top_k = _evidence_search_top_k(deep_search)
-    retrieval_queries = await _retrieval_queries_for_request(
+    question_plan, retrieval_queries = await _evidence_request_plan_for_request(
         query=query,
         patient_data=patient_data,
         chat_history=chat_history,
         deep_search=deep_search,
     )
+    requires_multi_branch_coverage = _question_plan_requires_multi_branch_coverage(question_plan)
+    quick_latency_deadline = _quick_latency_deadline(
+        deep_search,
+        multi_branch=requires_multi_branch_coverage,
+    )
     configured_source_preference_terms = _source_preference_terms()
-    source_preference_context = " ".join((query, *retrieval_queries))
+    source_preference_context = " ".join((query, patient_data, chat_history))
     source_preference_terms = _active_source_preference_terms(
         source_preference_context,
         configured_source_preference_terms,
-    )
-    source_preference_hints = (
-        _source_preference_hints() if source_preference_terms else ""
     )
 
     evidence_search_result = await _search_retrieval_queries(
@@ -209,162 +322,83 @@ async def generate_model_service_response(
         top_k=search_top_k,
         country_code=country_code,
         deep_search=deep_search,
+        source_preference_terms=source_preference_terms,
+        answer_top_k=answer_top_k,
+        coverage_required=requires_multi_branch_coverage,
     )
     provider_errors = list(evidence_search_result.get("provider_errors") or [])
     evidence_timings = dict(evidence_search_result.get("timings_ms") or {})
     raw_evidence = list(evidence_search_result.get("items") or [])
-    evidence = _filter_evidence_items(
+    evidence = _answer_candidates(
         raw_evidence,
         query=query,
         source_preference_terms=source_preference_terms,
-    )[:answer_top_k]
-    if not evidence:
-        evidence = _filter_evidence_items(
-            raw_evidence,
-            query=query,
-            source_preference_terms=source_preference_terms,
-            allow_seed_metadata=True,
-        )[: min(3, answer_top_k)]
-    evidence = _include_global_evidence_when_helpful(
-        query=query,
-        evidence=evidence,
-        raw_evidence=raw_evidence,
-        source_preference_terms=source_preference_terms,
-        answer_top_k=answer_top_k,
-    )
-    evidence = _include_preferred_crawl_source(
-        query=query,
-        evidence=evidence,
-        raw_evidence=raw_evidence,
-        source_preference_terms=source_preference_terms,
-        answer_top_k=answer_top_k,
-    )
-    evidence = await _select_answer_evidence(
-        query=query,
-        patient_data=patient_data,
-        chat_history=chat_history,
-        evidence=_semantic_selection_pool(
-            evidence=evidence,
-            raw_evidence=raw_evidence,
-            query=query,
-            source_preference_terms=source_preference_terms,
-            deep_search=deep_search,
-        ),
         deep_search=deep_search,
-        answer_top_k=answer_top_k,
     )
-    evidence = evidence[:answer_top_k]
     citations = _citations_from_evidence(evidence)
 
     if not citations:
+        rescue_result = await _rescue_evidence_search(
+            queries=retrieval_queries,
+            top_k=search_top_k,
+            country_code=country_code,
+            deep_search=deep_search,
+            answer_top_k=answer_top_k,
+            latency_deadline=quick_latency_deadline,
+        )
+        rescue_items = list(rescue_result.get("items") or [])
+        if rescue_items:
+            provider_errors.extend(list(rescue_result.get("provider_errors") or []))
+            evidence_timings["rescue"] = rescue_result.get("timings_ms") or {}
+            raw_evidence = _merge_evidence_items(raw_evidence, rescue_items)
+            evidence = _answer_candidates(
+                raw_evidence,
+                query=query,
+                source_preference_terms=source_preference_terms,
+                deep_search=deep_search,
+            )
+            citations = _citations_from_evidence(evidence)
+
+    if not citations:
         logger.warning(
-            "No web/crawl evidence survived filtering: country_code=%s raw_items=%d provider_errors=%s",
+            "No web/crawl evidence survived filtering after rescue: country_code=%s raw_items=%d provider_errors=%s",
             country_code or "global",
             len(raw_evidence),
             provider_errors,
         )
-        return (
-            "I couldn't retrieve enough reliable evidence to answer this right now. Please try again.",
-            True,
-            prompt_type,
-            [],
+        sources: list[dict[str, Any]] = []
+        evidence = []
+    else:
+        sources = _answer_sources(evidence, citations, deep_search=deep_search, query=query)
+        logger.info(
+            "Answer sources (%s): %s",
+            "deep" if deep_search else "quick",
+            [f"[{s['number']}] {str(s.get('title') or '')[:70]} <{s.get('url')}>" for s in sources],
         )
 
-    prompt = _build_live_evidence_prompt(
+    prompt = build_answer_prompt(
         query=query,
         patient_data=patient_data,
         chat_history=chat_history,
         deep_search=deep_search,
         user_role_from_db=user_role_from_db,
-        country_code=country_code,
-        source_preference_hints=source_preference_hints,
-        source_list=_source_list_for_prompt(citations),
-        evidence_context=_evidence_context_for_prompt(
-            evidence,
-            deep_search=deep_search,
-            query=query,
-        ),
+        sources=sources,
+        max_references=_max_references(deep_search),
     )
-    payload = {
-        "prompt": prompt,
-        "prompt_type": prompt_type,
-        "temperature": 0.0,
-        "max_output_tokens": (
-            _max_output_tokens_for_mode(deep_search)
-        ),
-        "top_p": 0.9,
-        "top_k": 20,
-        "candidate_count": 1,
-        "require_evidence": False,
-    }
-    model_name = _model_name_for_mode(deep_search)
-    if model_name:
-        payload["model"] = model_name
-
-    try:
-        data: dict[str, Any] | None = None
-        answer = ""
-        for attempt in range(2):
-            data = await _post_model_response(payload, timeout_seconds=_model_timeout_for_mode(deep_search))
-            answer = str(data.get("answer") or "").strip()
-            if answer and not _answer_looks_like_service_status(answer):
-                break
-            if attempt == 0:
-                await asyncio.sleep(1.0)
-        if data is None:
-            data = {}
-    except httpx.HTTPStatusError as exc:
-        logger.error(
-            "Model service returned %s from %s: %s",
-            exc.response.status_code,
-            exc.request.url,
-            _safe_response_text(exc.response),
-        )
-        return (
-            USER_SAFE_GENERATION_ERROR,
-            False,
-            prompt_type,
-            [],
-        )
-    except httpx.RequestError as exc:
-        logger.error("Model service request failed: %s", exc, exc_info=True)
-        return (
-            USER_SAFE_GENERATION_ERROR,
-            False,
-            prompt_type,
-            [],
-        )
-    except ValueError as exc:
-        logger.error("Model service returned invalid JSON: %s", exc, exc_info=True)
-        return (
-            USER_SAFE_GENERATION_ERROR,
-            False,
-            prompt_type,
-            [],
-        )
-
-    if not answer or _answer_looks_like_service_status(answer):
-        return (
-            USER_SAFE_GENERATION_ERROR,
-            False,
-            prompt_type,
-            [],
-        )
-    answer = _sanitize_answer_style(answer)
-    answer = await _polish_answer_body_with_model(
-        query=query,
-        answer=answer,
+    data = await _generate_answer_with_model(
+        prompt=prompt,
+        prompt_type=prompt_type if sources else f"{prompt_type}_no_references",
         deep_search=deep_search,
     )
-    answer = _sanitize_answer_style(answer)
-    citations = _citations_for_answer(answer, citations, data)
-    answer = _ensure_reference_urls(answer, citations)
+    raw_answer = str(data.get("answer") or "").strip()
+    answer, used_citations = finalize_answer(raw_answer, sources, max_references=_max_references(deep_search))
     followup_questions = await _generate_followup_questions(query, answer, deep_search=deep_search)
 
     logger.info(
-        "Model service response completed: model=%s country_code=%s citations=%d raw_evidence=%d provider_errors=%d timings=%s",
+        "Model service response completed: model=%s country_code=%s citations=%d/%d raw_evidence=%d provider_errors=%d timings=%s",
         data.get("model"),
         country_code or "global",
+        len(used_citations),
         len(citations),
         len(raw_evidence),
         len(provider_errors),
@@ -377,10 +411,129 @@ async def generate_model_service_response(
 
     return (
         answer,
-        bool(data.get("diagnosis_complete", True)),
+        True,
         str(data.get("prompt_type") or prompt_type),
         followup_questions,
     )
+
+
+class AnswerGenerationError(RuntimeError):
+    """The model service could not produce an answer after retries."""
+
+
+def _answer_sources(
+    evidence: list[dict[str, Any]],
+    citations: list[dict[str, object]],
+    *,
+    deep_search: bool,
+    query: str,
+) -> list[dict[str, Any]]:
+    """Pair each numbered citation with the evidence excerpt the model should read.
+
+    ``citations`` was produced from ``evidence`` in order, skipping items without a
+    URL, so walk the evidence in the same order and keep the numbering aligned.
+    """
+    excerpt_limit = 2800 if deep_search else 1800
+    sources: list[dict[str, Any]] = []
+    index_by_location: dict[str, int] = {}
+    first_number_by_document: dict[str, int] = {}
+    citation_index = 0
+    for item in evidence:
+        if citation_index >= len(citations):
+            break
+        record = _normalize_evidence_record(item)
+        if record is None:
+            continue
+        citation = citations[citation_index]
+        citation_index += 1
+        raw_excerpt = str(item.get("abstract") or item.get("snippet") or "")
+        if len(" ".join(raw_excerpt.split())) > excerpt_limit and not deep_search:
+            retrieval_query = _evidence_record_retrieval_query(item) or ""
+            excerpt = _query_focused_snippet(raw_excerpt, f"{query} {retrieval_query}", excerpt_limit)
+        else:
+            excerpt = _compact_text(raw_excerpt, excerpt_limit)
+
+        location = citation_location_key(str(citation.get("url") or ""))
+        existing_index = index_by_location.get(location)
+        if existing_index is not None:
+            # Same document location (page or web page): one numbered source, several excerpts.
+            existing = sources[existing_index]
+            if excerpt and excerpt not in existing["excerpt"]:
+                existing["excerpt"] = _compact_text(
+                    f"{existing['excerpt']} [...] {excerpt}" if existing["excerpt"] else excerpt,
+                    excerpt_limit * 2,
+                )
+            continue
+        index_by_location[location] = len(sources)
+        document = citation_document_key(str(citation.get("url") or ""))
+        source: dict[str, Any] = {
+            "number": len(sources) + 1,
+            "title": citation.get("title"),
+            "source_label": citation.get("source_label"),
+            "year": citation.get("year"),
+            "url": citation.get("url"),
+            "excerpt": excerpt,
+        }
+        first_number = first_number_by_document.get(document)
+        if first_number is not None:
+            source["same_document_as"] = first_number
+        else:
+            first_number_by_document[document] = source["number"]
+        sources.append(source)
+    return sources
+
+
+async def _generate_answer_with_model(
+    *,
+    prompt: str,
+    prompt_type: str,
+    deep_search: bool,
+) -> dict[str, Any]:
+    """Call the model service once, retrying a single time on transient failure.
+
+    The answer call always gets the full per-mode timeout. Retrieval-side steps
+    are the ones bounded by the quick latency target; starving the answer call
+    is what produced unusable fallback text in the past.
+    """
+    payload = {
+        "prompt": prompt,
+        "prompt_type": prompt_type,
+        "temperature": _answer_temperature(),
+        "max_output_tokens": _max_output_tokens_for_mode(deep_search),
+        "top_p": 0.95,
+        "candidate_count": 1,
+        "require_evidence": False,
+    }
+    model_name = _model_name_for_mode(deep_search)
+    if model_name:
+        payload["model"] = model_name
+
+    timeout_seconds = _model_timeout_for_mode(deep_search)
+    last_error: str | None = None
+    for attempt in range(2):
+        try:
+            data = await _post_model_response(payload, timeout_seconds=timeout_seconds)
+        except httpx.HTTPStatusError as exc:
+            last_error = f"HTTP {exc.response.status_code}: {_safe_response_text(exc.response)}"
+            logger.error("Model service returned %s (attempt %d)", last_error, attempt + 1)
+            if exc.response.status_code < 500 and exc.response.status_code != 429:
+                break
+        except (httpx.RequestError, ValueError) as exc:
+            last_error = f"{type(exc).__name__}: {exc}"
+            logger.error("Model service request failed (attempt %d): %s", attempt + 1, exc)
+        else:
+            answer = str(data.get("answer") or "").strip()
+            if answer and not _answer_looks_like_service_status(answer):
+                return data
+            last_error = f"unusable answer: {answer[:160]!r} provider_errors={data.get('provider_errors')}"
+            logger.warning("Model service returned no usable answer (attempt %d): %s", attempt + 1, last_error)
+        if attempt == 0:
+            await asyncio.sleep(1.5 if deep_search else 0.75)
+    raise AnswerGenerationError(last_error or "model service did not return an answer")
+
+
+def _answer_temperature() -> float:
+    return _env_float("EMPIRICO_ANSWER_TEMPERATURE", 0.2, minimum=0.0, maximum=1.0)
 
 
 async def _retrieval_queries_for_request(
@@ -390,14 +543,31 @@ async def _retrieval_queries_for_request(
     chat_history: str,
     deep_search: bool,
 ) -> tuple[str, ...]:
+    _question_plan, retrieval_queries = await _evidence_request_plan_for_request(
+        query=query,
+        patient_data=patient_data,
+        chat_history=chat_history,
+        deep_search=deep_search,
+    )
+    return retrieval_queries
+
+
+async def _evidence_request_plan_for_request(
+    *,
+    query: str,
+    patient_data: str,
+    chat_history: str,
+    deep_search: bool,
+) -> tuple[dict[str, Any], tuple[str, ...]]:
     fallback = _fallback_retrieval_queries(query, deep_search=deep_search)
+    fallback_plan = _fallback_question_plan(query)
     if not fallback:
-        return ("clinical medicine",)
+        return fallback_plan, ("clinical medicine",)
     if not _retrieval_planner_enabled(deep_search):
-        return fallback
+        return fallback_plan, fallback
 
     payload = {
-        "prompt": _build_retrieval_query_prompt(
+        "prompt": _build_evidence_request_planning_prompt(
             query=query,
             patient_data=patient_data,
             chat_history=chat_history,
@@ -418,11 +588,62 @@ async def _retrieval_queries_for_request(
         )
     except (httpx.HTTPStatusError, httpx.RequestError, ValueError) as exc:
         logger.warning("Retrieval query planning fell back to the original question: %s", exc)
-        return fallback
+        return fallback_plan, fallback
 
-    planned = _retrieval_queries_from_model_response(data)
-    planned_limit = 3 if deep_search else 2
-    return _normalized_retrieval_queries([*planned[:planned_limit], *fallback]) or fallback
+    question_plan = _question_plan_from_model_response(data, query=query)
+    planned = _retrieval_queries_from_question_plan(question_plan)
+    if not planned:
+        planned = _retrieval_queries_from_model_response(data)
+    planned_limit = 4 if deep_search else 3
+    planned = _augment_planned_queries_with_coverage_goal(
+        query=query,
+        question_plan=question_plan,
+        planned=planned,
+        deep_search=deep_search,
+    )
+    retrieval_queries = _prioritized_retrieval_queries(
+        query=query,
+        planned=planned[:planned_limit],
+        fallback=fallback,
+        deep_search=deep_search,
+    ) or fallback
+    return question_plan, retrieval_queries
+
+
+def _augment_planned_queries_with_coverage_goal(
+    *,
+    query: str,
+    question_plan: dict[str, Any],
+    planned: tuple[str, ...],
+    deep_search: bool,
+) -> tuple[str, ...]:
+    """Add one query per uncovered answer facet, filling leftover slots only.
+
+    The planner's own queries come first because it saw the whole question. Each
+    facet becomes its own short query rather than being concatenated into one
+    long string: a single query naming every requirement just repeats the topic
+    words and returns the pages the first query already found.
+    """
+    facets = [
+        *_clean_string_list(question_plan.get("answer_requirements"), limit=3),
+        *_clean_string_list(question_plan.get("evidence_goals"), limit=2),
+    ]
+    if not facets:
+        return planned
+
+    anchor = _compact_text(
+        _text_from_unknown(question_plan.get("condition"))
+        or _text_from_unknown(question_plan.get("clinical_question"))
+        or query,
+        90,
+    )
+    population = _compact_text(_text_from_unknown(question_plan.get("population")) or "", 40)
+    facet_queries = [
+        _clean_retrieval_query(" ".join(part for part in (anchor, population, facet) if part))
+        for facet in facets
+    ]
+    limit = 4 if deep_search else 3
+    return _normalized_retrieval_queries([*planned, *facet_queries], limit=limit)
 
 
 def _fallback_retrieval_queries(query: str, *, deep_search: bool) -> tuple[str, ...]:
@@ -432,7 +653,42 @@ def _fallback_retrieval_queries(query: str, *, deep_search: bool) -> tuple[str, 
     return _normalized_retrieval_queries([cleaned])
 
 
+def _prioritized_retrieval_queries(
+    *,
+    query: str,
+    planned: tuple[str, ...],
+    fallback: tuple[str, ...],
+    deep_search: bool,
+) -> tuple[str, ...]:
+    if not planned:
+        return fallback
+
+    original_query = fallback[:1]
+    # Total retrieval queries per request, the user's own question included. Each
+    # one costs a full crawl round, so quick search stays at three.
+    planned_limit = 4 if deep_search else 3
+    return _normalized_retrieval_queries(
+        [*original_query, *planned[:planned_limit], *fallback[1:]],
+        limit=planned_limit,
+    )
+
+
 def _build_retrieval_query_prompt(
+    *,
+    query: str,
+    patient_data: str,
+    chat_history: str,
+    deep_search: bool,
+) -> str:
+    return _build_evidence_request_planning_prompt(
+        query=query,
+        patient_data=patient_data,
+        chat_history=chat_history,
+        deep_search=deep_search,
+    )
+
+
+def _build_evidence_request_planning_prompt(
     *,
     query: str,
     patient_data: str,
@@ -441,27 +697,41 @@ def _build_retrieval_query_prompt(
 ) -> str:
     max_queries = 4 if deep_search else 3
     return f"""
-You create search queries for retrieving medical evidence before answer generation.
+You understand medical questions and create an evidence request before retrieval.
 
 Return only valid JSON in this shape:
-{{"queries":["query one","query two"]}}
+{{
+  "clinical_question": "the user's clinical question, preserving qualifiers",
+  "task": "semantic clinical task",
+  "population": "population if stated or implied, otherwise empty",
+  "condition": "condition/exposure/intervention if applicable, otherwise empty",
+  "jurisdiction": "requested jurisdiction if stated, otherwise empty",
+  "requested_output": "what the answer must produce",
+  "answer_requirements": ["requirement one", "requirement two"],
+  "evidence_goals": ["goal one", "goal two"],
+  "queries": ["query one", "query two"]
+}}
 
 Rules:
+- Do not answer the medical question.
+- Infer the clinical task semantically from the full question and context, not from keyword matching.
+- Make answer_requirements the minimum evidence facets needed to answer this specific question correctly.
+- Make evidence_goals describe the kinds of passages needed, such as recommendations, thresholds, differential explanations, interaction management, safety limits, or decision branches, but only when relevant to this question.
 - Create 1 to {max_queries} concise web/library search queries.
 - Order queries by direct usefulness to the final answer. Query 1 must be the direct-answer query most likely to retrieve the actual clinical option, regimen, dose, threshold, interpretation, or action.
+- Every query after the first must target a different facet of the answer, not reword the first. Rewording wastes the retrieval budget because it returns the same pages. Facets differ by what the clinician needs next: how the choice between options is decided, the operative detail of the chosen option, a subgroup managed differently, or the endpoint such as monitoring, stopping, or discharge criteria.
 - Preserve clinically relevant context from the user's wording, such as population, setting, jurisdiction, pregnancy, comorbidities, exposure, intervention, comparator, and outcome when present.
 - Expand abbreviations or implicit clinical wording only when that would make retrieval clearer.
 - If the user includes a city, country, region, or health system, include one query for local/national guidance and one direct clinical-answer query that omits the place when global guidance is likely to contain the regimen, dose, threshold, or standard recommendation.
 - When the question asks for clinical action, use complementary queries when possible: one to find authoritative guidance, one to retrieve the direct answer, and one to verify any practical details needed to answer completely.
-- When the user asks generally for treatment, management, or regimen and does not mention failure, relapse, refractory disease, previous treatment, second-line, salvage, or rescue therapy, retrieve the current standard initial/first-line approach.
 - Do not make the first query only a broad guideline landing-page query when the user needs a practical clinical answer. Put regimen, dose, threshold, adult/child/pregnancy, first-line/initial, or other task terms in query 1 when they are implied by the user question.
 - If the answer may involve multiple parts, make sure one query is broad enough to retrieve the full set rather than only the most obvious anchor term.
 - Match the verification query to the user's clinical task without inventing likely answer terms.
-- Do not create second-line, salvage, rescue, adherence, failure, or advanced-disease queries unless the user asked for those concepts.
 - Do not guess the answer's vocabulary. Build semantic query variants that retrieve and verify the answer from external evidence.
+- Make one query target the operative level of detail the task needs, using generic wording such as dose, regimen, protocol, schedule, criteria, threshold, or steps. Retrieving the page that describes a service, programme, or pathway is not enough when the user needs what is actually given or done.
+- If the user's population spans subgroups that are managed differently, such as an age range, pregnancy, or severity band, make sure the queries between them cover the whole range rather than only the largest subgroup.
 - Avoid implementation, adherence, epidemiology, or burden wording unless the user asked for those.
 - Prefer wording likely to retrieve current, authoritative medical sources that directly answer the question.
-- Do not answer the medical question.
 - Do not add source names, country names, conditions, or treatments that are not implied by the user question or context.
 
 User question:
@@ -473,6 +743,83 @@ Context:
 Previous conversation summary:
 {chat_history or "No previous conversation."}
 """.strip()
+
+
+def _fallback_question_plan(query: str) -> dict[str, Any]:
+    return {
+        "clinical_question": " ".join(query.split()),
+        "task": "",
+        "population": "",
+        "condition": "",
+        "jurisdiction": "",
+        "requested_output": "",
+        "answer_requirements": [],
+        "evidence_goals": [],
+        "queries": [],
+    }
+
+
+def _question_plan_from_model_response(
+    data: dict[str, Any],
+    *,
+    query: str,
+) -> dict[str, Any]:
+    parsed: dict[str, Any] | None = None
+    answer = data.get("answer")
+    if isinstance(answer, dict):
+        parsed = answer
+    elif isinstance(answer, str):
+        parsed = _json_object_from_text(answer)
+    if parsed is None:
+        parsed = data
+
+    plan = _fallback_question_plan(query)
+    for key in (
+        "clinical_question",
+        "task",
+        "population",
+        "condition",
+        "jurisdiction",
+        "requested_output",
+    ):
+        value = _text_from_unknown(parsed.get(key))
+        if value:
+            plan[key] = value[:500]
+
+    for key in ("answer_requirements", "evidence_goals", "queries"):
+        plan[key] = _clean_string_list(parsed.get(key), limit=8 if key != "queries" else 4)
+
+    return plan
+
+
+def _retrieval_queries_from_question_plan(plan: dict[str, Any]) -> tuple[str, ...]:
+    return tuple(_clean_string_list(plan.get("queries"), limit=4))
+
+
+def _clean_string_list(value: Any, *, limit: int) -> list[str]:
+    values: list[str] = []
+    if isinstance(value, str):
+        parsed = _json_object_from_text(value)
+        if isinstance(parsed, dict):
+            return _clean_string_list(parsed, limit=limit)
+        raw_values = [value]
+    elif isinstance(value, dict):
+        raw_values = list(value.values())
+    elif isinstance(value, list):
+        raw_values = value
+    else:
+        raw_values = []
+
+    for item in raw_values:
+        text = _text_from_unknown(item)
+        if not text:
+            continue
+        cleaned = _compact_plain_text(text)[:220]
+        if cleaned and cleaned not in values:
+            values.append(cleaned)
+        if len(values) >= limit:
+            break
+    return values
 
 
 def _retrieval_queries_from_model_response(data: dict[str, Any]) -> tuple[str, ...]:
@@ -515,7 +862,11 @@ def _json_object_from_text(value: str) -> dict[str, Any] | None:
     return None
 
 
-def _normalized_retrieval_queries(values: list[str] | tuple[str, ...]) -> tuple[str, ...]:
+def _normalized_retrieval_queries(
+    values: list[str] | tuple[str, ...],
+    *,
+    limit: int = 4,
+) -> tuple[str, ...]:
     queries: list[str] = []
     seen: set[str] = set()
     for value in values:
@@ -527,7 +878,7 @@ def _normalized_retrieval_queries(values: list[str] | tuple[str, ...]) -> tuple[
             continue
         seen.add(key)
         queries.append(cleaned)
-        if len(queries) >= 4:
+        if len(queries) >= limit:
             break
     return tuple(queries)
 
@@ -559,10 +910,10 @@ def _retrieval_planner_enabled(deep_search: bool) -> bool:
     if raw is None:
         raw = os.getenv("EMPIRICO_ENABLE_RETRIEVAL_PLANNER")
     if raw is None:
-        return deep_search
+        return True
     normalized = raw.strip().lower()
     if normalized in {"auto", "adaptive"}:
-        return deep_search
+        return True
     return normalized in {"1", "true", "yes", "on", "enabled"}
 
 
@@ -572,10 +923,16 @@ async def _search_retrieval_queries(
     top_k: int,
     country_code: Optional[str],
     deep_search: bool,
+    provider_mode: str | None = None,
+    source_preference_terms: tuple[str, ...] = (),
+    answer_top_k: int | None = None,
+    search_settings: EvidenceRetrievalSettings | None = None,
+    coverage_required: bool = False,
 ) -> dict[str, Any]:
     merged_items: list[dict[str, Any]] = []
     provider_errors: list[str] = []
     timings: dict[str, Any] = {}
+
     semaphore = asyncio.Semaphore(_retrieval_query_concurrency(deep_search))
 
     async def run_query(index: int, retrieval_query: str) -> tuple[int, str, dict[str, Any]]:
@@ -583,17 +940,50 @@ async def _search_retrieval_queries(
             result = await _search_local_evidence(
                 query=retrieval_query,
                 top_k=top_k,
-                country_code=country_code,
+                country_code=_country_code_for_retrieval_query(country_code, retrieval_query),
                 deep_search=deep_search,
+                provider_mode=provider_mode,
+                search_settings=search_settings,
             )
         return index, retrieval_query, result
 
-    query_results = await asyncio.gather(
-        *(
-            run_query(index, retrieval_query)
-            for index, retrieval_query in enumerate(queries, start=1)
+    query_jobs = list(enumerate(queries, start=1))
+    query_results: list[tuple[int, str, dict[str, Any]]] = []
+    running_tasks: list[asyncio.Task[tuple[int, str, dict[str, Any]]]] = []
+
+    if _quick_retrieval_early_stop_enabled(
+        deep_search=deep_search,
+        provider_mode=provider_mode,
+        query_count=len(query_jobs),
+    ) and not coverage_required:
+        first_job = query_jobs[0]
+        query_jobs = query_jobs[1:]
+        first_task = asyncio.create_task(run_query(*first_job))
+        done, _pending = await asyncio.wait(
+            {first_task},
+            timeout=_quick_retrieval_early_stop_wait_seconds(),
         )
-    )
+        if first_task in done:
+            first_result = first_task.result()
+            query_results.append(first_result)
+            first_items = list(dict(first_result[2] or {}).get("items") or [])
+            if _quick_retrieval_has_enough_answer_sources(
+                items=first_items,
+                query=first_result[1],
+                source_preference_terms=source_preference_terms,
+                answer_top_k=answer_top_k or DEFAULT_QUICK_ANSWER_SOURCES,
+            ):
+                timings["early_stop"] = True
+                query_jobs = []
+        else:
+            running_tasks.append(first_task)
+
+    if query_jobs or running_tasks:
+        running_tasks.extend(
+            asyncio.create_task(run_query(index, retrieval_query))
+            for index, retrieval_query in query_jobs
+        )
+        query_results.extend(await asyncio.gather(*running_tasks))
 
     for index, retrieval_query, result in sorted(query_results, key=lambda entry: entry[0]):
         result = dict(result or {})
@@ -614,6 +1004,136 @@ async def _search_retrieval_queries(
         "provider_errors": provider_errors,
         "timings_ms": timings,
     }
+
+
+def _quick_retrieval_early_stop_enabled(
+    *,
+    deep_search: bool,
+    provider_mode: str | None,
+    query_count: int,
+) -> bool:
+    if deep_search or provider_mode is not None or query_count < 2:
+        return False
+    raw = os.getenv("EMPIRICO_QUICK_RETRIEVAL_EARLY_STOP", "true").strip().lower()
+    return raw not in {"0", "false", "off", "no", "none", "disabled"}
+
+
+def _quick_retrieval_early_stop_wait_seconds() -> float:
+    return _env_float(
+        "EMPIRICO_QUICK_RETRIEVAL_EARLY_STOP_WAIT_SECONDS",
+        1.5,
+        minimum=0.1,
+        maximum=5.0,
+    )
+
+
+def _question_plan_requires_multi_branch_coverage(question_plan: dict[str, Any]) -> bool:
+    """Avoid fast-path cancellation when the planner identified multiple answer facets."""
+    requirements = _clean_string_list(question_plan.get("answer_requirements"), limit=6)
+    goals = _clean_string_list(question_plan.get("evidence_goals"), limit=4)
+    return len(requirements) > 1 or len(goals) > 1
+
+
+def _quick_retrieval_has_enough_answer_sources(
+    *,
+    items: list[dict[str, Any]],
+    query: str,
+    source_preference_terms: tuple[str, ...],
+    answer_top_k: int,
+) -> bool:
+    filtered = _filter_evidence_items(
+        items,
+        query=query,
+        source_preference_terms=source_preference_terms,
+    )
+    return len(_unique_evidence_passages(filtered, limit=answer_top_k)) >= answer_top_k
+
+
+async def _rescue_evidence_search(
+    *,
+    queries: tuple[str, ...],
+    top_k: int,
+    country_code: Optional[str],
+    deep_search: bool,
+    answer_top_k: int,
+    latency_deadline: float | None = None,
+) -> dict[str, Any]:
+    if not _evidence_rescue_enabled():
+        return {"items": [], "provider_errors": [], "timings_ms": {}}
+    current_mode = _local_evidence_provider_mode(deep_search)
+    broad_country = _broad_evidence_country_code(country_code)
+    if current_mode == "web" and (country_code or "").upper() in {"", "GLOBAL"}:
+        return {"items": [], "provider_errors": [], "timings_ms": {}}
+    rescue_queries = _normalized_retrieval_queries(
+        list(queries),
+        limit=4 if deep_search else 3,
+    )
+    if not rescue_queries:
+        return {"items": [], "provider_errors": [], "timings_ms": {}}
+    search_settings = _rescue_search_settings_for_latency_budget(
+        deep_search=deep_search,
+        latency_deadline=latency_deadline,
+    )
+    if latency_deadline is not None and search_settings is None:
+        logger.info("Skipping evidence rescue because the quick latency budget is exhausted")
+        return {"items": [], "provider_errors": [], "timings_ms": {"skipped": "latency_budget"}}
+    logger.info(
+        "Running evidence rescue search: mode=web country=%s queries=%s",
+        broad_country,
+        rescue_queries,
+    )
+    return await _search_retrieval_queries(
+        queries=rescue_queries,
+        top_k=max(top_k, answer_top_k * 2),
+        country_code=broad_country,
+        deep_search=deep_search,
+        provider_mode="web",
+        search_settings=search_settings,
+    )
+
+
+def _evidence_rescue_enabled() -> bool:
+    raw = os.getenv("EMPIRICO_ENABLE_EVIDENCE_RESCUE")
+    if raw is None:
+        raw = os.getenv("EMPIRICO_ENABLE_TRUSTED_GUIDELINE_RESCUE", "true")
+    raw = raw.strip().lower()
+    return raw not in {"0", "false", "off", "no", "none", "disabled"}
+
+
+def _rescue_search_settings_for_latency_budget(
+    *,
+    deep_search: bool,
+    latency_deadline: float | None,
+) -> EvidenceRetrievalSettings | None:
+    if latency_deadline is None:
+        return None
+    remaining = latency_deadline - time.perf_counter() - 0.75
+    if remaining < _quick_rescue_min_seconds():
+        return None
+
+    settings = _search_settings_for_mode(deep_search)
+    retrieval_budget = min(settings.retrieval_time_budget_seconds, remaining)
+    crawl_budget = min(settings.crawl_time_budget_seconds, max(0.5, remaining - 0.25))
+    request_timeout = min(
+        settings.request_timeout_seconds,
+        max(1, int(max(1.0, remaining))),
+    )
+    return settings.model_copy(
+        update={
+            "retrieval_time_budget_seconds": retrieval_budget,
+            "crawl_time_budget_seconds": crawl_budget,
+            "request_timeout_seconds": request_timeout,
+        }
+    )
+
+
+def _quick_rescue_min_seconds() -> float:
+    return _env_float(
+        "EMPIRICO_QUICK_RESCUE_MIN_SECONDS",
+        2.5,
+        minimum=1.0,
+        maximum=10.0,
+    )
 
 
 def _items_with_retrieval_query(
@@ -642,337 +1162,10 @@ def _retrieval_query_concurrency(deep_search: bool) -> int:
     return _env_int(key, default, minimum=1, maximum=4)
 
 
-def _semantic_selection_pool(
-    *,
-    evidence: list[dict[str, Any]],
-    raw_evidence: list[dict[str, Any]],
-    query: str,
-    source_preference_terms: tuple[str, ...],
-    deep_search: bool,
-) -> list[dict[str, Any]]:
-    limit = _semantic_selection_candidate_limit(deep_search)
-    candidates = _filter_evidence_items(
-        raw_evidence,
-        query=query,
-        source_preference_terms=source_preference_terms,
-        allow_seed_metadata=False,
-    )
-    return _merge_evidence_items(evidence, candidates[:limit])[:limit]
-
-
-async def _select_answer_evidence(
-    *,
-    query: str,
-    patient_data: str,
-    chat_history: str,
-    evidence: list[dict[str, Any]],
-    deep_search: bool,
-    answer_top_k: int,
-) -> list[dict[str, Any]]:
-    candidates = evidence[: _semantic_selection_candidate_limit(deep_search)]
-    if not candidates or not _semantic_evidence_selection_enabled(deep_search):
-        return candidates[:answer_top_k]
-    if len(candidates) == 1:
-        return candidates
-
-    payload = {
-        "prompt": _build_evidence_selection_prompt(
-            query=query,
-            patient_data=patient_data,
-            chat_history=chat_history,
-            evidence=candidates,
-            max_sources=answer_top_k,
-        ),
-        "prompt_type": "empirico_evidence_source_selection",
-        "temperature": 0.0,
-        "max_output_tokens": 700,
-        "top_p": 0.8,
-        "top_k": 20,
-        "candidate_count": 1,
-        "require_evidence": False,
-    }
-    try:
-        data = await _post_model_response(
-            payload,
-            timeout_seconds=_semantic_selection_timeout(),
-        )
-    except (httpx.HTTPStatusError, httpx.RequestError, ValueError) as exc:
-        logger.warning("Evidence source selection fell back to ranked evidence: %s", exc)
-        return candidates[:answer_top_k]
-
-    selected_numbers = _evidence_selection_numbers_from_model_response(
-        data,
-        max_number=len(candidates),
-    )
-    if not selected_numbers:
-        return candidates[:answer_top_k]
-
-    selected: list[dict[str, Any]] = []
-    seen: set[int] = set()
-    for number in selected_numbers:
-        if number in seen:
-            continue
-        seen.add(number)
-        selected.append(candidates[number - 1])
-        if len(selected) >= answer_top_k:
-            break
-    if selected and len(selected) < answer_top_k:
-        selected = _merge_evidence_items(selected, candidates)[:answer_top_k]
-    return selected or candidates[:answer_top_k]
-
-
-def _build_evidence_selection_prompt(
-    *,
-    query: str,
-    patient_data: str,
-    chat_history: str,
-    evidence: list[dict[str, Any]],
-    max_sources: int,
-) -> str:
-    return f"""
-Select the retrieved medical evidence sources that should be passed to the final answer generator.
-
-Return only valid JSON in this shape:
-{{"source_numbers":[1,2,3]}}
-
-Rules:
-- Select 1 to {max_sources} source numbers.
-- Choose sources that directly answer the user's medical question and contain usable clinical facts.
-- Prefer current authoritative sources when they directly answer the question; add supporting papers, prescribing sources, or data sources only when they add clinically useful detail.
-- When the question asks for a clinical choice, include candidates that contain the actionable choice and its practical details when such evidence is available.
-- Do not choose sources that mainly give background or eligibility context when another candidate directly answers the user's clinical task.
-- Preserve jurisdiction-specific sources when the user named a place and the source actually applies to that place.
-- Omit sources that are only metadata, bibliographies, acknowledgements, correction notices, tangential background, or statistics unless the user asked for that kind of information.
-- Judge relevance from the source title, type, date, URL, retrieval query, and evidence text. Do not answer the medical question.
-
-User question:
-{query}
-
-Context:
-{patient_data or "No additional context provided."}
-
-Previous conversation summary:
-{chat_history or "No previous conversation."}
-
-Retrieved sources:
-{_evidence_selection_context(evidence)}
-""".strip()
-
-
-def _evidence_selection_context(evidence: list[dict[str, Any]]) -> str:
-    lines: list[str] = []
-    for index, item in enumerate(evidence, start=1):
-        citation = _normalize_evidence_record(item)
-        title = str(citation.get("title") if citation else item.get("title") or f"Source {index}")
-        source = (
-            str(citation.get("source_label") or "")
-            if citation
-            else SOURCE_LABELS.get(_source_key(item), _source_key(item) or "Source")
-        )
-        year = citation.get("year") if citation else item.get("year") or _year_from_publication_date(item.get("publication_date"))
-        retrieval_query = _evidence_record_retrieval_query(item)
-        url = str(citation.get("url") if citation else item.get("url") or item.get("full_text_url") or "")
-        snippet_limit = 1200 if _source_key(item) == "crawl4ai" else 700
-        snippet = _compact_text(str(item.get("abstract") or item.get("snippet") or ""), snippet_limit)
-        parts = [
-            f"{index}. {title}",
-            f"Type: {item.get('evidence_type') or 'unknown'}",
-            f"Source: {source}" if source else "",
-            f"Year: {year}" if year else "",
-            f"URL: {url}" if url else "",
-            f"Retrieval query: {retrieval_query}" if retrieval_query else "",
-            f"Evidence: {snippet}" if snippet else _metadata_only_note(item),
-        ]
-        lines.append("\n".join(part for part in parts if part))
-    return "\n\n".join(lines)
-
-
-def _evidence_selection_numbers_from_model_response(
-    data: dict[str, Any],
-    *,
-    max_number: int,
-) -> tuple[int, ...]:
-    direct = _first_present(
-        data,
-        ("source_numbers", "sourceNumbers", "selected_source_numbers", "selectedSourceNumbers", "selected", "sources"),
-    )
-    numbers = _evidence_selection_numbers_from_unknown(direct, max_number=max_number)
-    if numbers:
-        return numbers
-
-    answer = data.get("answer")
-    if isinstance(answer, dict):
-        nested = _first_present(
-            answer,
-            ("source_numbers", "sourceNumbers", "selected_source_numbers", "selectedSourceNumbers", "selected", "sources"),
-        )
-        numbers = _evidence_selection_numbers_from_unknown(nested, max_number=max_number)
-        if numbers:
-            return numbers
-    if isinstance(answer, str):
-        parsed = _json_object_from_text(answer)
-        if isinstance(parsed, dict):
-            nested = _first_present(
-                parsed,
-                ("source_numbers", "sourceNumbers", "selected_source_numbers", "selectedSourceNumbers", "selected", "sources"),
-            )
-            numbers = _evidence_selection_numbers_from_unknown(nested, max_number=max_number)
-            if numbers:
-                return numbers
-    return ()
-
-
-def _evidence_selection_numbers_from_unknown(
-    value: Any,
-    *,
-    max_number: int,
-) -> tuple[int, ...]:
-    raw_numbers: list[int] = []
-    if isinstance(value, int):
-        raw_numbers.append(value)
-    elif isinstance(value, str):
-        raw_numbers.extend(int(match) for match in re.findall(r"\b\d+\b", value))
-    elif isinstance(value, list):
-        for item in value:
-            raw_numbers.extend(
-                _evidence_selection_numbers_from_unknown(item, max_number=max_number)
-            )
-    elif isinstance(value, dict):
-        nested = _first_present(value, ("number", "source_number", "sourceNumber", "index", "id"))
-        raw_numbers.extend(
-            _evidence_selection_numbers_from_unknown(nested, max_number=max_number)
-        )
-
-    numbers: list[int] = []
-    for number in raw_numbers:
-        if 1 <= number <= max_number and number not in numbers:
-            numbers.append(number)
-    return tuple(numbers)
-
-
-def _semantic_evidence_selection_enabled(deep_search: bool) -> bool:
-    key = (
-        "EMPIRICO_DEEP_ENABLE_SEMANTIC_EVIDENCE_SELECTION"
-        if deep_search
-        else "EMPIRICO_QUICK_ENABLE_SEMANTIC_EVIDENCE_SELECTION"
-    )
-    raw = os.getenv(key)
-    if raw is None:
-        raw = os.getenv("EMPIRICO_ENABLE_SEMANTIC_EVIDENCE_SELECTION")
-    if raw is None:
-        return False
-    raw = raw.strip().lower()
-    return raw not in {"0", "false", "off", "no", "none", "disabled"}
-
-
-def _semantic_selection_timeout() -> float:
-    return _env_float(
-        "EMPIRICO_EVIDENCE_SELECTION_TIMEOUT_SECONDS",
-        8.0,
-        minimum=2.0,
-        maximum=90.0,
-    )
-
-
-def _semantic_selection_candidate_limit(deep_search: bool) -> int:
-    default = 24 if deep_search else 18
-    return _env_int(
-        "EMPIRICO_EVIDENCE_SELECTION_CANDIDATE_LIMIT",
-        default,
-        minimum=2,
-        maximum=30,
-    )
-
-
-def _build_live_evidence_prompt(
-    *,
-    query: str,
-    patient_data: str,
-    chat_history: str,
-    deep_search: bool,
-    user_role_from_db: Optional[str],
-    country_code: Optional[str],
-    source_preference_hints: str,
-    source_list: str,
-    evidence_context: str,
-) -> str:
-    prompt_template = DEEP_SEARCH_PROMPT if deep_search else QUICK_SEARCH_PROMPT
-    prompt = prompt_template.format(
-        sources=source_list,
-        context=evidence_context,
-        role_instruction=_role_instruction(user_role_from_db),
-        bolding_rules=BOLDING_RULES,
-        exam_handling=EXAM_HANDLING,
-        global_conduct_rules=_live_global_conduct_rules(),
-        query_classification_rules=QUERY_CLASSIFICATION_RULES,
-        preemptive_reasoning_rules=PREEMPTIVE_REASONING_RULES,
-        pharmacology_rules=PHARMACOLOGY_RULES,
-        references_rules=_live_references_rules(),
-        security_and_evidence_rules=SECURITY_AND_EVIDENCE_RULES,
-    )
-    user_context_block = f"""
-### USER QUESTION:
-{query}
-
-### CONTEXT (if provided):
-{patient_data or "No additional context provided."}
-
-### PREVIOUS CONVERSATION SUMMARY:
-{chat_history or "No previous conversation."}
-
-### LOCAL EVIDENCE SOURCE SELECTION:
-The evidence source-selection hint is {country_code or "not set"}.
-This is only a retrieval preference. Do not treat it as a user location unless the user explicitly says so.
-
-### SOURCE PREFERENCE:
-Prefer retrieved sources matching these source hints when they are relevant: {source_preference_hints or "none"}.
-If the user explicitly asks for a different jurisdiction, source, or setting, follow the user's query and the retrieved evidence.
-
-### CITATION CONTROL:
-- Use only the numbered sources listed in AVAILABLE SOURCES / EVIDENCE BASE.
-- Do not cite [1], [2], or any other marker unless that exact source number is present in the evidence block.
-- Do not use static cached-library references unless they appear in the evidence block.
-- Inline citation markers must be clickable markdown links using the source URL, for example [1](https://example.org/source).
-- When a primary source page and a secondary article both support a recommendation, cite the primary source page first.
-- If a source note says full document text was not extracted, use it only as a retrieved trusted source link and avoid attributing granular document claims to it.
-- Do not discuss the sources in the answer body. State the answer directly and use inline citation markers for support.
-- Keep the answer inside the user's requested scope. For a direct clinical-choice question, give the practical choice, brief rationale, and the modifiers that alter that choice; leave out unrelated care-pathway details.
-- In quick search, ordinary direct questions should be answered in 1-2 short paragraphs plus References. Do not add extra headings, bullets, targets, monitoring, follow-up, epidemiology, or implementation details unless the user asked or they change the answer.
-- For medication or regimen questions, do not answer with only a broad label such as "standard regimen", "6-month regimen", "combination therapy", or "first-line therapy" when any retrieved evidence sentence names the actual components, dose, or duration. Put those practical details in the first paragraph.
-- Respect population qualifiers exactly. If the user asks about adults, do not add infant, child, neonate, pregnancy, or breastfeeding recommendations unless the user asked or they alter the adult answer.
-- Distinguish treatment from prevention, prophylaxis, screening, and monitoring. If the user asks how a condition is treated, do not answer with prevention/prophylaxis alone.
-- If a source title or evidence block covers a broader scope than the user asked about, extract only the part needed for the user's question and do not repeat the broader-scope wording.
-"""
-    return f"{prompt}\n\n{user_context_block.strip()}"
-
-
-def _live_global_conduct_rules() -> str:
-    return GLOBAL_CONDUCT_RULES
-
-
-def _live_references_rules() -> str:
-    return """
-### REFERENCES ###
-End with:
-**References**
-
-Rules:
-- List only sources actually used and grounded in the EVIDENCE BASE / AVAILABLE SOURCES.
-- Use a numbered list matching inline citation numbers.
-- Use clickable markdown inline citations in the answer body, for example [1](URL). If two sources support the same claim, use separate links such as [1](URL) [2](URL).
-- Include the exact full source URL text.
-- Format: 1. Source title - source/publisher, year - full URL
-- If source/publisher or year is unavailable, omit that missing metadata instead of writing placeholders such as n.d.
-- Do not invent page numbers, publications, URLs, PMIDs, PMCIDs, DOIs, or source titles.
-- If multiple editions of the same source series appear in the evidence, cite the **most recent** edition that supports the recommendation.
-- Prefer the most current authoritative source that directly answers the question. Cite older supporting studies only when they add a clinically relevant point not covered by current guidance.
-""".strip()
-
-
 def _evidence_search_top_k(deep_search: bool) -> int:
-    default = 18 if deep_search else 6
+    default = 24 if deep_search else 8
     mode_key = "EMPIRICO_DEEP_SEARCH_TOP_K" if deep_search else "EMPIRICO_QUICK_SEARCH_TOP_K"
-    raw = os.getenv(mode_key) or os.getenv("EMPIRICO_EVIDENCE_SEARCH_TOP_K") or str(default)
+    raw = os.getenv(mode_key) or str(default)
     try:
         value = int(raw)
     except ValueError:
@@ -981,31 +1174,92 @@ def _evidence_search_top_k(deep_search: bool) -> int:
 
 
 def _answer_top_k(deep_search: bool) -> int:
-    default = 10 if deep_search else 6
+    default = DEFAULT_DEEP_ANSWER_SOURCES if deep_search else DEFAULT_QUICK_ANSWER_SOURCES
     key = "EMPIRICO_DEEP_ANSWER_TOP_K" if deep_search else "EMPIRICO_QUICK_ANSWER_TOP_K"
-    return _env_int(key, default, minimum=6, maximum=12)
+    return _env_int(key, default, minimum=default, maximum=default)
+
+
+DEFAULT_QUICK_MODEL_TIMEOUT_SECONDS = 30.0
+DEFAULT_DEEP_MODEL_TIMEOUT_SECONDS = 120.0
 
 
 def _model_timeout_for_mode(deep_search: bool) -> float:
+    """Timeout for the answer-generation call itself.
+
+    Per-mode overrides below the safety floor are ignored: a quick answer of a
+    few hundred words takes several seconds to generate, and a timeout shorter
+    than that only produces failures.
+    """
     key = "EMPIRICO_DEEP_MODEL_TIMEOUT_SECONDS" if deep_search else "EMPIRICO_QUICK_MODEL_TIMEOUT_SECONDS"
-    minimum_timeout = 60.0 if deep_search else 8.0
+    minimum_timeout = 30.0 if deep_search else 8.0
+    default_timeout = DEFAULT_DEEP_MODEL_TIMEOUT_SECONDS if deep_search else DEFAULT_QUICK_MODEL_TIMEOUT_SECONDS
     global_timeout = _env_float(
         "MODEL_SERVICE_TIMEOUT_SECONDS",
-        120.0,
+        180.0,
         minimum=minimum_timeout,
         maximum=300.0,
     )
     raw_mode_timeout = os.getenv(key)
     if raw_mode_timeout is None or not raw_mode_timeout.strip():
-        return global_timeout
+        return min(default_timeout, global_timeout)
     try:
         raw_mode_value = float(raw_mode_timeout)
     except ValueError:
-        return global_timeout
+        return min(default_timeout, global_timeout)
     if raw_mode_value < minimum_timeout:
-        return global_timeout
-    mode_timeout = _env_float(key, global_timeout, minimum=minimum_timeout, maximum=300.0)
-    return min(mode_timeout, global_timeout)
+        logger.warning(
+            "%s=%s is below the %.0fs floor and is ignored; using %.0fs",
+            key,
+            raw_mode_timeout,
+            minimum_timeout,
+            min(default_timeout, global_timeout),
+        )
+        return min(default_timeout, global_timeout)
+    return min(raw_mode_value, 300.0, global_timeout)
+
+
+def _quick_latency_deadline(
+    deep_search: bool,
+    *,
+    multi_branch: bool = False,
+) -> float | None:
+    if deep_search:
+        return None
+    target_seconds = _quick_latency_target_seconds()
+    if multi_branch:
+        target_seconds = max(target_seconds, 28.0)
+    if target_seconds <= 0:
+        return None
+    return time.perf_counter() + target_seconds
+
+
+def _quick_latency_target_seconds() -> float:
+    raw = os.getenv("EMPIRICO_QUICK_LATENCY_TARGET_SECONDS")
+    if raw is None or not raw.strip():
+        return DEFAULT_QUICK_LATENCY_TARGET_SECONDS
+    normalized = raw.strip().lower()
+    if normalized in {"0", "false", "off", "no", "none", "disabled"}:
+        return 0.0
+    try:
+        value = float(normalized)
+    except ValueError:
+        return DEFAULT_QUICK_LATENCY_TARGET_SECONDS
+    return max(5.0, min(value, 60.0))
+
+
+def _model_timeout_with_latency_deadline(
+    *,
+    deep_search: bool,
+    latency_deadline: float | None,
+    reserve_seconds: float = 0.25,
+) -> float:
+    timeout = _model_timeout_for_mode(deep_search)
+    if latency_deadline is None:
+        return timeout
+    remaining = latency_deadline - time.perf_counter() - reserve_seconds
+    if remaining <= 0:
+        return 0.0
+    return min(timeout, max(0.0, remaining))
 
 
 def _model_name_for_mode(deep_search: bool) -> str | None:
@@ -1020,13 +1274,13 @@ def _max_output_tokens_for_mode(deep_search: bool) -> int:
     if deep_search:
         return _env_int(
             "EMPIRICO_DEEP_MAX_OUTPUT_TOKENS",
-            min(DEEP_SEARCH_MAX_OUTPUT_TOKENS, 3600),
+            min(DEEP_SEARCH_MAX_OUTPUT_TOKENS, 5000),
             minimum=500,
             maximum=DEEP_SEARCH_MAX_OUTPUT_TOKENS,
         )
     return _env_int(
         "EMPIRICO_QUICK_MAX_OUTPUT_TOKENS",
-        min(QUICK_SEARCH_MAX_OUTPUT_TOKENS, 900),
+        min(QUICK_SEARCH_MAX_OUTPUT_TOKENS, 2000),
         minimum=300,
         maximum=QUICK_SEARCH_MAX_OUTPUT_TOKENS,
     )
@@ -1038,9 +1292,9 @@ def _search_settings_for_mode(deep_search: bool):
     retrieval_default = settings.retrieval_time_budget_seconds if deep_search else min(settings.retrieval_time_budget_seconds, 10.0)
     crawl_default = settings.crawl_time_budget_seconds if deep_search else min(settings.crawl_time_budget_seconds, 8.0)
     request_timeout_default = settings.request_timeout_seconds if deep_search else min(settings.request_timeout_seconds, 12)
-    crawl_sources_default = settings.crawl_max_sources if deep_search else min(settings.crawl_max_sources, 6)
-    crawl_pages_default = settings.crawl_max_pages if deep_search else min(settings.crawl_max_pages, 8)
-    max_results_default = settings.max_results_per_provider if deep_search else min(settings.max_results_per_provider, 6)
+    crawl_sources_default = min(settings.crawl_max_sources, 8) if deep_search else min(settings.crawl_max_sources, 4)
+    crawl_pages_default = min(settings.crawl_max_pages, 16) if deep_search else min(settings.crawl_max_pages, 8)
+    max_results_default = min(settings.max_results_per_provider, 8) if deep_search else min(settings.max_results_per_provider, 4)
     updates = {
         "retrieval_time_budget_seconds": _env_float_override(
             f"{prefix}_RETRIEVAL_TIME_BUDGET_SECONDS",
@@ -1068,7 +1322,7 @@ def _search_settings_for_mode(deep_search: bool):
             crawl_sources_default,
             minimum=1,
             maximum=12,
-            reject_below=6,
+            reject_below=None,
         ),
         "crawl_max_pages": _env_int_override(
             f"{prefix}_CRAWL_MAX_PAGES",
@@ -1178,7 +1432,6 @@ def _filter_evidence_items(
     for item in items:
         source = _source_key(item)
         raw = item.get("raw") if isinstance(item.get("raw"), dict) else {}
-        provider = str(raw.get("provider") or "").strip().lower()
         retrieval_mode = str(raw.get("retrieval_mode") or "").strip().lower()
 
         if source not in WEB_EVIDENCE_SOURCES:
@@ -1197,121 +1450,17 @@ def _filter_evidence_items(
         if query and _is_metric_indicator_item(item):
             if not statistics_query:
                 continue
-            if _item_query_term_coverage(item, query) < 2:
+            if _item_query_term_coverage(item, query) < 1:
                 continue
-        if (
-            query
-            and source == "crawl4ai"
-            and not _item_matches_source_preference(item, source_preference_terms)
-            and _item_query_term_coverage(item, query) < 1
-        ):
+            filtered.append(item)
+            continue
+        if query and not _item_has_query_signal(item, query):
             continue
         filtered.append(item)
     return sorted(
         filtered,
         key=lambda item: _source_priority(item, source_preference_terms, query),
     )
-
-
-def _include_global_evidence_when_helpful(
-    *,
-    query: str,
-    evidence: list[dict[str, Any]],
-    raw_evidence: list[dict[str, Any]],
-    source_preference_terms: tuple[str, ...],
-    answer_top_k: int,
-) -> list[dict[str, Any]]:
-    if not evidence or not source_preference_terms or answer_top_k <= 1:
-        return evidence
-
-    has_global_evidence = any(
-        not _item_matches_source_preference(item, source_preference_terms)
-        for item in evidence
-    )
-    if has_global_evidence:
-        return evidence
-
-    explicit_preference_query = _query_mentions_source_preference(query, source_preference_terms)
-    should_broaden = len(evidence) < min(3, answer_top_k) or not explicit_preference_query
-    if not should_broaden:
-        return evidence
-
-    global_candidates = [
-        item
-        for item in _filter_evidence_items(
-            raw_evidence,
-            query=query,
-            source_preference_terms=(),
-            allow_seed_metadata=False,
-        )
-        if not _item_matches_source_preference(item, source_preference_terms)
-        and item.get("evidence_type") != "official_indicator"
-    ]
-    if not global_candidates:
-        return evidence
-
-    existing_keys = {_evidence_item_key(item) for item in evidence}
-    global_candidate = next(
-        (
-            item
-            for item in global_candidates
-            if _evidence_item_key(item) not in existing_keys
-        ),
-        None,
-    )
-    if global_candidate is None:
-        return evidence
-
-    if len(evidence) < answer_top_k:
-        return [*evidence, global_candidate]
-    return [*evidence[: answer_top_k - 1], global_candidate]
-
-
-def _include_preferred_crawl_source(
-    *,
-    query: str,
-    evidence: list[dict[str, Any]],
-    raw_evidence: list[dict[str, Any]],
-    source_preference_terms: tuple[str, ...],
-    answer_top_k: int,
-) -> list[dict[str, Any]]:
-    if answer_top_k <= 0:
-        return evidence
-    if any(
-        _source_key(item) == "crawl4ai"
-        and _item_matches_source_preference(item, source_preference_terms)
-        for item in evidence
-    ):
-        return evidence
-
-    candidates = [
-        item
-        for item in _filter_evidence_items(
-            raw_evidence,
-            query=query,
-            source_preference_terms=source_preference_terms,
-            allow_seed_metadata=False,
-        )
-        if _source_key(item) == "crawl4ai"
-        and _item_matches_source_preference(item, source_preference_terms)
-    ]
-    if not candidates:
-        return evidence
-
-    existing_keys = {_evidence_item_key(item) for item in evidence}
-    preferred = next(
-        (
-            item
-            for item in candidates
-            if _evidence_item_key(item) not in existing_keys
-        ),
-        None,
-    )
-    if preferred is None:
-        return evidence
-
-    merged = [preferred, *evidence]
-    return merged[:answer_top_k]
 
 
 def _evidence_item_key(item: dict[str, Any]) -> str:
@@ -1328,7 +1477,7 @@ def _source_priority(
     item: dict[str, Any],
     source_preference_terms: tuple[str, ...] = (),
     query: str = "",
-) -> tuple[int, int, int, int, int, int, int]:
+) -> tuple[int, int, int, int, int, int, int, int, int, int]:
     source = _source_key(item)
     policy_tier, type_tier = evidence_policy_sort_key(
         source=source,
@@ -1337,16 +1486,46 @@ def _source_priority(
         text=_item_search_text(item),
     )
     direct_title_match = _item_title_url_specificity(item, query)
+    direct_answer_score = _item_direct_answer_score(item, query)
+    answer_specificity = _item_answer_specificity(item, query)
     return (
         0 if direct_title_match else 1,
+        _source_preference_tier(item, source_preference_terms),
         policy_tier,
-        0 if _item_matches_source_preference(item, source_preference_terms) else 1,
-        type_tier,
+        _regional_source_preference_tier(item, source_preference_terms),
         -direct_title_match,
-        -_item_answer_specificity(item, query),
+        -direct_answer_score,
+        -answer_specificity,
+        type_tier,
         -_item_publication_year(item),
         SOURCE_PRIORITY.get(source, 99),
     )
+
+
+def _source_preference_tier(
+    item: dict[str, Any],
+    source_preference_terms: tuple[str, ...],
+) -> int:
+    if not source_preference_terms:
+        return 1
+    text = _item_search_text(item)
+    local_terms = LOCAL_SOURCE_PREFERENCE_TERMS.intersection(source_preference_terms)
+    if local_terms and any(term in text for term in local_terms):
+        return 0
+    return 1
+
+
+def _regional_source_preference_tier(
+    item: dict[str, Any],
+    source_preference_terms: tuple[str, ...],
+) -> int:
+    if not source_preference_terms:
+        return 1
+    text = _item_search_text(item)
+    regional_terms = REGIONAL_SOURCE_PREFERENCE_TERMS.intersection(source_preference_terms)
+    if regional_terms and any(term in text for term in regional_terms):
+        return 0
+    return 1
 
 
 def _item_publication_year(item: dict[str, Any]) -> int:
@@ -1364,7 +1543,29 @@ def _item_answer_specificity(item: dict[str, Any], query: str) -> int:
     if not query_terms:
         return 0
     text_terms = set(re.findall(r"[a-z0-9]{4,}", _item_search_text(item)))
-    return len(query_terms.intersection(text_terms))
+    return sum(1 for term in query_terms if _term_matches_text_terms(term, text_terms))
+
+
+def _item_direct_answer_score(item: dict[str, Any], query: str) -> int:
+    query_terms = set(_snippet_focus_terms(query))
+    if not query_terms:
+        return 0
+    raw = item.get("raw") if isinstance(item.get("raw"), dict) else {}
+    text = _compact_plain_text(
+        " ".join(
+            str(part)
+            for part in (
+                item.get("title"),
+                item.get("abstract"),
+                item.get("snippet"),
+                raw.get("document_title"),
+            )
+            if part
+        )
+    )
+    if not text:
+        return 0
+    return _snippet_sentence_score(text, query_terms)
 
 
 def _item_title_url_specificity(item: dict[str, Any], query: str) -> int:
@@ -1384,7 +1585,12 @@ def _item_title_url_specificity(item: dict[str, Any], query: str) -> int:
             if part
         )
     )
-    return sum(1 for term in query_terms if term in text)
+    text_terms = set(re.findall(r"[a-z0-9]{3,}", text))
+    return sum(
+        1
+        for term in query_terms
+        if term in text or _term_matches_text_terms(term, text_terms)
+    )
 
 
 def _merge_evidence_items(
@@ -1392,16 +1598,154 @@ def _merge_evidence_items(
     fallback_items: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     merged: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    seen: dict[str, int] = {}
     for item in [*primary_items, *fallback_items]:
-        key = str(item.get("id") or item.get("url") or item.get("full_text_url") or item.get("title") or "")
-        if not key:
-            key = repr(item)
+        key = _evidence_passage_identity(item)
+        if key in seen:
+            existing_index = seen[key]
+            if _evidence_item_merge_score(item) > _evidence_item_merge_score(merged[existing_index]):
+                merged[existing_index] = item
+            continue
+        seen[key] = len(merged)
+        merged.append(item)
+    return merged
+
+
+def _evidence_item_merge_score(item: dict[str, Any]) -> float:
+    score = _float_or_zero(item.get("final_score"))
+    return max(score, _float_or_zero(item.get("relevance_score")))
+
+
+def _float_or_zero(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _unique_evidence_sources(
+    items: list[dict[str, Any]],
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    unique: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in items:
+        key = _evidence_source_identity(item)
         if key in seen:
             continue
         seen.add(key)
-        merged.append(item)
-    return merged
+        unique.append(item)
+        if len(unique) >= limit:
+            break
+    return unique
+
+
+def _unique_evidence_passages(
+    items: list[dict[str, Any]],
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    unique: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in items:
+        key = _evidence_passage_identity(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+        if len(unique) >= limit:
+            break
+    return unique
+
+
+def _evidence_passage_identity(item: dict[str, Any]) -> str:
+    raw = item.get("raw") if isinstance(item.get("raw"), dict) else {}
+    metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+    document_identity = _evidence_source_identity(item)
+    page = _evidence_record_exact_page(item)
+    locator = _normalize_search_text(
+        _compact_nullable_text(
+            [
+                _text_from_unknown(raw.get("section_title")),
+                _text_from_unknown(raw.get("section")),
+                _text_from_unknown(raw.get("heading")),
+                _text_from_unknown(metadata.get("section_title")),
+                _text_from_unknown(item.get("section_title")),
+                _text_from_unknown(item.get("section")),
+                _text_from_unknown(item.get("heading")),
+            ]
+        )
+        or ""
+    )
+    body = _compact_plain_text(str(item.get("abstract") or item.get("snippet") or ""))
+    text_fingerprint = hashlib.sha1(
+        _normalize_search_text(body[:1200]).encode()
+    ).hexdigest()[:16] if body else ""
+    explicit_passage = _text_from_unknown(
+        _first_present(
+            item,
+            ("passage_id", "passageId", "chunk_id", "chunkId"),
+        )
+    )
+    if not explicit_passage:
+        explicit_passage = _text_from_unknown(
+            _first_present(
+                raw,
+                ("passage_id", "passageId", "chunk_id", "chunkId", "doc_key"),
+            )
+        )
+    passage_parts = [
+        document_identity,
+        f"passage:{_normalize_identifier_for_adapter(explicit_passage)}" if explicit_passage else "",
+        f"page:{page}" if page else "",
+        f"section:{locator}" if locator else "",
+        f"text:{text_fingerprint}" if text_fingerprint else "",
+    ]
+    return "|".join(part for part in passage_parts if part) or repr(item)
+
+
+def _evidence_source_identity(item: dict[str, Any]) -> str:
+    doi = _text_from_unknown(item.get("doi"))
+    pmid = _text_from_unknown(item.get("pmid"))
+    pmcid = _text_from_unknown(item.get("pmcid"))
+    if doi:
+        return f"doi:{_normalize_identifier_for_adapter(doi)}"
+    if pmid:
+        return f"pmid:{_normalize_identifier_for_adapter(pmid)}"
+    if pmcid:
+        return f"pmcid:{_normalize_identifier_for_adapter(pmcid)}"
+
+    citation = _normalize_evidence_record(item)
+    url = str(
+        (citation or {}).get("url")
+        or item.get("url")
+        or item.get("full_text_url")
+        or ""
+    ).strip()
+    if url:
+        try:
+            parsed = urlparse(url)
+        except ValueError:
+            parsed = None
+        if parsed is not None:
+            query = "" if str(parsed.query).startswith("$filter=") else parsed.query
+            return (
+                "url:"
+                f"{parsed.netloc.lower().removeprefix('www.')}"
+                f"{parsed.path.rstrip('/')}?{query}"
+            )
+
+    title = _normalize_search_text(
+        clean_reference_title(
+            str((citation or {}).get("title") or item.get("title") or "")
+        )
+    )
+    return f"title:{title}" if title else repr(item)
+
+
+def _normalize_identifier_for_adapter(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.lower())
 
 
 def _item_matches_source_preference(
@@ -1471,7 +1815,11 @@ def _is_relevant_trusted_seed_metadata(
         for term in _normalized_query_terms(query)
         if term not in source_preference_tokens
     )
-    return not query_terms or any(term in text for term in query_terms)
+    text_terms = set(re.findall(r"[a-z0-9]{3,}", text))
+    return not query_terms or any(
+        term in text or _term_matches_text_terms(term, text_terms)
+        for term in query_terms
+    )
 
 
 def _normalized_query_terms(query: str) -> tuple[str, ...]:
@@ -1513,8 +1861,84 @@ def _snippet_focus_terms(query: str) -> tuple[str, ...]:
 
 
 def _item_query_term_coverage(item: dict[str, Any], query: str) -> int:
-    text = _item_search_text(item)
-    return sum(1 for term in _normalized_query_terms(query) if term in text)
+    return _item_query_term_coverage_for_terms(item, _normalized_query_terms(query))
+
+
+def _item_has_query_signal(item: dict[str, Any], query: str) -> bool:
+    if not query:
+        return True
+    if _item_title_url_specificity(item, query) >= 1:
+        return True
+    query_terms = _normalized_query_terms(query)
+    required_coverage = _required_item_query_term_coverage(query_terms)
+    if _item_query_term_coverage_for_terms(item, query_terms) < required_coverage:
+        return False
+    return _item_text_segment_query_term_coverage(item, query_terms) >= required_coverage
+
+
+def _item_query_term_coverage_for_terms(
+    item: dict[str, Any],
+    query_terms: tuple[str, ...],
+) -> int:
+    if not query_terms:
+        return 0
+    text_terms = set(re.findall(r"[a-z0-9]{3,}", _item_search_text(item)))
+    matched_text_terms: set[str] = set()
+    for term in query_terms:
+        matched = _matching_text_term(term, text_terms)
+        if matched:
+            matched_text_terms.add(matched)
+    return len(matched_text_terms)
+
+
+def _matching_text_term(term: str, text_terms: set[str]) -> str:
+    if term in text_terms:
+        return term
+    if len(term) > 4 and term.endswith("s") and term[:-1] in text_terms:
+        return term[:-1]
+    for candidate in sorted(text_terms):
+        if len(candidate) > 4 and candidate.endswith("s") and candidate[:-1] == term:
+            return candidate
+        if _tokens_share_substantial_root(term, candidate):
+            return candidate
+    return ""
+
+
+def _required_item_query_term_coverage(query_terms: tuple[str, ...]) -> int:
+    if len(query_terms) <= 2:
+        return 1
+    return 2
+
+
+def _item_text_segment_query_term_coverage(
+    item: dict[str, Any],
+    query_terms: tuple[str, ...],
+) -> int:
+    text = _compact_plain_text(str(item.get("abstract") or item.get("snippet") or ""))
+    if not text:
+        return 0
+    segments = [
+        segment.strip()
+        for segment in re.split(r"(?<=[.!?])\s+|\n+", text)
+        if segment.strip()
+    ] or [text]
+    return max(
+        (
+            _text_query_term_coverage(segment, query_terms)
+            for segment in segments
+        ),
+        default=0,
+    )
+
+
+def _text_query_term_coverage(text: str, query_terms: tuple[str, ...]) -> int:
+    text_terms = set(re.findall(r"[a-z0-9]{3,}", _normalize_search_text(text)))
+    matched_text_terms: set[str] = set()
+    for term in query_terms:
+        matched = _matching_text_term(term, text_terms)
+        if matched:
+            matched_text_terms.add(matched)
+    return len(matched_text_terms)
 
 
 def _item_search_text(item: dict[str, Any]) -> str:
@@ -1555,53 +1979,288 @@ def _citations_from_evidence(items: list[dict[str, Any]]) -> list[dict[str, obje
     return _assign_citation_numbers(citations)
 
 
-def _citations_for_answer(
-    answer: str,
-    local_citations: list[dict[str, object]],
-    model_data: dict[str, Any],
-) -> list[dict[str, object]]:
-    model_citations = _citations_from_model_response(model_data)
-    if not model_citations:
-        return _assign_citation_numbers(local_citations)
-
-    used_numbers = _inline_reference_numbers(answer)
-    if any(number > len(local_citations) for number in used_numbers):
-        return _assign_citation_numbers([*local_citations, *model_citations])
-    return _assign_citation_numbers(_merge_citation_records(local_citations, model_citations))
+DEFAULT_QUICK_CONTEXT_SOURCES = 12
+DEFAULT_DEEP_CONTEXT_SOURCES = 20
+DEFAULT_QUICK_MAX_REFERENCES = 4
+DEFAULT_DEEP_MAX_REFERENCES = 8
+MAX_PASSAGES_PER_DOCUMENT = 3
+MMR_REDUNDANCY_WEIGHT = 0.6
+MMR_POSITION_DECAY = 0.15
 
 
-def _citations_from_model_response(model_data: dict[str, Any]) -> list[dict[str, object]]:
-    return _normalize_evidence_collection(
-        [
-            model_data.get("citations"),
-            model_data.get("evidence"),
-            model_data.get("references"),
-            model_data.get("sources"),
-        ]
+def _answer_candidates(
+    raw_evidence: list[dict[str, Any]],
+    *,
+    query: str,
+    source_preference_terms: tuple[str, ...],
+    deep_search: bool,
+) -> list[dict[str, Any]]:
+    """Choose the passages the answer model reads, without a second model call.
+
+    The model gets every plausibly relevant candidate and decides itself what to
+    cite. This function only removes clear noise and orders what is left:
+    source authority (national guideline > WHO/primary guidance > article
+    databases), evidence type, how recent the document is, then retrieval score.
+    It never ranks by whether a passage happens to mention a preferred place name.
+    """
+    filtered = _filter_evidence_items(
+        raw_evidence,
+        query=query,
+        source_preference_terms=source_preference_terms,
+    )
+    filtered = _readmit_passages_from_relevant_documents(
+        filtered,
+        raw_evidence,
+        source_preference_terms=source_preference_terms,
+    )
+    substantive = [item for item in filtered if _passage_is_substantive(item)]
+    ordered = sorted(substantive or filtered, key=_candidate_order_key)
+
+    limit = _context_sources_limit(deep_search)
+    document_limit = _context_documents_limit(deep_search)
+
+    passages_by_document: dict[str, list[dict[str, Any]]] = {}
+    for item in _unique_evidence_passages(ordered, limit=len(ordered)):
+        passages_by_document.setdefault(_evidence_source_identity(item), []).append(item)
+    documents = list(passages_by_document)[:document_limit]
+
+    # Breadth first: the best passage of each document, so no single document can
+    # spend every slot. Then depth: further passages chosen to complement what is
+    # already selected, which is what keeps a triage or decision page alongside
+    # the dosing page of the same guideline.
+    selected: list[dict[str, Any]] = []
+    for document in documents:
+        if len(selected) >= limit:
+            break
+        selected.append(passages_by_document[document][0])
+
+    for depth in range(1, MAX_PASSAGES_PER_DOCUMENT):
+        for document in documents:
+            if len(selected) >= limit:
+                return selected
+            complementary = _complementary_passage(
+                passages_by_document[document][1:],
+                selected,
+            )
+            if complementary is not None:
+                selected.append(complementary)
+    return selected
+
+
+def _complementary_passage(
+    candidates: list[dict[str, Any]],
+    selected: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Highest-ranked candidate that adds most to what is already selected.
+
+    Maximal marginal relevance: rank position minus overlap with the passages
+    already chosen. Without it the top passages of a long guideline are often
+    near-neighbours of one another and the answer inherits their single
+    viewpoint, for example three pages of dosing detail and no triage criteria.
+    """
+    remaining = [item for item in candidates if id(item) not in {id(chosen) for chosen in selected}]
+    if not remaining:
+        return None
+    selected_tokens = [_passage_tokens(item) for item in selected]
+    best_item: dict[str, Any] | None = None
+    best_score = float("-inf")
+    for position, item in enumerate(remaining):
+        # Gentle positional decay: rank still leads, but a genuinely new angle a
+        # few places down can outrank a paraphrase of what is already selected.
+        relevance = max(0.0, 1.0 - (MMR_POSITION_DECAY * position))
+        tokens = _passage_tokens(item)
+        redundancy = max(
+            (_token_set_similarity(tokens, other) for other in selected_tokens),
+            default=0.0,
+        )
+        score = relevance - (MMR_REDUNDANCY_WEIGHT * redundancy)
+        if score > best_score:
+            best_score = score
+            best_item = item
+    return best_item
+
+
+def _passage_tokens(item: dict[str, Any]) -> frozenset[str]:
+    text = str(item.get("abstract") or item.get("snippet") or item.get("title") or "")
+    return frozenset(
+        token
+        for token in re.findall(r"[a-z0-9]{4,}", text.lower())
+        if token not in QUERY_TERM_STOPWORDS
     )
 
 
-def _normalize_evidence_collection(value: Any) -> list[dict[str, object]]:
-    links: list[dict[str, object]] = []
+def _token_set_similarity(left: frozenset[str], right: frozenset[str]) -> float:
+    if not left or not right:
+        return 0.0
+    intersection = len(left & right)
+    if not intersection:
+        return 0.0
+    return intersection / len(left | right)
 
-    def visit(item: Any) -> None:
-        if isinstance(item, list):
-            for entry in item:
-                visit(entry)
-            return
-        if not isinstance(item, dict):
-            return
 
-        link = _normalize_evidence_record(item)
-        if link is not None:
-            links.append(link)
+MIN_PASSAGE_WORDS = 4
+MIN_PASSAGE_WORD_RATIO = 0.45
+MIN_EXEMPT_SPECIFICITY = 0.4
 
-        for key in ("items", "citations", "evidence", "references", "sources", "results", "documents"):
-            if key in item:
-                visit(item[key])
 
-    visit(value)
-    return _merge_citation_records([], links)
+def _passage_is_substantive(item: dict[str, Any]) -> bool:
+    """Whether a passage states something, rather than labelling or tabulating it.
+
+    Crawled documents yield cover pages, running heads, and tables of figures
+    that match a query lexically but assert nothing. They are indistinguishable
+    from real content by source or score, and each one costs a slot the model
+    could have spent on a recommendation.
+
+    The test is shape, not length: a title has no sentence, a table of figures is
+    mostly numerals, while a triage rule such as "admit if complications, treat
+    at home if appetite is intact" is short, qualitative and exactly what a
+    length threshold would have thrown away.
+    """
+    text = _compact_plain_text(str(item.get("abstract") or item.get("snippet") or ""))
+    words = re.findall(r"\b[A-Za-z][A-Za-z'-]{2,}\b", text)
+    if len(words) < MIN_PASSAGE_WORDS:
+        return False
+    tokens = re.findall(r"\S+", text)
+    if (len(words) / max(len(tokens), 1)) < MIN_PASSAGE_WORD_RATIO:
+        return False
+    if clinical_specificity_score(text) >= MIN_EXEMPT_SPECIFICITY:
+        return True
+    return bool(re.search(r"[.!?](?:\s|$)", text) or re.search(r"(?:^|\s)[-•*\u2022]\s", text))
+
+
+def _readmit_passages_from_relevant_documents(
+    accepted: list[dict[str, Any]],
+    raw_evidence: list[dict[str, Any]],
+    *,
+    source_preference_terms: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    """Let other passages of an already-relevant document back into the pool.
+
+    Relevance is judged per passage on the words it repeats, but the page of a
+    guideline that carries the dose often does not repeat the condition name;
+    the chapter heading did that. Once any passage of a document has qualified,
+    the document is on topic, so its remaining passages are re-admitted and left
+    for ranking and the model to judge. Structural exclusions still apply: this
+    passes an empty query so only the query-dependent checks are skipped.
+    """
+    if not accepted:
+        return accepted
+    relevant_documents = {_evidence_source_identity(item) for item in accepted}
+    structurally_valid = _filter_evidence_items(
+        raw_evidence,
+        query="",
+        source_preference_terms=source_preference_terms,
+    )
+    siblings = [
+        item
+        for item in structurally_valid
+        if _evidence_source_identity(item) in relevant_documents
+    ]
+    return _merge_evidence_items(accepted, siblings)
+
+
+def _candidate_order_key(item: dict[str, Any]) -> tuple[int, int, int, float, float]:
+    policy_tier, type_tier = evidence_policy_sort_key(
+        source=_source_key(item),
+        evidence_type=str(item.get("evidence_type") or ""),
+        url=str(item.get("url") or item.get("full_text_url") or ""),
+        text=_item_search_text(item),
+    )
+    return (
+        policy_tier,
+        type_tier,
+        _recency_band(item),
+        -_candidate_specificity(item),
+        -_float_or_zero(item.get("final_score")),
+    )
+
+
+def _candidate_specificity(item: dict[str, Any]) -> float:
+    """Coarse actionability of a passage, used only to break ranking ties.
+
+    Rounded hard so that it separates a passage naming doses or thresholds from
+    one that only names a care pathway, without letting a small difference
+    outrank the retrieval score.
+    """
+    text = str(item.get("abstract") or item.get("snippet") or "")
+    return round(clinical_specificity_score(text), 1)
+
+
+def _recency_band(item: dict[str, Any]) -> int:
+    """Coarse age band of a document, lower being more recent.
+
+    Guidance is superseded by newer editions, so within one authority tier the
+    current edition should reach the model first. The bands are wide so that a
+    small difference in year never outranks relevance, and an undated document
+    sits in the middle rather than last: most crawled guideline pages carry no
+    machine-readable date and must not be pushed below a decade-old PDF.
+    """
+    year = _document_year(item)
+    if year <= 0:
+        return 2
+    age = _current_year() - year
+    if age <= 3:
+        return 0
+    if age <= 8:
+        return 1
+    if age <= 15:
+        return 3
+    return 4
+
+
+def _document_year(item: dict[str, Any]) -> int:
+    """Publication year from metadata, else the latest year named in the title or URL."""
+    year = _item_publication_year(item)
+    if year:
+        return year
+    raw = item.get("raw") if isinstance(item.get("raw"), dict) else {}
+    text = " ".join(
+        str(part)
+        for part in (
+            item.get("title"),
+            raw.get("document_title"),
+            _url_without_fragment(str(item.get("url") or item.get("full_text_url") or "")),
+        )
+        if part
+    )
+    return _latest_year_in_text(text)
+
+
+def _latest_year_in_text(text: str) -> int:
+    maximum = _current_year() + 1
+    years = [
+        value
+        for value in (int(match) for match in re.findall(r"(?<!\d)(19[89]\d|20\d{2})(?!\d)", text))
+        if 1980 <= value <= maximum
+    ]
+    return max(years) if years else 0
+
+
+def _url_without_fragment(url: str) -> str:
+    return url.split("#", 1)[0]
+
+
+def _current_year() -> int:
+    return time.gmtime().tm_year
+
+
+def _context_sources_limit(deep_search: bool) -> int:
+    """Maximum passages offered to the answer model."""
+    key = "EMPIRICO_DEEP_CONTEXT_SOURCES" if deep_search else "EMPIRICO_QUICK_CONTEXT_SOURCES"
+    default = DEFAULT_DEEP_CONTEXT_SOURCES if deep_search else DEFAULT_QUICK_CONTEXT_SOURCES
+    return _env_int(key, default, minimum=3, maximum=40)
+
+
+def _max_references(deep_search: bool) -> int:
+    """Maximum distinct documents cited in the final answer."""
+    key = "EMPIRICO_DEEP_MAX_REFERENCES" if deep_search else "EMPIRICO_QUICK_MAX_REFERENCES"
+    default = DEFAULT_DEEP_MAX_REFERENCES if deep_search else DEFAULT_QUICK_MAX_REFERENCES
+    return _env_int(key, default, minimum=1, maximum=20)
+
+
+def _context_documents_limit(deep_search: bool) -> int:
+    """Distinct documents offered to the model: a little more than it may cite."""
+    return _max_references(deep_search) + 2
 
 
 def _normalize_evidence_record(record: dict[str, Any]) -> dict[str, object] | None:
@@ -1610,7 +2269,14 @@ def _normalize_evidence_record(record: dict[str, Any]) -> dict[str, object] | No
         return None
 
     page = _evidence_record_exact_page(record) or _exact_page_from_url(url)
-    page_url = _source_url_with_exact_page(url, page) if page is not None else url
+    if page is not None:
+        page_url = _source_url_with_exact_page(url, page)
+    else:
+        page_url = _source_url_with_text_fragment(
+            url,
+            _evidence_record_exact_text_fragment(record),
+            record,
+        )
     source_key = _evidence_record_source_key(record)
     source_label = (
         _evidence_record_source_label(record)
@@ -1640,62 +2306,6 @@ def _assign_citation_numbers(citations: list[dict[str, object]]) -> list[dict[st
         next_citation["number"] = index
         numbered.append(next_citation)
     return numbered
-
-
-def _merge_citation_records(
-    existing: list[dict[str, object]],
-    incoming: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    merged: list[dict[str, object]] = []
-    index_by_key: dict[str, int] = {}
-
-    for citation in [*existing, *incoming]:
-        normalized = dict(citation)
-        keys = [_citation_url_key(normalized), _citation_label_key(normalized)]
-        existing_index = next(
-            (index_by_key[key] for key in keys if key and key in index_by_key),
-            None,
-        )
-        if existing_index is not None:
-            merged[existing_index] = _merge_citation_record(merged[existing_index], normalized)
-            continue
-
-        new_index = len(merged)
-        merged.append(normalized)
-        for key in keys:
-            if key:
-                index_by_key[key] = new_index
-
-    return merged
-
-
-def _merge_citation_record(
-    existing: dict[str, object],
-    incoming: dict[str, object],
-) -> dict[str, object]:
-    merged = dict(existing)
-    if _citation_label_specificity_score(incoming) > _citation_label_specificity_score(existing) + 1:
-        merged["title"] = incoming.get("title") or existing.get("title")
-    for key in ("source_label", "journal", "year", "url", "doi", "retrieval_query", "search_text"):
-        if not merged.get(key) and incoming.get(key):
-            merged[key] = incoming[key]
-    return merged
-
-
-def _citation_url_key(citation: dict[str, object]) -> str:
-    return str(citation.get("url") or "").strip().lower()
-
-
-def _citation_label_key(citation: dict[str, object]) -> str:
-    title = _normalize_search_text(str(citation.get("title") or ""))
-    return f"label:{title}" if title else ""
-
-
-def _citation_label_specificity_score(citation: dict[str, object]) -> float:
-    title = _compact_plain_text(str(citation.get("title") or ""))
-    source = _compact_plain_text(str(citation.get("source_label") or ""))
-    structural_detail = len([part for part in re.split(r"[;:]", title) if len(part.strip()) >= 3])
-    return min(len(title), 180) / 45 + structural_detail * 1.5 + (1.0 if source else 0.0)
 
 
 def _source_url_from_record(record: dict[str, Any]) -> str | None:
@@ -1730,6 +2340,18 @@ def _source_url_from_record(record: dict[str, Any]) -> str | None:
                     "webUrl",
                     "canonical_url",
                     "canonicalUrl",
+                    "landing_page_url",
+                    "landingPageUrl",
+                    "open_url",
+                    "openUrl",
+                    "pdf_url",
+                    "pdfUrl",
+                    "download_url",
+                    "downloadUrl",
+                    "source_public_url",
+                    "sourcePublicUrl",
+                    "external_url",
+                    "externalUrl",
                 ),
             )
         )
@@ -1743,7 +2365,18 @@ def _source_url_from_record(record: dict[str, Any]) -> str | None:
             nested_url = _source_url_from_record(nested)
             if nested_url:
                 return nested_url
+    for key in ("id", "identifier", "source_id", "sourceId"):
+        url = _url_from_text(_text_from_unknown(record.get(key)) or "")
+        if url:
+            return url
     return None
+
+
+def _url_from_text(value: str) -> str | None:
+    match = re.search(r"https?://[^\s<>)\]]+", value)
+    if not match:
+        return None
+    return _clean_source_url(match.group(0))
 
 
 def _clean_source_url(value: str | None) -> str | None:
@@ -1768,7 +2401,68 @@ def _clean_source_url(value: str | None) -> str | None:
 def _source_url_with_exact_page(url: str, page: int) -> str:
     if "#page=" in url.lower():
         return url
-    return f"{url}#page={page}"
+    parsed = urlparse(url)
+    fragment = f"page={page}"
+    return parsed._replace(fragment=fragment).geturl()
+
+
+def _source_url_with_text_fragment(url: str, text: str | None, record: dict[str, Any]) -> str:
+    if not text or _is_pdf_like_reference_url(url):
+        return url
+    if not _record_supports_text_fragment(record):
+        return url
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return url
+    if parsed.fragment:
+        return url
+    fragment = _text_fragment_from_evidence_text(text)
+    if not fragment:
+        return url
+    return parsed._replace(fragment=f":~:text={quote(fragment, safe='')}").geturl()
+
+
+def _record_supports_text_fragment(record: dict[str, Any]) -> bool:
+    if _source_key(record) != "crawl4ai":
+        return False
+    raw = record.get("raw") if isinstance(record.get("raw"), dict) else {}
+    retrieval_mode = str(raw.get("retrieval_mode") or "").strip().lower()
+    return retrieval_mode in {"browser", "static_html", "static_html_cache"}
+
+
+def _is_pdf_like_reference_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    path = parsed.path.lower()
+    return bool(
+        path.endswith(".pdf")
+        or "/bitstream/" in path
+        or "/bitstreams/" in path
+        or path.endswith("/content")
+    )
+
+
+def _text_fragment_from_evidence_text(text: str) -> str | None:
+    cleaned = re.sub(r"(?:https?://|www\.)\S+", " ", text, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\[[0-9,\s]+\]", " ", cleaned)
+    cleaned = _compact_plain_text(cleaned)
+    if not cleaned:
+        return None
+    candidates = [
+        sentence.strip(" .;:,")
+        for sentence in re.split(r"(?<=[.!?])\s+", cleaned)
+        if 24 <= len(sentence.strip()) <= 180
+    ]
+    if not candidates:
+        candidates = [cleaned[:160].strip(" .;:,")]
+    fragment = candidates[0]
+    fragment = re.sub(r"\s+", " ", fragment).strip(" .;:,")
+    if len(fragment) < 20:
+        return None
+    return fragment[:120].rstrip(" ,;:")
 
 
 def _exact_page_from_url(url: str) -> int | None:
@@ -1819,6 +2513,8 @@ def _evidence_record_source_label(record: dict[str, Any]) -> str | None:
                 "publisher",
                 "journal",
                 "venue",
+                "source_name",
+                "sourceName",
             ),
         )
     )
@@ -1962,6 +2658,16 @@ def _evidence_record_specific_heading(
         if len(headings) >= 2:
             break
     return "; ".join(headings) if headings else None
+
+
+def _evidence_record_exact_text_fragment(record: dict[str, Any]) -> str | None:
+    for text in _evidence_record_body_text_candidates(record):
+        if _text_fragment_from_evidence_text(text):
+            return text
+    locator = _evidence_record_locator(record)
+    if locator and _text_fragment_from_evidence_text(locator):
+        return locator
+    return None
 
 
 def _evidence_record_heading_candidates(record: dict[str, Any]) -> list[str]:
@@ -2199,6 +2905,8 @@ def _evidence_record_search_text(record: dict[str, Any]) -> str:
                 nested.get("citation_label"),
                 nested.get("citationLabel"),
                 nested.get("publisher"),
+                nested.get("source_name"),
+                nested.get("sourceName"),
                 nested.get("doc_key"),
                 nested.get("document_title"),
                 nested.get("heading"),
@@ -2292,6 +3000,20 @@ def _number_from_unknown(value: Any) -> int | None:
     return page if page > 0 else None
 
 
+def _bool_from_unknown(value: Any, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on", "pass", "passed"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off", "fail", "failed"}:
+            return False
+    return default
+
+
 def _compact_nullable_text(parts: list[str | None]) -> str | None:
     text = _compact_plain_text(" ".join(part for part in parts if part))
     return text or None
@@ -2301,192 +3023,17 @@ def _compact_plain_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _inline_reference_numbers(text: str) -> list[int]:
-    numbers: list[int] = []
-    normalized = re.sub(r"\[\[(\d+(?:\s*,\s*\d+)*)\]\]", r"[\1]", text)
-    for match in re.finditer(r"(?<!\[)\[(\d+(?:\s*,\s*\d+)*)\](?:\([^)]*\))?", normalized):
-        for raw_number in match.group(1).split(","):
-            value = raw_number.strip()
-            if value.isdigit():
-                numbers.append(int(value))
-    return numbers
+def _text_contains_inline_enumeration(text: str) -> bool:
+    markers = [int(match.group(1)) for match in re.finditer(r"(?:^|\s)(\d{1,2})[\).]\s+\S+", text)]
+    return any(current == previous + 1 for previous, current in zip(markers, markers[1:]))
 
 
-def _source_list_for_prompt(citations: list[dict[str, object]]) -> str:
-    lines: list[str] = []
-    for citation in citations:
-        number = citation.get("number")
-        title = str(citation.get("title") or f"Source {number}")
-        url = str(citation.get("url") or "")
-        metadata = _citation_metadata_for_prompt(citation)
-        if metadata and url:
-            lines.append(f"[{number}] {title} - {metadata} - {url}")
-        elif url:
-            lines.append(f"[{number}] {title} - {url}")
-        else:
-            lines.append(f"[{number}] {title}")
-    return "\n".join(lines)
-
-
-def _evidence_context_for_prompt(
-    items: list[dict[str, Any]],
-    *,
-    deep_search: bool = False,
-    query: str = "",
-) -> str:
-    lines: list[str] = []
-    for index, item in enumerate(items, start=1):
-        citation = _normalize_evidence_record(item)
-        source = (
-            str(citation.get("source_label") or "")
-            if citation
-            else SOURCE_LABELS.get(_source_key(item), _source_key(item) or "Source")
-        )
-        title = str(citation.get("title") if citation else item.get("title") or f"Source {index}")
-        year = citation.get("year") if citation else item.get("year") or _year_from_publication_date(item.get("publication_date"))
-        url = str(citation.get("url") if citation else item.get("url") or item.get("full_text_url") or "")
-        if deep_search:
-            snippet_limit = 1800 if _source_key(item) == "crawl4ai" else 1100
-        else:
-            snippet_limit = 1800 if _source_key(item) == "crawl4ai" else 800
-        retrieval_query = _evidence_record_retrieval_query(item)
-        focus_query = " ".join(
-            part
-            for part in (query, retrieval_query)
-            if part
-        )
-        raw_snippet = str(item.get("abstract") or item.get("snippet") or "")
-        snippet = (
-            _compact_text(raw_snippet, snippet_limit)
-            if deep_search
-            else _query_focused_snippet(raw_snippet, focus_query, snippet_limit)
-        )
-        source_parts = [
-            f"Source: {source}" if source else "",
-            f"Year: {year}" if year else "",
-            f"URL: {url}" if url else "",
-        ]
-        lines.append(
-            "\n".join(
-                part
-                for part in (
-                    f"[{index}] {title}",
-                    "; ".join(part for part in source_parts if part),
-                    f"Retrieval query: {retrieval_query}" if retrieval_query else "",
-                    f"Evidence: {snippet}" if snippet else _metadata_only_note(item),
-                )
-                if part
-            )
-        )
-    return "\n\n".join(lines)
-
-
-def _citation_metadata_for_prompt(citation: dict[str, object]) -> str:
-    source = str(citation.get("source_label") or "").strip()
-    year = citation.get("year")
-    parts = [source] if source else []
-    if year:
-        parts.append(str(year))
-    return ", ".join(parts)
-
-
-def _sanitize_answer_style(answer: str) -> str:
-    cleaned = answer.strip()
-    cleaned = re.sub(r"\bnotdetailed\b", "not detailed", cleaned, flags=re.IGNORECASE)
-    cleaned = _remove_source_attribution_phrasing(cleaned)
-    cleaned = re.sub(
-        r"\b[Bb]ased on (?:the )?(?:provided|available|retrieved|current|cited)\s+"
-        r"(?:evidence|sources?|references?|text|information|source material),?\s*",
-        "",
-        cleaned,
+def _no_retrieved_evidence_answer() -> str:
+    return (
+        "I do not have usable retrieved reference text for this request, so I cannot provide "
+        "a referenced recommendation safely. Please verify the answer against the latest "
+        "relevant clinical guideline, local protocol, or a senior clinician before applying it."
     )
-    source_subject = (
-        r"(?:(?:the\s+)?(?:provided|available|retrieved|current|cited)\s+"
-        r"(?:evidence|sources?|references?|text|information|source material)"
-        r"|(?:the\s+)?(?:evidence|sources?|source material))"
-    )
-    before_removing_empty_disclaimers = cleaned
-    cleaned = re.sub(
-        r"(?:^|\n)\s*\*\*Important\s+Caveats?\*\*\s*(?:\n|$)",
-        "\n",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        r"(?:^|(?<=[.!?])\s+)(?:while\s+[^.!?]{0,160},\s*)?"
-        r"(?:a\s+)?note\s+of\s+caution\s+is\s+(?:mentioned|noted|included)\b"
-        r"[^.!?]*(?:[.!?]|$)",
-        " ",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        r"\b([A-Z][A-Za-z0-9+ ()/-]{1,80})\s+for\s+all\s+people\s+with\s+"
-        r"([^,.\n]+),\s+starting\s+is\s+recommended\s+",
-        r"\1 is recommended for all people with \2 and should be started ",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        r"\b([^.!?\n]{1,140}?),\s+starting\s+is\s+recommended\s+",
-        r"\1 and should be started ",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        rf"(?:^|(?<=[.!?])\s+){source_subject}\s+(?:does|do)\s+not\s+"
-        r"(?:specify|identify|state|name|detail|provide|include)\b[^.!?]*(?:[.!?]|$)\s*",
-        " ",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        rf"(?:^|(?<=[.!?])\s+)(?:there\s+is\s+)?(?:no|insufficient)\s+{source_subject}"
-        r"\b[^.!?]*(?:[.!?]|$)\s*",
-        " ",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    if not cleaned.strip():
-        cleaned = before_removing_empty_disclaimers
-    cleaned = re.sub(
-        rf"\b{source_subject}\s+"
-        r"(?:indicates?|shows?|states?|reports?|suggests?|supports?|notes?|says?|discusses?)"
-        r"(?:\s+that)?\s+",
-        "",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        r"(^\s*|(?<=[.!?])\s+)(?:it|they)\s+"
-        r"(?:indicates?|shows?|states?|reports?|suggests?|supports?|notes?|says?)"
-        r"(?:\s+that)?\s+",
-        r"\1",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        r"\b(?:within|in)\s+the\s+(?:provided|available|retrieved|current|cited)\s+"
-        r"(?:evidence|sources?|references?|text|information|source material)\b",
-        "",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        r"\b(?:the\s+)?source\s+material\s+material\b",
-        "evidence",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        r"(?:^|(?<=[.!?])\s+)[^.!?]*\bAppendix\s+\d+\b[^.!?]*(?:[.!?]|$)",
-        " ",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(r"\s+([,.!?;:])", r"\1", cleaned)
-    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
-    return _sentence_case(cleaned.strip())
 
 
 def _answer_looks_like_service_status(answer: str) -> bool:
@@ -2503,175 +3050,11 @@ def _answer_looks_like_service_status(answer: str) -> bool:
     )
 
 
-def _remove_source_attribution_phrasing(text: str) -> str:
-    source_name = (
-        r"(?:the\s+)?(?:[A-Z]{2,}(?:\s+[A-Z]{2,}){0,4}|"
-        r"[A-Z][A-Za-z0-9&./'()+-]*(?:\s+(?:[A-Z][A-Za-z0-9&./'()+-]*|for|of|and|the|in)){1,12}"
-        r"(?:\s+\([A-Z][A-Z0-9&./+-]{1,12}\))?)"
-    )
-    cleaned = re.sub(
-        rf"(?:^|(?<=[.!?])\s+)[^.!?]*\b{source_name}\b[^.!?]*\b"
-        r"(?:has\s+)?(?:consistently\s+)?(?:supported|endorsed)\s+"
-        r"(?:the\s+)?(?:adoption|use)\b[^.!?]*(?:[.!?]|$)",
-        " ",
-        text,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        rf"\b{source_name}\s+(?:recommends?|suggests?|advises?)\s+(?:using|the use of)\b",
-        "use",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        rf"\b{source_name}\s+(?:recommends?|suggests?|advises?)\s+initiating\b",
-        "initiate",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        rf"\b{source_name}\s+(?:recommends?|suggests?|advises?)\s+starting\b",
-        "start",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        rf"\b{source_name}\s+(?:guidelines?|recommendations?|guidance)"
-        r"(?:\s+(?:from|in)\s+\d{4})?\s+"
-        r"(?:recommends?|suggests?|advises?)\s+"
-        r"([^.!?\n]{1,180}?)\s+due\s+to\s+",
-        r"\1 is recommended due to ",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        rf"\b{source_name}\s+(?:guidelines?|recommendations?|guidance)"
-        r"(?:\s+(?:from|in)\s+\d{4})?\s+"
-        r"(?:recommends?|suggests?|advises?)\s+",
-        "",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        rf"\b{source_name}\s+(?:recommends?|suggests?|advises?)\s+"
-        r"([^.!?\n]{1,220}?)\s+as\s+(?:the\s+)?preferred\b",
-        r"\1 is preferred as",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        r"\b([A-Za-z][A-Za-z/-]*s)\s+is\s+preferred\b",
-        r"\1 are preferred",
-        cleaned,
-    )
-    cleaned = re.sub(
-        rf"\b{source_name}\s+(?:recommends?|suggests?|advises?)\s+"
-        r"([^.!?\n]{1,220}?)\s+as\s+",
-        r"\1 is recommended as ",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        rf"\b{source_name}\s+(?:recommends?|suggests?|advises?)\s+"
-        r"((?:an?|the)\s+)",
-        r"\1",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        rf"\b{source_name}\s+(?:recommends?|suggests?|advises?)\s+that\s+",
-        "",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        rf"\b{source_name}\s+(?:states?|reports?|notes?|indicates?)\s+that\s+",
-        "",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        rf"(?:^|(?<=[.!?])\s+){source_name}\s+"
-        r"(?:updated|published|issued|provides?|offers?|describes?|discusses?)\b"
-        r"[^.!?]*(?:[.!?]|$)\s*",
-        " ",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    return cleaned
-
-
-def _sentence_case(text: str) -> str:
-    match = re.search(r"[A-Za-z]", text)
-    if not match:
-        return text
-    index = match.start()
-    return f"{text[:index]}{text[index].upper()}{text[index + 1:]}"
-
-
-def _normalize_answer_spacing(text: str) -> str:
-    cleaned = text.replace("\u00a0", " ").replace("\u00ad", "")
-    cleaned = re.sub(r"([A-Za-z])-+\s*\n\s*([a-z])", r"\1\2", cleaned)
-    cleaned = re.sub(r"([,;:])(?=[A-Za-z])", r"\1 ", cleaned)
-    cleaned = re.sub(r"(?<=[.!?])(?=[A-Z])", " ", cleaned)
-    cleaned = re.sub(r"(?<=[a-z])(?=[A-Z][a-z])", " ", cleaned)
-    cleaned = re.sub(r"(?<=[A-Za-z0-9])(\[\d{1,2}\])", r" \1", cleaned)
-    cleaned = re.sub(r"(\[\d{1,2}\])(?=[A-Za-z])", r"\1 ", cleaned)
-    cleaned = re.sub(r"\b(and|or|for|with|during|after|before|between|among)(?=[A-Z])", r"\1 ", cleaned)
-    cleaned = re.sub(
-        r"\b([A-Z][A-Za-z]{7,}(?:\s+[A-Z][A-Za-z]{2,}){0,4})(of|for|and|in)(?=\s+[A-Z])",
-        r"\1 \2",
-        cleaned,
-    )
-    cleaned = re.sub(r"\b(\d+)\s?(kg|mg|g|mcg|ml)\b", r"\1 \2", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
-    cleaned = re.sub(r" *\n *", "\n", cleaned)
-    return cleaned.strip()
-
-
-def _format_answer_body(answer: str) -> str:
-    cleaned = _normalize_answer_spacing(answer)
-    cleaned = re.sub(r"(?<!\n)\n(#{1,6}\s)", r"\n\n\1", cleaned)
-    cleaned = re.sub(r"(#{1,6}[^\n]+)\n(?!\n)", r"\1\n\n", cleaned)
-    blocks = re.split(r"\n{2,}", cleaned)
-    formatted_blocks = [_paragraphize_block(block.strip()) for block in blocks if block.strip()]
-    return "\n\n".join(block for block in formatted_blocks if block)
-
-
-def _paragraphize_block(block: str) -> str:
-    if _is_structured_markdown_block(block):
-        return block
-    sentences = re.split(r"(?<=[.!?])\s+(?=(?:\*\*)?[A-Z0-9])", block)
-    if len(sentences) <= 1:
-        return block
-
-    paragraphs: list[str] = []
-    current: list[str] = []
-    current_length = 0
-    for sentence in sentences:
-        stripped = sentence.strip()
-        if not stripped:
-            continue
-        projected_length = current_length + len(stripped) + (1 if current else 0)
-        if current and (projected_length > 260 or len(current) >= 2):
-            paragraphs.append(" ".join(current))
-            current = [stripped]
-            current_length = len(stripped)
-            continue
-        current.append(stripped)
-        current_length = projected_length
-    if current:
-        paragraphs.append(" ".join(current))
-    return "\n\n".join(paragraphs)
-
-
-def _is_structured_markdown_block(block: str) -> bool:
-    stripped = block.lstrip()
-    return bool(
-        stripped.startswith(("#", "-", "*", ">"))
-        or re.match(r"\d+\.\s", stripped)
-        or "|" in stripped and "\n" in stripped
-    )
+_RAW_URL_PATTERN = (
+    r"(?:https?://|www\.)[^\s<>)\]]+"
+    r"|(?:[a-z0-9-]+\.)+(?:gov|int|org|edu|com|net|ug|uk|io|ai)"
+    r"(?:/[^\s<>)\]]*)?"
+)
 
 
 def _metadata_only_note(item: dict[str, Any]) -> str:
@@ -2712,34 +3095,51 @@ def _query_focused_snippet(text: str, query: str, max_length: int) -> str:
     if not query_terms:
         return _compact_text(compact, max_length)
 
-    sentences = [
-        sentence.strip()
-        for sentence in re.split(r"(?<=[.!?])\s+", compact)
-        if sentence.strip()
-    ]
-    if len(sentences) <= 1:
+    segments = _snippet_candidate_segments(compact)
+    if len(segments) <= 1:
         return _compact_text(compact, max_length)
 
     scored: list[tuple[int, int, str]] = []
-    for index, sentence in enumerate(sentences):
-        score = _snippet_sentence_score(sentence, query_terms)
+    for index, segment in enumerate(segments):
+        score = _snippet_sentence_score(segment, query_terms)
         if score > 0:
-            scored.append((score, index, sentence))
+            scored.append((score, index, segment))
 
     if not scored:
         return _compact_text(compact, max_length)
 
-    selected_indexes = sorted(index for _score, index, _sentence in sorted(scored, reverse=True)[:3])
+    segment_limit = 1 if re.search(r"\s+\.\.\.\s+", compact) else 3
+    selected_indexes = sorted(
+        index
+        for _score, index, _sentence in sorted(scored, reverse=True)[:segment_limit]
+    )
     selected: list[str] = []
     current_length = 0
     for index in selected_indexes:
-        sentence = sentences[index]
-        projected = current_length + len(sentence) + (1 if selected else 0)
+        segment = segments[index]
+        projected = current_length + len(segment) + (1 if selected else 0)
         if selected and projected > max_length:
             break
-        selected.append(sentence)
+        selected.append(segment)
         current_length = projected
     return _compact_text(" ".join(selected) or compact, max_length)
+
+
+def _snippet_candidate_segments(compact: str) -> list[str]:
+    ellipsis_segments = [
+        segment.strip()
+        for segment in re.split(r"\s+\.\.\.\s+", compact)
+        if segment.strip()
+    ]
+    if len(ellipsis_segments) > 1:
+        return ellipsis_segments
+    if _text_contains_inline_enumeration(compact):
+        return [compact]
+    return [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+", compact)
+        if sentence.strip()
+    ]
 
 
 def _snippet_sentence_score(sentence: str, query_terms: set[str]) -> int:
@@ -2772,210 +3172,34 @@ def _term_matches_text_terms(term: str, text_terms: set[str]) -> bool:
         return True
     if len(term) > 4 and term.endswith("s") and term[:-1] in text_terms:
         return True
-    return any(
-        len(candidate) > 4 and candidate.endswith("s") and candidate[:-1] == term
-        for candidate in text_terms
-    )
+    for candidate in text_terms:
+        if len(candidate) > 4 and candidate.endswith("s") and candidate[:-1] == term:
+            return True
+        if _tokens_share_substantial_root(term, candidate):
+            return True
+    return False
 
 
-def _role_instruction(user_role_from_db: Optional[str]) -> str:
-    if not user_role_from_db:
-        return ROLE_INSTRUCTIONS["DEFAULT"]
-    mapping = {
-        "Consultant": ROLE_INSTRUCTIONS["EXPERT"],
-        "Specialist": ROLE_INSTRUCTIONS["EXPERT"],
-        "Senior House Officer": ROLE_INSTRUCTIONS["CLINICIAN"],
-        "Senior House Officers": ROLE_INSTRUCTIONS["CLINICIAN"],
-        "Medical Officer": ROLE_INSTRUCTIONS["CLINICIAN"],
-        "Clinical Officer": ROLE_INSTRUCTIONS["CLINICIAN"],
-        "Other Clinical Practitioner": ROLE_INSTRUCTIONS["CLINICIAN"],
-        "Intern Clinician": ROLE_INSTRUCTIONS["TRAINEE"],
-        "Intern Doctor": ROLE_INSTRUCTIONS["TRAINEE"],
-        "Clinical/Medical Student": ROLE_INSTRUCTIONS["STUDENT"],
-        "Student": ROLE_INSTRUCTIONS["STUDENT"],
-    }
-    return mapping.get(user_role_from_db, ROLE_INSTRUCTIONS["DEFAULT"])
+def _tokens_share_substantial_root(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    if min(len(left), len(right)) < 8:
+        return False
+    longest = _longest_common_substring_length(left, right)
+    return longest >= max(7, int(min(len(left), len(right)) * 0.7))
 
 
-def _ensure_reference_urls(answer: str, citations: list[dict[str, object]]) -> str:
-    if not citations:
-        return _format_answer_body(answer)
-    answer_without_references = re.split(
-        r"\n\s*(?:\*\*)?References(?:\*\*)?\s*\n",
-        answer,
-        maxsplit=1,
-        flags=re.IGNORECASE,
-    )[0].rstrip()
-    answer_without_references = _format_answer_body(answer_without_references)
-    answer_without_references, citations = _compact_used_citations(answer_without_references, citations)
-    answer_without_references = _link_inline_reference_markers(answer_without_references, citations)
-
-    lines = ["", "", "**References**", ""]
-    for index, citation in enumerate(citations, start=1):
-        lines.append(_format_reference_line(index, citation))
-    return answer_without_references + "\n".join(lines)
-
-
-def _format_reference_line(index: int, citation: dict[str, object]) -> str:
-    title = _markdown_escape(_clean_reference_title(str(citation.get("title") or f"Source {index}")))
-    url = str(citation.get("url") or "").strip()
-    source = _markdown_escape(str(citation.get("source_label") or "")).strip()
-    year = citation.get("year")
-    metadata_parts = [source, str(year)] if source and year else []
-    if not url and source and not year:
-        metadata_parts = [source]
-    metadata = ", ".join(metadata_parts)
-
-    if url and metadata:
-        return f"{index}. [{title}]({url}) - {metadata} - {url}"
-    if url:
-        return f"{index}. [{title}]({url}) - {url}"
-    if metadata:
-        return f"{index}. {title} - {metadata}"
-    return f"{index}. {title}"
-
-
-def _link_inline_reference_markers(
-    answer: str,
-    citations: list[dict[str, object]],
-) -> str:
-    if not answer or not citations:
-        return answer
-
-    url_by_number = {
-        str(index): str(citation.get("url") or "").strip()
-        for index, citation in enumerate(citations, start=1)
-    }
-
-    def replace_marker(match: re.Match[str]) -> str:
-        replacements: list[str] = []
-        for raw_number in match.group(1).split(","):
-            number = raw_number.strip()
-            url = url_by_number.get(number, "")
-            replacements.append(f"[{number}]({url})" if url else f"[{number}]")
-        return " ".join(replacements)
-
-    return re.sub(
-        r"(?<!\[)\[(\d{1,2}(?:\s*,\s*\d{1,2})*)\](?![\]\(])",
-        replace_marker,
-        answer,
-    )
-
-
-async def _polish_answer_body_with_model(
-    *,
-    query: str,
-    answer: str,
-    deep_search: bool,
-) -> str:
-    if not _answer_polish_enabled() or not answer.strip():
-        return answer
-    answer_body = re.split(
-        r"\n\s*(?:\*\*)?References(?:\*\*)?\s*\n",
-        answer,
-        maxsplit=1,
-        flags=re.IGNORECASE,
-    )[0].strip()
-    if not answer_body:
-        return answer
-
-    prompt = f"""
-Rewrite this medical answer body for scope and clarity only.
-
-User question:
-{query}
-
-Draft answer body:
-{answer_body}
-
-Rules:
-- Return only the revised answer body, not a References section.
-- Keep only points that directly answer the user's question.
-- Start with the clinical answer, not source or guideline descriptions.
-- Remove publisher/source prose and similar attribution wording.
-- Do not add new medical facts, new citations, or new references.
-- Preserve numeric citation markers like [1] on claims that remain.
-- Keep the answer concise and medically useful.
-""".strip()
-    payload = {
-        "prompt": prompt,
-        "prompt_type": "empirico_answer_polish",
-        "temperature": 0.0,
-        "max_output_tokens": min(1200 if deep_search else 900, max(400, len(answer_body) + 200)),
-        "top_p": 0.8,
-        "top_k": 20,
-        "candidate_count": 1,
-        "require_evidence": False,
-    }
-    try:
-        data = await _post_model_response(
-            payload,
-            timeout_seconds=_answer_polish_timeout(),
-        )
-    except (httpx.HTTPStatusError, httpx.RequestError, ValueError) as exc:
-        logger.debug("Answer polish fell back to original body: %s", exc)
-        return answer_body
-
-    polished = str(data.get("answer") or "").strip()
-    if not polished or _answer_looks_like_service_status(polished):
-        return answer_body
-    if not re.search(r"\[\d+\]", polished) and re.search(r"\[\d+\]", answer_body):
-        return answer_body
-    return polished
-
-
-def _clean_reference_title(title: str) -> str:
-    cleaned = _normalize_answer_spacing(title)
-    cleaned = cleaned.replace("_", " ")
-    cleaned = re.sub(r"\s*\|\s*", " | ", cleaned)
-    cleaned = re.sub(r"\s+", " ", cleaned)
-    cleaned = re.sub(r"^\d+(?:\.\d+){1,4}\s+", "", cleaned)
-    return cleaned.strip() or "Source"
-
-
-def _compact_used_citations(
-    answer: str,
-    citations: list[dict[str, object]],
-) -> tuple[str, list[dict[str, object]]]:
-    citation_by_original_number = {
-        str(index): citation for index, citation in enumerate(citations, start=1)
-    }
-    remapped_numbers: dict[str, int] = {}
-    used_original_numbers: list[str] = []
-
-    def remap_number(original: str) -> int | None:
-        if original not in citation_by_original_number:
-            return None
-        if original not in remapped_numbers:
-            remapped_numbers[original] = len(remapped_numbers) + 1
-            used_original_numbers.append(original)
-        return remapped_numbers[original]
-
-    normalized = re.sub(r"\[\[(\d{1,2})\]\](?!\()", r"[\1]", answer)
-
-    def replace_marker(match: re.Match[str]) -> str:
-        originals = [part.strip() for part in match.group(1).split(",")]
-        replacements: list[str] = []
-        for original in originals:
-            next_number = remap_number(original)
-            if next_number is not None:
-                replacements.append(f"[{next_number}]")
-        return " ".join(replacements) if replacements else ""
-
-    normalized = re.sub(
-        r"(?<!\[)\[(\d{1,2}(?:\s*,\s*\d{1,2})*)\](?:\([^)]*\))?(?!\])",
-        replace_marker,
-        normalized,
-    )
-    if not used_original_numbers:
-        return answer, citations
-
-    compacted_citations: list[dict[str, object]] = []
-    for number in used_original_numbers:
-        citation = dict(citation_by_original_number[number])
-        citation["number"] = remapped_numbers[number]
-        compacted_citations.append(citation)
-    return normalized, compacted_citations
+def _longest_common_substring_length(left: str, right: str) -> int:
+    previous = [0] * (len(right) + 1)
+    best = 0
+    for left_char in left:
+        current = [0] * (len(right) + 1)
+        for index, right_char in enumerate(right, start=1):
+            if left_char == right_char:
+                current[index] = previous[index - 1] + 1
+                best = max(best, current[index])
+        previous = current
+    return best
 
 
 async def _generate_followup_questions(query: str, answer: str, *, deep_search: bool = False) -> list[str]:
@@ -3050,14 +3274,17 @@ async def _search_local_evidence(
     top_k: int,
     country_code: Optional[str],
     deep_search: bool,
+    provider_mode: str | None = None,
+    search_settings: EvidenceRetrievalSettings | None = None,
 ) -> dict[str, Any]:
     return await asyncio.to_thread(
         _run_local_evidence_search,
         query,
         top_k,
         country_code,
-        _local_evidence_provider_mode(deep_search),
+        provider_mode or _local_evidence_provider_mode(deep_search),
         deep_search,
+        search_settings,
     )
 
 
@@ -3067,11 +3294,12 @@ def _run_local_evidence_search(
     country_code: Optional[str],
     provider_mode: str,
     deep_search: bool,
+    search_settings: EvidenceRetrievalSettings | None = None,
 ) -> dict[str, Any]:
     effective_country_code = None if (country_code or "").upper() == "GLOBAL" else country_code
     try:
         result = EvidenceSearchService(
-            settings=_search_settings_for_mode(deep_search),
+            settings=search_settings or _search_settings_for_mode(deep_search),
             country_code=effective_country_code,
             provider_mode=provider_mode,
         ).search(query, top_k=top_k)
@@ -3093,8 +3321,38 @@ def _evidence_country_code_for_search() -> Optional[str]:
         or ""
     ).strip()
     if raw.lower() in {"", "none", "null", "off", "false", "0"}:
-        return None
+        return "UG"
     return raw.upper()
+
+
+def _country_code_for_retrieval_query(
+    default_country_code: Optional[str],
+    retrieval_query: str,
+) -> Optional[str]:
+    if (default_country_code or "").upper() == "GLOBAL":
+        return "GLOBAL"
+    explicit = _explicit_country_code_from_text(retrieval_query)
+    return explicit or default_country_code
+
+
+def _explicit_country_code_from_text(text: str) -> Optional[str]:
+    normalized = _normalize_search_text(text)
+    country_terms = {
+        "UG": ("uganda", "ugandan", "health.go.ug", "library.health.go.ug"),
+        "KE": ("kenya", "kenyan", "health.go.ke"),
+        "TZ": ("tanzania", "tanzanian", "moh.go.tz", "nmcp.go.tz"),
+    }
+    matches = [
+        code
+        for code, terms in country_terms.items()
+        if any(
+            re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", normalized)
+            for term in terms
+        )
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    return None
 
 
 def _broad_evidence_country_code(country_code: Optional[str]) -> str:
@@ -3141,27 +3399,23 @@ def _active_source_preference_terms(
     query_context: str,
     source_preference_terms: tuple[str, ...],
 ) -> tuple[str, ...]:
-    if not _query_mentions_source_preference(query_context, source_preference_terms):
+    if not source_preference_terms:
+        return ()
+    if _query_mentions_alternate_jurisdiction(query_context):
         return ()
     return source_preference_terms
 
 
-def _answer_polish_enabled() -> bool:
-    raw = os.getenv("EMPIRICO_ENABLE_ANSWER_POLISH", "false").strip().lower()
-    return raw in {"1", "true", "yes", "on", "enabled"}
-
-
-def _answer_polish_timeout() -> float:
-    return _env_float(
-        "EMPIRICO_ANSWER_POLISH_TIMEOUT_SECONDS",
-        45.0,
-        minimum=10.0,
-        maximum=90.0,
+def _query_mentions_alternate_jurisdiction(query_context: str) -> bool:
+    text = _normalize_search_text(query_context)
+    if not text:
+        return False
+    if _query_mentions_source_preference(text, tuple(LOCAL_SOURCE_PREFERENCE_TERMS)):
+        return False
+    return any(
+        re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", text)
+        for term in ALTERNATE_JURISDICTION_TERMS
     )
-
-
-def _markdown_escape(value: str) -> str:
-    return re.sub(r"([\\`*_{}\[\]()#+\-.!|])", r"\\\1", value)
 
 
 async def _post_model_response(

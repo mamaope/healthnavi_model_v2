@@ -218,8 +218,8 @@ export function useChatEngine() {
               if (messageIdMatch) {
                 messageIdFromStream = parseInt(messageIdMatch[1], 10)
                 // Remove the marker from content before adding to stream
-                const contentWithoutMarker = chunk.replace(/\[MESSAGE_ID\]:\d+\s*/g, '').trim()
-                if (contentWithoutMarker) {
+                const contentWithoutMarker = chunk.replace(/\[MESSAGE_ID\]:\d+/g, '')
+                if (contentWithoutMarker.length > 0) {
                   streamedContent += contentWithoutMarker
                   appendMessageContent(aiMessageId, contentWithoutMarker)
                 }
@@ -233,8 +233,8 @@ export function useChatEngine() {
               const jsonStart = chunk.indexOf('[FOLLOWUP_QUESTIONS]:') + '[FOLLOWUP_QUESTIONS]:'.length
               pendingFollowupJson = chunk.substring(jsonStart)
               
-              const contentWithoutMarker = chunk.substring(0, chunk.indexOf('[FOLLOWUP_QUESTIONS]:')).trim()
-              if (contentWithoutMarker) {
+              const contentWithoutMarker = chunk.substring(0, chunk.indexOf('[FOLLOWUP_QUESTIONS]:'))
+              if (contentWithoutMarker.length > 0) {
                 streamedContent += contentWithoutMarker
                 appendMessageContent(aiMessageId, contentWithoutMarker)
               }
@@ -332,9 +332,11 @@ export function useChatEngine() {
             const beforeMarker = cleanedContent.substring(0, markerIndex)
             const afterMarker = cleanedContent.substring(markerIndex + '[FOLLOWUP_QUESTIONS]:'.length)
             
-            const jsonStart = afterMarker.search(/\s*\[/)
-            if (jsonStart !== -1) {
-              const jsonCandidate = afterMarker.substring(jsonStart).trim()
+            const jsonMatch = afterMarker.match(/\s*\[/)
+            if (jsonMatch && jsonMatch.index !== undefined) {
+              const jsonStart = jsonMatch.index
+              const arrayStart = jsonStart + jsonMatch[0].lastIndexOf('[')
+              const jsonCandidate = afterMarker.substring(arrayStart)
               
               let bracketCount = 0
               let jsonEnd = -1
@@ -349,13 +351,13 @@ export function useChatEngine() {
               
               if (jsonEnd > 0) {
                 // Found a complete JSON array, remove marker + JSON
-                cleanedContent = beforeMarker + afterMarker.substring(jsonStart + jsonEnd).trim()
+                cleanedContent = beforeMarker + afterMarker.substring(arrayStart + jsonEnd)
               } else {
                 // Incomplete JSON, just remove the marker
-                cleanedContent = beforeMarker + afterMarker.trim()
+                cleanedContent = beforeMarker + afterMarker
               }
             } else {
-              cleanedContent = beforeMarker + afterMarker.trim()
+              cleanedContent = beforeMarker + afterMarker
             }
             
             cleanedContent = cleanedContent.replace(/\n\n+/g, '\n\n').trim()

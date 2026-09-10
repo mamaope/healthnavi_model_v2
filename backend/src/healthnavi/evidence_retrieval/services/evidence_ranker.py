@@ -117,19 +117,50 @@ def deduplicate_items(items: list[EvidenceItem]) -> list[EvidenceItem]:
     seen: set[str] = set()
     deduped: list[EvidenceItem] = []
     for item in items:
-        keys = [
-            f"doi:{normalize_identifier(item.doi)}" if item.doi else None,
-            f"pmid:{normalize_identifier(item.pmid)}" if item.pmid else None,
-            f"pmcid:{normalize_identifier(item.pmcid)}" if item.pmcid else None,
-            f"title:{normalize_title(item.title)}" if item.title else None,
-        ]
-        if any(key in seen for key in keys if key):
+        key = _passage_dedupe_key(item)
+        if key in seen:
             continue
-        for key in keys:
-            if key:
-                seen.add(key)
+        seen.add(key)
         deduped.append(item)
     return deduped
+
+
+def _passage_dedupe_key(item: EvidenceItem) -> str:
+    document_key = _document_dedupe_key(item)
+    raw = item.raw if isinstance(item.raw, dict) else {}
+    section = _normalize_dedupe_text(
+        " ".join(
+            str(part)
+            for part in (
+                raw.get("section_title"),
+                raw.get("section"),
+                raw.get("heading"),
+                raw.get("page_start"),
+                raw.get("page"),
+            )
+            if part
+        )
+    )
+    text = _normalize_dedupe_text(" ".join(part for part in (item.abstract or "", item.snippet or "") if part))
+    return f"{document_key}|section:{section}|text:{text[:900]}"
+
+
+def _document_dedupe_key(item: EvidenceItem) -> str:
+    if item.doi:
+        return f"doi:{normalize_identifier(item.doi)}"
+    if item.pmid:
+        return f"pmid:{normalize_identifier(item.pmid)}"
+    if item.pmcid:
+        return f"pmcid:{normalize_identifier(item.pmcid)}"
+    if item.url:
+        return f"url:{str(item.url).lower().rstrip('/')}"
+    if item.title:
+        return f"title:{normalize_title(item.title)}"
+    return repr(item)
+
+
+def _normalize_dedupe_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value.lower()).strip()
 
 
 def lexical_overlap_score(query: str, text: str) -> float:

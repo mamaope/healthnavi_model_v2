@@ -4,7 +4,7 @@
 
 ![Empirico Logo](https://via.placeholder.com/200x60?text=Empirico)
 
-**Empirico** is a secure AI-powered medical information system that connects to the shared Empirico Model Service for evidence retrieval, web crawling, citations, and answer generation.
+**Empirico** is a secure AI-powered medical information system with shared Empirico Model Service evidence/generation and local retrieval/crawling fallback.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
@@ -36,14 +36,14 @@
 
 ## 🎯 Overview
 
-**Empirico** is a medical information platform designed to help users access evidence-backed medical answers through AI-powered assistance. This app owns the user experience, authentication, sessions, and response display; the shared model service owns retrieval, crawling, citation grounding, and model generation.
+**Empirico** is a medical information platform designed to help users access evidence-backed medical answers through AI-powered assistance. This app owns the user experience, authentication, sessions, citation rebuilding, response display, and evidence retrieval. For evidence answers, the backend retrieves local/crawled/provider evidence first, then sends that evidence to the shared model service for answer generation.
 
 ### What Empirico Does
 
 - **Medical Information Access**: Provides AI-powered access to evidence-based medical information, treatment planning, and clinical queries
 - **Drug Information**: Access comprehensive drug dosing, interactions, and prescribing information
 - **Clinical Guidelines**: References to WHO, ADA, and other authoritative medical guidelines
-- **Evidence-Based Answers**: Delegates retrieval and generation to the shared Empirico Model Service
+- **Evidence-Based Answers**: Retrieves and ranks evidence locally with crawled/provider sources, then delegates final answer generation to the shared Empirico Model Service
 - **Multi-Platform Access**: Available on web and mobile (Android) platforms
 
 ---
@@ -161,20 +161,61 @@
 
 ### Docker Deployment (Recommended)
 
-The local Docker stack runs only the services this app owns: Postgres, the
-FastAPI backend, and the Vite frontend. The model service stays in GCP.
+The Docker stack runs only the services this app owns: Postgres, the FastAPI
+backend, and the web frontend. The shared Empirico Model Service stays in GCP
+and is reached over HTTPS using `MODEL_SERVICE_BASE_URL` / `MODEL_SERVICE_API_KEY`.
+
+There are two compose files, used the same way as in healthnavy-v3:
+
+| File | Use | Backend | Frontend |
+|------|-----|---------|----------|
+| `docker-compose.yml` | Local development (default) | uvicorn `--reload`, code bind-mounted | Vite dev server on `:3000` |
+| `docker-compose-prod.yml` | Production / staging server | uvicorn without reload | Built static bundle served by nginx on `:3000` |
+
+**Development** (from `/Users/richkitibwa/Documents/mamaope/empirico/healthnavy_v2`):
 
 ```bash
-# Start all services
-docker compose up -d --build
+# Create/edit .env first if this is a fresh checkout.
+# Required basics: DB_USER, DB_PASSWORD, DB_NAME, SECRET_KEY,
+# ENCRYPTION_KEY, MODEL_SERVICE_BASE_URL, MODEL_SERVICE_API_KEY.
 
-# Check logs
-docker compose logs -f api
+docker compose up -d --build          # start db + api + frontend
+docker compose logs -f api            # follow backend logs
+docker compose down                   # stop (keeps the postgres volume)
+```
 
-# Access the application
-# Web: http://localhost:3000
-# API: http://localhost:8050/api/v2
-# API Docs: http://localhost:8050/api/v2/docs
+Backend code changes are picked up automatically because `./backend` is
+mounted into the container and uvicorn runs with `--reload`.
+
+**Production** (the `-f` flag selects the prod compose file):
+
+```bash
+docker compose -f docker-compose-prod.yml up -d --build
+docker compose -f docker-compose-prod.yml logs -f api
+docker compose -f docker-compose-prod.yml down
+```
+
+Set `ENV=production`, `DEBUG=false`, `BACKEND_URL`, `FRONTEND_URL` and the
+production `CORS_ORIGINS` in `.env` before starting the prod stack. There is no
+separate "prod flag" beyond choosing the compose file; both files read the same
+`.env`.
+
+URLs once running:
+
+```text
+Web:      http://localhost:3000
+API:      http://localhost:8050/api/v2
+API docs: http://localhost:8050/api/v2/docs
+Health:   http://localhost:8050/api/v2/health
+```
+
+Smoke test an answer without the UI (guest access is allowed):
+
+```bash
+curl -s -X POST http://localhost:8050/api/v2/diagnosis/diagnose \
+  -H "Content-Type: application/json" \
+  -d '{"patient_data":"First-line ART for a 30 year old woman in Kampala?","deep_search":false}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['model_response'])"
 ```
 
 The default API image is intentionally lean. It does not install Whisper/Torch
@@ -182,6 +223,37 @@ or browser automation dependencies. To include voice transcription dependencies,
 build with `INSTALL_TRANSCRIPTION=true docker compose up -d --build`.
 
 On first run, the API container runs database migrations and seeds an admin user if none exists (override with `ADMIN_EMAIL`, `ADMIN_PASSWORD`, etc. in `.env`). To seed an admin manually: `cd backend && python scripts/seed_admin_user.py`.
+
+### Local Dev Without Docker
+
+Use this when you want the backend/frontend running directly on your machine
+and Postgres is already available.
+From `/Users/richkitibwa/Documents/mamaope/empirico`, run:
+
+```bash
+cd healthnavy_v2/backend
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+export PYTHONPATH=src
+alembic upgrade head
+uvicorn healthnavi.main:app --reload --host 0.0.0.0 --port 8050
+```
+
+In a second terminal:
+
+```bash
+cd healthnavy_v2/frontend
+corepack enable
+pnpm install
+pnpm run dev
+```
+
+Local URLs:
+- Web via Docker: `http://localhost:3000`
+- Web via Vite dev server: `http://localhost:5173`
+- API: `http://localhost:8050/api/v2`
+- API docs: `http://localhost:8050/api/v2/docs`
 
 ---
 
@@ -286,11 +358,44 @@ GOOGLE_REDIRECT_URI=https://your-domain.com/api/v2/auth/google/callback
 MODEL_SERVICE_BASE_URL=https://empirico-model-service-e2dgjxq3uq-ew.a.run.app
 MODEL_SERVICE_API_KEY=your-model-service-api-key
 MODEL_SERVICE_TIMEOUT_SECONDS=180
-EMPIRICO_EVIDENCE_COUNTRY_CODE=
-EMPIRICO_SOURCE_PREFERENCE_HINTS=Uganda Ministry of Health Uganda Clinical Guidelines health.go.ug library.health.go.ug CPHL IDI Uganda WHO AFRO East Africa Africa
-EMPIRICO_SOURCE_PREFERENCE_TERMS=uganda,ugandan,health.go.ug,library.health.go.ug,cphl.go.ug,idi.mak.ac.ug,elearning.idi.co.ug,uganda clinical guidelines,ministry of health uganda,who afro,afro.who.int,east africa,africa
+
+# Answer generation (one model call per answer)
+EMPIRICO_QUICK_MODEL_TIMEOUT_SECONDS=30      # floor 8s; smaller values are ignored
+EMPIRICO_DEEP_MODEL_TIMEOUT_SECONDS=120      # floor 30s
+EMPIRICO_QUICK_MAX_OUTPUT_TOKENS=2000
+EMPIRICO_DEEP_MAX_OUTPUT_TOKENS=5000
+EMPIRICO_ANSWER_TEMPERATURE=0.2
+EMPIRICO_QUICK_MAX_REFERENCES=4              # distinct documents cited per answer
+EMPIRICO_DEEP_MAX_REFERENCES=8
+EMPIRICO_QUICK_CONTEXT_SOURCES=12            # passages shown to the model
+EMPIRICO_DEEP_CONTEXT_SOURCES=20
+
+# Evidence retrieval budgets (bounded by the quick latency target)
+EMPIRICO_QUICK_LATENCY_TARGET_SECONDS=14.5
+EMPIRICO_QUICK_ANSWER_TOP_K=4                # "enough sources" threshold for early stop
+EMPIRICO_DEEP_ANSWER_TOP_K=8
+EMPIRICO_QUICK_SEARCH_TOP_K=8
+EMPIRICO_DEEP_SEARCH_TOP_K=24
+EMPIRICO_EVIDENCE_COUNTRY_CODE=UG
+EMPIRICO_SOURCE_PREFERENCE_HINTS=Uganda Ministry of Health Knowledge Management Portal Uganda Clinical Guidelines health.go.ug library.health.go.ug NDA UNIPH CPHL NHLDS Uganda WHO AFRO East Africa Africa
+EMPIRICO_SOURCE_PREFERENCE_TERMS=uganda,ugandan,health.go.ug,library.health.go.ug,nda.or.ug,uniph.go.ug,cphl.go.ug,qadash.cphl.go.ug,uci.or.ug,ulii.org,idi.mak.ac.ug,elearning.idi.co.ug,uganda clinical guidelines,ministry of health uganda,national drug authority uganda,uganda national institute of public health,uganda cancer institute,who afro,afro.who.int,east africa,africa
 EMPIRICO_EVIDENCE_PROVIDER_MODE=web
-EMPIRICO_ENABLE_TRUSTED_GUIDELINE_RESCUE=true
+EMPIRICO_QUICK_EVIDENCE_PROVIDER_MODE=crawl
+EMPIRICO_DEEP_EVIDENCE_PROVIDER_MODE=web
+EMPIRICO_ENABLE_EVIDENCE_RESCUE=true
+EMPIRICO_QUICK_RETRIEVAL_EARLY_STOP=true
+EMPIRICO_QUICK_RETRIEVAL_EARLY_STOP_WAIT_SECONDS=1.5
+EMPIRICO_QUICK_RESCUE_MIN_SECONDS=2.5
+EMPIRICO_QUICK_ENABLE_RETRIEVAL_PLANNER=true
+EMPIRICO_DEEP_ENABLE_RETRIEVAL_PLANNER=true
+EMPIRICO_QUICK_CRAWL_MAX_SOURCES=4
+EMPIRICO_DEEP_CRAWL_MAX_SOURCES=8
+EMPIRICO_QUICK_CRAWL_TIME_BUDGET_SECONDS=8
+EMPIRICO_DEEP_CRAWL_TIME_BUDGET_SECONDS=14
+EMPIRICO_QUICK_RETRIEVAL_TIME_BUDGET_SECONDS=10
+EMPIRICO_DEEP_RETRIEVAL_TIME_BUDGET_SECONDS=18
+EMPIRICO_QUICK_MAX_RESULTS_PER_PROVIDER=4
+EMPIRICO_DEEP_MAX_RESULTS_PER_PROVIDER=8
 
 # Local evidence providers called by Empirico
 NCBI_API_KEY=your-ncbi-api-key
@@ -302,12 +407,12 @@ ENABLE_SEMANTIC_SCHOLAR=true
 ENABLE_OFFICIAL_HEALTH_APIS=true
 ENABLE_CRAWL4AI=true
 ENABLE_CRAWL4AI_BROWSER=false
-CRAWL_ALLOWED_DOMAINS=health.go.ug,library.health.go.ug,cphl.go.ug,differentiatedservicedelivery.org,who.int,iris.who.int,cdc.gov,stacks.cdc.gov,nih.gov,ncbi.nlm.nih.gov,idsociety.org,medicalguidelines.msf.org,nice.org.uk,ecdc.europa.eu,africacdc.org,unaids.org,paho.org,aafp.org
+CRAWL_ALLOWED_DOMAINS=health.go.ug,library.health.go.ug,nda.or.ug,uniph.go.ug,cphl.go.ug,qadash.cphl.go.ug,uci.or.ug,ulii.org,differentiatedservicedelivery.org,who.int,iris.who.int,platform.who.int,afro.who.int,cdc.gov,stacks.cdc.gov,nih.gov,ncbi.nlm.nih.gov,idsociety.org,medicalguidelines.msf.org,nice.org.uk,ecdc.europa.eu,africacdc.org,unaids.org,paho.org,aafp.org,unicef.org,reliefweb.int
 CRAWL_MAX_SOURCES=8
 CRAWL_MAX_PAGES=14
 CRAWL_SEARCH_PAGES_PER_SOURCE=1
-CRAWL_TIME_BUDGET_SECONDS=8
-RETRIEVAL_TIME_BUDGET_SECONDS=10
+CRAWL_TIME_BUDGET_SECONDS=14
+RETRIEVAL_TIME_BUDGET_SECONDS=18
 REQUEST_TIMEOUT_SECONDS=20
 MAX_RESULTS_PER_PROVIDER=10
 
@@ -322,19 +427,85 @@ BACKEND_URL=https://empirico.ai
 FRONTEND_URL=https://empirico.ai
 ```
 
-`EMPIRICO_EVIDENCE_PROVIDER_MODE=web` means crawled and official web sources
-are used first, with PubMed/Europe PMC/Semantic Scholar as fallback. Use
-`crawl` only when the deployment should refuse article-database fallback
-results.
+### How an answer is produced
 
-`EMPIRICO_EVIDENCE_COUNTRY_CODE` is optional. Leave it blank for open global
-retrieval with Uganda/Africa source preference. Set it only when a deployment
-needs a hard country hint for local official-source routing.
+1. **Plan** (one small model call): the question is turned into 1-4 retrieval
+   queries that keep the user's qualifiers (population, place, drug, setting).
+2. **Retrieve** locally: crawled guideline pages/PDFs (Uganda MoH, NDA, WHO,
+   CDC, NICE, ...), official health APIs, and in deep mode PubMed / Europe PMC /
+   Semantic Scholar. Quick mode is bounded by `EMPIRICO_QUICK_LATENCY_TARGET_SECONDS`.
+3. **Select candidates** deterministically, with no model call and no
+   condition-specific rules:
+   - Off-topic pages, statistics indicators, cover pages, running heads and
+     tables of figures are dropped. A passage qualifies on shape, not length,
+     so a one-line dosing rule survives and a document title does not.
+   - Once any passage of a document is relevant the document is, so its other
+     passages are re-admitted. The page carrying the dose often does not repeat
+     the condition name; the chapter heading did that.
+   - Passages are ordered by source authority (Uganda national > WHO and other
+     primary guidance > article databases), evidence type, how recent the
+     document is, whether it states doses, thresholds or durations rather than
+     only naming a pathway, then retrieval score.
+   - The best passage of each document is taken before a second from any, and
+     further passages are chosen by maximal marginal relevance so one guideline
+     does not fill every slot with the same viewpoint.
+   - Up to `EMPIRICO_*_CONTEXT_SOURCES` passages from at most
+     `EMPIRICO_*_MAX_REFERENCES + 2` documents go to the model.
+4. **Generate** (one model call, `EMPIRICO_*_MODEL_TIMEOUT_SECONDS`): the
+   prompt in `backend/src/healthnavi/core/constants.py` opens with the rule the
+   answer is judged on, **answer at the lowest actionable level**. A category is
+   never the answer: "an antibiotic", "imaging", "supportive care" and
+   "referral" name a box, and the answer opens it, giving the medicine with dose
+   route frequency and duration, the actual test, the actual fluid or feed. Where
+   a class genuinely is the answer it is named with the agents used from it, and
+   where the sources stop at the class the last step comes from clinical
+   knowledge, unmarked. Vague verbs such as "assess", "monitor closely" or
+   "consider antibiotics" are replaced by what is measured, how often, against
+   what target, and what is given. It then sets the answer contract. Every management answer states the **decision** (which patients
+   take which path and what decides it), the **action** (what is actually given
+   or done, with amounts) and the **endpoint** (when to change, stop, refer or
+   discharge), states steps common to every path once rather than per path,
+   covers every subgroup the question named, and continues from
+   established clinical knowledge where the sources stop, leaving those
+   sentences unmarked. Naming a setting, programme or pathway does not count as
+   an answer, and the reader is never sent to a table or annex. Quick answers
+   target 120-250 words; deep answers 400-900.
+5. **Finalize** (`backend/src/healthnavi/services/answer_composer.py`): markers
+   are validated against the retrieved sources, renumbered in order of first
+   use, linked as `[n](url)`, and a `**References**` list of the cited sources
+   is built from the source metadata. Pages of one document share a reference
+   number (each inline link still opens the exact page), and at most
+   `EMPIRICO_QUICK_MAX_REFERENCES` (4) or `EMPIRICO_DEEP_MAX_REFERENCES` (8)
+   distinct documents are cited. The model's prose is never rewritten.
 
-`EMPIRICO_SOURCE_PREFERENCE_HINTS` expands generic searches toward Uganda
-Ministry of Health, Uganda Clinical Guidelines, WHO AFRO, and East
-African/African sources. `EMPIRICO_SOURCE_PREFERENCE_TERMS` controls citation
-ranking for returned evidence; it is source preference, not country routing.
+If retrieval returns nothing usable, or the sources do not cover the question,
+the model still answers from established clinical knowledge, adds markers only
+where a source supports the point, and says in one sentence that the retrieved
+sources did not cover the rest. An answer with no citations gets no References
+list. If the model call fails after one retry the API returns a short error
+instead of an answer; nothing is stitched together from raw crawled text.
+
+`EMPIRICO_EVIDENCE_PROVIDER_MODE=web` controls the local providers: crawled and
+official web sources first, with PubMed/Europe PMC/Semantic Scholar as fallback.
+Quick mode defaults to `EMPIRICO_QUICK_EVIDENCE_PROVIDER_MODE=crawl`; deep mode
+defaults to `EMPIRICO_DEEP_EVIDENCE_PROVIDER_MODE=web`. Use `crawl` globally
+only when the deployment should refuse article-database fallback results.
+
+`EMPIRICO_ENABLE_EVIDENCE_RESCUE=true` keeps answers from dead-ending: if the
+normal quick/deep retrieval path returns no usable citations, Empirico retries
+with the broader web provider mix before asking the model to answer without
+citations if no verified source URLs are available.
+
+`EMPIRICO_EVIDENCE_COUNTRY_CODE=UG` is the default for the Uganda deployment.
+It prioritizes Uganda official and national sources while still allowing global
+fallback evidence. Set it to `GLOBAL` only for deliberately global/open
+retrieval.
+
+`EMPIRICO_SOURCE_PREFERENCE_HINTS` and `EMPIRICO_SOURCE_PREFERENCE_TERMS`
+default to a Uganda-first source hierarchy: Ministry of Health Knowledge
+Management Portal, Uganda Clinical Guidelines, NDA, UNIPH, CPHL/NHLDS,
+specialist Ugandan institutions, WHO AFRO/East Africa, then global fallback
+sources. Explicit user requests for another jurisdiction can override this.
 
 Provider credentials for PubMed/NCBI, Semantic Scholar, official APIs, and
 Crawl4AI belong in the Empirico app runtime because this app calls those
