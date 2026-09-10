@@ -3626,3 +3626,124 @@ def test_static_crawl_searches_the_source_before_falling_back_to_pinned_seeds(mo
     # asked what it holds on this question first.
     assert fetched
     assert fetched[0] == ["https://example.org/guidance/diabetes"]
+
+
+def test_required_rescue_ignores_latency_budget_and_provider_mode(monkeypatch):
+    calls: list[dict] = []
+
+    async def fake_search(**kwargs):
+        calls.append(kwargs)
+        return {"items": [], "provider_errors": [], "timings_ms": {}}
+
+    monkeypatch.setattr(
+        "healthnavi.services.evidence_retrieval_adapter._search_retrieval_queries",
+        fake_search,
+    )
+    monkeypatch.setenv("EMPIRICO_EVIDENCE_PROVIDER_MODE", "web")
+
+    # Budget already spent, and the mode/country combination the optional rescue
+    # declines to retry. Neither may stop a retry when the answer has no sources.
+    spent_budget = time.perf_counter() - 5
+    optional = asyncio.run(
+        _rescue_evidence_search(
+            queries=("severe malnutrition treatment",),
+            top_k=8,
+            country_code="GLOBAL",
+            deep_search=False,
+            answer_top_k=4,
+            latency_deadline=spent_budget,
+        )
+    )
+    assert optional["items"] == []
+    assert not calls
+
+    asyncio.run(
+        _rescue_evidence_search(
+            queries=("severe malnutrition treatment",),
+            top_k=8,
+            country_code="GLOBAL",
+            deep_search=False,
+            answer_top_k=4,
+            latency_deadline=spent_budget,
+            required=True,
+        )
+    )
+    assert len(calls) == 1
+    assert calls[0]["provider_mode"] == "web"
+    assert calls[0]["country_code"] is None
+    # Full settings, not the truncated ones a latency budget would impose.
+    assert calls[0]["search_settings"] is None
+
+
+def test_zero_citation_answer_triggers_a_required_rescue(monkeypatch):
+    rescue_flags: list[bool] = []
+
+    async def fake_search_retrieval_queries(**kwargs):
+        return {"items": [], "provider_errors": [], "timings_ms": {}}
+
+    async def fake_rescue(**kwargs):
+        rescue_flags.append(bool(kwargs.get("required")))
+        return {"items": [], "provider_errors": [], "timings_ms": {}}
+
+    async def fake_post_model_response(payload, timeout_seconds):
+        return {"answer": "Give ORS and zinc.", "diagnosis_complete": True}
+
+    monkeypatch.setenv("EMPIRICO_FOLLOWUP_MODE", "off")
+    monkeypatch.setenv("EMPIRICO_QUICK_ENABLE_RETRIEVAL_PLANNER", "false")
+    monkeypatch.setattr(
+        "healthnavi.services.evidence_retrieval_adapter._search_retrieval_queries",
+        fake_search_retrieval_queries,
+    )
+    monkeypatch.setattr(
+        "healthnavi.services.evidence_retrieval_adapter._rescue_evidence_search",
+        fake_rescue,
+    )
+    monkeypatch.setattr(
+        "healthnavi.services.evidence_retrieval_adapter._post_model_response",
+        fake_post_model_response,
+    )
+
+    answer, _, _, _ = asyncio.run(
+        generate_model_service_response(
+            query="How is acute watery diarrhoea treated in a child?",
+            chat_history="",
+            patient_data="",
+            deep_search=False,
+        )
+    )
+
+    assert rescue_flags == [True]
+    # Nothing anywhere to cite, so the answer still goes out, but it never sends
+    # the reader off to read a guideline instead.
+    assert "check current national" not in answer.lower()
+    assert "consult" not in answer.lower()
+
+
+def test_a_single_shared_word_is_not_a_topic_match():
+    from healthnavi.services.evidence_retrieval_adapter import _keep_on_topic_passages
+
+    otitis = {
+        "source": "crawl4ai",
+        "title": "Acute otitis media (AOM) | MSF Medical Guidelines",
+        "url": "https://medicalguidelines.msf.org/en/viewport/CG/english/acute-otitis-media.html",
+        "snippet": "Acute otitis media in children: amoxicillin 80 mg/kg/day in 2 divided doses for 5 days.",
+    }
+    malnutrition = {
+        "source": "crawl4ai",
+        "title": "Management of severe acute malnutrition",
+        "url": "https://library.health.go.ug/sam.pdf",
+        "snippet": "Children with severe acute malnutrition and complications are admitted for inpatient care.",
+    }
+
+    kept = _keep_on_topic_passages([otitis, malnutrition], "severe acute malnutrition")
+
+    # "acute" alone is not the subject, and citing otitis guidance for a
+    # malnutrition question is worse than citing nothing.
+    assert kept == [malnutrition]
+
+    # A one-word subject still matches on that word.
+    assert _keep_on_topic_passages([otitis], "otitis") == [otitis]
+
+    # An empty result is correct: it sends the pipeline back to retrieval rather
+    # than letting the answer cite otitis guidance for a malnutrition question.
+    assert _keep_on_topic_passages([otitis], "severe acute malnutrition") == []

@@ -341,6 +341,8 @@ async def generate_model_service_response(
     citations = _citations_from_evidence(evidence)
 
     if not citations:
+        # An answer without references is the one outcome we do not accept, so
+        # this retry ignores the latency budget and the provider mode.
         rescue_result = await _rescue_evidence_search(
             queries=retrieval_queries,
             top_k=search_top_k,
@@ -349,6 +351,7 @@ async def generate_model_service_response(
             answer_top_k=answer_top_k,
             latency_deadline=quick_latency_deadline,
             topic_hint=topic_hint,
+            required=True,
         )
         rescue_items = list(rescue_result.get("items") or [])
         if rescue_items:
@@ -365,8 +368,9 @@ async def generate_model_service_response(
             citations = _citations_from_evidence(evidence)
 
     if not citations:
-        logger.warning(
-            "No web/crawl evidence survived filtering after rescue: country_code=%s raw_items=%d provider_errors=%s",
+        logger.error(
+            "Answering without references, every retrieval path returned nothing: "
+            "country_code=%s raw_items=%d provider_errors=%s",
             country_code or "global",
             len(raw_evidence),
             provider_errors,
@@ -1084,12 +1088,24 @@ async def _rescue_evidence_search(
     answer_top_k: int,
     latency_deadline: float | None = None,
     topic_hint: str | None = None,
+    required: bool = False,
 ) -> dict[str, Any]:
-    if not _evidence_rescue_enabled():
+    """Retry retrieval more broadly.
+
+    ``required`` means the answer currently has no references at all. Every
+    reason to hold back - the latency budget, the deployment's provider mode,
+    the country filter - is worth less than a citation, because an uncited
+    answer is the one outcome a clinician cannot check.
+    """
+    if not required and not _evidence_rescue_enabled():
         return {"items": [], "provider_errors": [], "timings_ms": {}}
     current_mode = _local_evidence_provider_mode(deep_search)
-    broad_country = _broad_evidence_country_code(country_code)
-    if current_mode == "web" and (country_code or "").upper() in {"", "GLOBAL"}:
+    broad_country = None if required else _broad_evidence_country_code(country_code)
+    if (
+        not required
+        and current_mode == "web"
+        and (country_code or "").upper() in {"", "GLOBAL"}
+    ):
         return {"items": [], "provider_errors": [], "timings_ms": {}}
     rescue_queries = _normalized_retrieval_queries(
         list(queries),
@@ -1097,16 +1113,21 @@ async def _rescue_evidence_search(
     )
     if not rescue_queries:
         return {"items": [], "provider_errors": [], "timings_ms": {}}
-    search_settings = _rescue_search_settings_for_latency_budget(
-        deep_search=deep_search,
-        latency_deadline=latency_deadline,
+    search_settings = (
+        None
+        if required
+        else _rescue_search_settings_for_latency_budget(
+            deep_search=deep_search,
+            latency_deadline=latency_deadline,
+        )
     )
-    if latency_deadline is not None and search_settings is None:
+    if not required and latency_deadline is not None and search_settings is None:
         logger.info("Skipping evidence rescue because the quick latency budget is exhausted")
         return {"items": [], "provider_errors": [], "timings_ms": {"skipped": "latency_budget"}}
     logger.info(
-        "Running evidence rescue search: mode=web country=%s queries=%s",
-        broad_country,
+        "Running evidence rescue search: mode=web country=%s required=%s queries=%s",
+        broad_country or "global",
+        required,
         rescue_queries,
     )
     return await _search_retrieval_queries(
@@ -2172,17 +2193,22 @@ def _keep_on_topic_passages(
     and words like "treatment" or "adult" appear in every clinical document, so
     a guideline on another condition passes. The subject identified upstream is
     the one term that must actually be present. Falls back to the unfiltered set
-    rather than leaving the answer with nothing.
+    Returning nothing is valid: it triggers the mandatory retry,
+    which searches wider. Keeping off-topic passages so the answer has something
+    to cite is how otitis media guidance gets cited for septic shock.
     """
     topic_terms = _normalized_query_terms(topic_hint) if topic_hint else ()
     if not topic_terms or not items:
         return items
-    on_topic = [
+    # One shared word is not a topic: "acute otitis media" and "severe acute
+    # malnutrition" meet only at "acute". A subject named in several words has
+    # to be matched by several, the same bar source selection uses.
+    required = 2 if len(topic_terms) > 1 else 1
+    return [
         item
         for item in items
-        if _item_query_term_coverage_for_terms(item, topic_terms) >= 1
+        if _item_query_term_coverage_for_terms(item, topic_terms) >= required
     ]
-    return on_topic or items
 
 
 def _readmit_passages_from_relevant_documents(

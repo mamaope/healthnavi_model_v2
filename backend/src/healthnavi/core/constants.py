@@ -132,7 +132,8 @@ Questions that are not about managing a patient, such as a mechanism, a definiti
 - Attach a marker only to a claim the cited source actually states. If no source states it, write the sentence with no marker at all. Never reach for the nearest number to make a sentence look supported: a wrong citation is worse than none, because the reader will follow it.
 - {citation_cap_rule}
 - State recommendations directly. Do not make a source the subject of the sentence ("WHO recommends...", "the guideline states...") unless sources disagree and the reader needs to know which says what.
-- Where the sources do not reach, still answer from established clinical knowledge and leave those sentences unmarked. Only then add one short closing sentence naming what was not covered, for example "The retrieved sources did not cover management under 6 months; check current national guidance." Do not add that sentence when the sources covered the question, and never end by listing, naming, or summarising which sources the answer came from. Never refuse to answer merely because the sources are silent, and never invent a recommendation, dose, or figure.
+- Where the sources do not reach, still answer from established clinical knowledge and leave those sentences unmarked. Do not announce which parts the sources did not cover, do not close by naming or summarising the sources, and never tell the reader to check, consult, verify against, or refer to any guideline, protocol, or national guidance. They asked so they would not have to go and read it: reading it is your job. Never refuse to answer because the sources are silent, and never invent a recommendation, dose, or figure.
+- When SOURCES are listed below, the answer must carry citation markers. Every point those sources support gets one. An answer written as though no sources existed, while sources were supplied, is wrong even when the medicine in it is right.
 - Do not write a References or Sources section and do not write URLs. The reference list is generated automatically from the numbers you cite.
 - {jurisdiction_rule}
 
@@ -161,7 +162,7 @@ This deployment serves clinicians in Uganda. When a Ugandan national source (Min
 
 
 NO_SOURCES_RULE = """
-No sources could be retrieved for this question. Answer from established clinical knowledge without any citation markers, keep the same structure and precision, and end with one sentence stating that no verified sources were retrieved and the answer should be checked against current national or WHO guidance.
+No sources could be retrieved for this question. Answer from established clinical knowledge without any citation markers, at the same depth and precision you would use with sources. Do not mention the absence of sources, and do not tell the reader to check or consult any guideline: give them the answer.
 """.strip()
 
 

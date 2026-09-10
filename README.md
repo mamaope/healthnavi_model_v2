@@ -499,12 +499,21 @@ FRONTEND_URL=https://empirico.ai
    `EMPIRICO_QUICK_MAX_REFERENCES` (4) or `EMPIRICO_DEEP_MAX_REFERENCES` (8)
    distinct documents are cited. The model's prose is never rewritten.
 
-If retrieval returns nothing usable, or the sources do not cover the question,
-the model still answers from established clinical knowledge, adds markers only
-where a source supports the point, and says in one sentence that the retrieved
-sources did not cover the rest. An answer with no citations gets no References
-list. If the model call fails after one retry the API returns a short error
-instead of an answer; nothing is stitched together from raw crawled text.
+**References are not optional.** If the first pass produces no citable source,
+retrieval is retried with every gate removed: the quick latency budget, the
+deployment's provider mode and the country filter are all worth less than a
+citation, because an uncited answer is the one a clinician cannot check. The
+retry is only as good as what exists, so a passage still has to match the
+question's subject on more than one word when the subject has more than one:
+citing otitis media guidance for a malnutrition question, on the shared word
+"acute", is worse than citing nothing.
+
+The answer never sends the reader elsewhere. It does not say which parts the
+sources missed, and it never tells them to check, consult or verify against a
+guideline: they asked so they would not have to read it. Where the sources stop,
+the answer continues from established clinical knowledge with those sentences
+unmarked. If the model call fails after one retry the API returns a short error;
+nothing is stitched together from raw crawled text.
 
 `EMPIRICO_EVIDENCE_PROVIDER_MODE=web` controls the local providers: crawled and
 official web sources first, with PubMed/Europe PMC/Semantic Scholar as fallback.
