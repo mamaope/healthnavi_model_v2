@@ -759,9 +759,14 @@ def _question_topic_hint(question_plan: dict[str, Any]) -> str:
     whichever source happens to list the modifier as a topic.
     """
     condition = _text_from_unknown(question_plan.get("condition")) or ""
-    if condition.strip():
-        return _compact_text(condition, 120)
-    return _compact_text(_text_from_unknown(question_plan.get("clinical_question")) or "", 120)
+    if not condition.strip():
+        # No planner, no condition, no hint. Falling back to the whole question
+        # would be worse than having none: source selection treats a hint as the
+        # subject and drops its safeguard against single-term matches, so the
+        # question's rarest word decides, and that word is as likely to be
+        # "first-line" as "hypertension".
+        return ""
+    return _compact_text(condition, 120)
 
 
 def _fallback_question_plan(query: str) -> dict[str, Any]:

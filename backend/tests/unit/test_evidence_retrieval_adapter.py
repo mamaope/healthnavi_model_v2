@@ -3538,10 +3538,10 @@ def test_question_topic_hint_prefers_the_condition_over_the_whole_question():
     }
     assert _question_topic_hint(plan) == "stage 1 hypertension"
 
-    # Without a condition the question itself is the best available subject.
-    assert _question_topic_hint({"clinical_question": "How does metformin work?"}) == (
-        "How does metformin work?"
-    )
+    # With the planner disabled there is no condition, and no hint: the whole
+    # question as a hint would drop the safeguard that keeps a single generic
+    # word from choosing the source.
+    assert _question_topic_hint({"clinical_question": "How does metformin work?"}) == ""
     assert _question_topic_hint({}) == ""
 
 
