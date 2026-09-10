@@ -291,14 +291,56 @@ def format_reference_line(index: int, citation: dict[str, Any]) -> str:
     return f"{index}. {title}"
 
 
+GENERIC_TITLE_MAX_WORDS = 4
+DOCUMENT_TITLE_MIN_WORDS = 5
+
+
 def reference_display_title(index: int, citation: dict[str, Any]) -> str:
     title = clean_reference_title(str(citation.get("title") or ""))
     url = str(citation.get("url") or "").strip()
     source = str(citation.get("source_label") or "").strip()
     url_title = clean_reference_title(title_from_reference_url(url) or "")
+
     if _title_is_low_quality(title):
-        title = url_title if url_title and not _title_is_low_quality(url_title) else clean_reference_title(source or f"Source {index}")
+        title = (
+            url_title
+            if url_title and not _title_is_low_quality(url_title)
+            else clean_reference_title(source or f"Source {index}")
+        )
+
+    # Crawled pages often carry the site's name rather than the document's, so a
+    # reference reads "WHO Policy Platform" when the file is a national malaria
+    # manual. The path usually holds the real name, but only some paths do, so
+    # this swaps only when the metadata title is short enough to be a site name
+    # and the path yields something long enough to be a document name.
+    # Count the name itself: a trailing ", p. 16" is locator, not title.
+    named_words = re.findall(r"[A-Za-z][A-Za-z'-]{1,}", _strip_page_suffix(title))
+    if len(named_words) <= GENERIC_TITLE_MAX_WORDS:
+        from_path = _document_title_from_path(url)
+        if from_path:
+            title = from_path
     return title or f"Source {index}"
+
+
+def _document_title_from_path(url: str) -> str | None:
+    """A document name recovered from a URL path, or None if the path has none."""
+    raw = title_from_reference_url(url)
+    if not raw:
+        return None
+    words: list[str] = []
+    for word in clean_reference_title(raw).split():
+        # Leading catalogue codes ("UGA CH 33 01") and language tags carry nothing.
+        if not words and (word.isdigit() or (word.isupper() and len(word) <= 4)):
+            continue
+        if word.lower() in {"eng", "en", "fr", "fre", "spa", "final", "pdf", "version"}:
+            continue
+        # Trailing document ids carry nothing a reader can use.
+        if word.isdigit() and len(word) >= 5:
+            continue
+        words.append(word if len(word) <= 4 or not word.isupper() else word.title())
+    if len(words) < DOCUMENT_TITLE_MIN_WORDS:
+        return None
+    return " ".join(words)[:160].strip()
 
 
 def clean_reference_title(title: str) -> str:

@@ -13,6 +13,7 @@ from healthnavi.evidence_retrieval.providers import crawl4ai_provider as crawl_p
 from healthnavi.evidence_retrieval.providers.crawl4ai_provider import (
     Crawl4AIProvider,
     CrawlSource,
+    CrawlTarget,
     _best_static_item_for_query,
     _best_snippet,
     _content_matches_core_query,
@@ -1182,11 +1183,18 @@ def test_explicit_retrieval_query_country_overrides_uganda_default():
     assert _country_code_for_retrieval_query("GLOBAL", "malaria treatment in Uganda") == "GLOBAL"
 
 
-def test_local_evidence_provider_mode_defaults_by_search_depth(monkeypatch):
+def test_local_evidence_provider_mode_queries_every_provider_by_default(monkeypatch):
     monkeypatch.delenv("EMPIRICO_EVIDENCE_PROVIDER_MODE", raising=False)
     monkeypatch.delenv("EMPIRICO_QUICK_EVIDENCE_PROVIDER_MODE", raising=False)
     monkeypatch.delenv("EMPIRICO_DEEP_EVIDENCE_PROVIDER_MODE", raising=False)
 
+    # Providers run concurrently under one budget, so quick search queries them
+    # all: crawling alone leaves an answer with no references when it misses.
+    assert _local_evidence_provider_mode(False) == "web"
+    assert _local_evidence_provider_mode(True) == "web"
+
+    # A deployment can still refuse article-database results.
+    monkeypatch.setenv("EMPIRICO_QUICK_EVIDENCE_PROVIDER_MODE", "crawl")
     assert _local_evidence_provider_mode(False) == "crawl"
     assert _local_evidence_provider_mode(True) == "web"
 
@@ -1270,7 +1278,7 @@ def test_direct_retrieval_preserves_explicit_other_jurisdiction(monkeypatch):
     assert queries == (question,)
 
 
-def test_quick_defaults_use_uganda_crawl_and_planner(monkeypatch):
+def test_quick_defaults_use_uganda_every_provider_and_planner(monkeypatch):
     for key in (
         "EMPIRICO_EVIDENCE_PROVIDER_MODE",
         "EMPIRICO_QUICK_EVIDENCE_PROVIDER_MODE",
@@ -1279,7 +1287,7 @@ def test_quick_defaults_use_uganda_crawl_and_planner(monkeypatch):
     ):
         monkeypatch.delenv(key, raising=False)
 
-    assert _local_evidence_provider_mode(False) == "crawl"
+    assert _local_evidence_provider_mode(False) == "web"
     assert _retrieval_planner_enabled(False) is True
     assert _evidence_country_code_for_search() == "UG"
 
@@ -3518,3 +3526,103 @@ def test_contentless_filter_never_empties_the_candidate_set():
         source_preference_terms=(),
         deep_search=False,
     ) == thin_only
+
+
+def test_question_topic_hint_prefers_the_condition_over_the_whole_question():
+    from healthnavi.services.evidence_retrieval_adapter import _question_topic_hint
+
+    plan = {
+        "clinical_question": "What is the first-line antihypertensive for stage 1 hypertension?",
+        "condition": "stage 1 hypertension",
+        "population": "adults",
+    }
+    assert _question_topic_hint(plan) == "stage 1 hypertension"
+
+    # Without a condition the question itself is the best available subject.
+    assert _question_topic_hint({"clinical_question": "How does metformin work?"}) == (
+        "How does metformin work?"
+    )
+    assert _question_topic_hint({}) == ""
+
+
+def test_topic_hint_reaches_the_source_that_indexes_the_condition():
+    settings = EvidenceRetrievalSettings(crawl_max_sources=4)
+    query = "What is the treatment for newly diagnosed type 2 diabetes in an adult?"
+
+    # Without a hint the query's own rarest words are as likely to be modifiers as
+    # the subject, so only the broad catalogue entries clear the match gate.
+    provider = Crawl4AIProvider(settings)
+    without_hint = provider._select_sources(query, provider.sources)
+    assert not any(
+        _catalog_source_mentions(source, "diabetes") for source in without_hint
+    )
+
+    hinted = Crawl4AIProvider(settings, topic_hint="type 2 diabetes")
+    with_hint = hinted._select_sources(query, hinted.sources)
+    assert any(_catalog_source_mentions(source, "diabetes") for source in with_hint)
+
+
+def test_source_selection_spends_the_budget_on_topic_and_on_jurisdiction():
+    settings = EvidenceRetrievalSettings(crawl_max_sources=4)
+    provider = Crawl4AIProvider(settings, country_code="UG", topic_hint="type 2 diabetes")
+
+    selected = provider._select_sources(
+        "What is the treatment for newly diagnosed type 2 diabetes in an adult?",
+        provider.sources,
+    )
+
+    assert len(selected) == 4
+    # A source that indexes the condition is reached, and so are the national
+    # portals that carry local guidance. Either group alone leaves a gap.
+    assert any(_catalog_source_mentions(source, "diabetes") for source in selected)
+    assert any(_catalog_source_is_uganda(source) for source in selected)
+
+
+def test_static_crawl_searches_the_source_before_falling_back_to_pinned_seeds(monkeypatch):
+    fetched: list[list[str]] = []
+
+    source = CrawlSource(
+        name="General guidance body",
+        publisher="Body",
+        domains=("example.org",),
+        topics=("guideline", "diabetes", "hypertension"),
+        priority=1.0,
+        seed_urls=("https://example.org/guidance/ng136",),
+        search_urls=("https://example.org/search?q={query}",),
+    )
+    settings = EvidenceRetrievalSettings(
+        crawl_allowed_domains=["example.org"],
+        crawl_max_pages=6,
+    )
+    provider = Crawl4AIProvider(settings, sources=[source])
+
+    searched = CrawlTarget(
+        url="https://example.org/guidance/diabetes",
+        title_hint="Diabetes",
+        publisher="Body",
+        source_name=source.name,
+    )
+    monkeypatch.setattr(
+        Crawl4AIProvider,
+        "_discover_static_search_targets",
+        lambda self, query, sources, timeout: [searched],
+    )
+    monkeypatch.setattr(
+        crawl_provider_module,
+        "_fetch_static_targets",
+        lambda query, targets, timeout, settings, focus_terms, deadline: (
+            fetched.append([target.url for target in targets]) or []
+        ),
+    )
+
+    provider._static_seed_items(
+        "treatment for newly diagnosed type 2 diabetes",
+        [source],
+        max_results=4,
+        deadline=time.perf_counter() + 30,
+    )
+
+    # A pinned seed answers every query with the same page, so the source is
+    # asked what it holds on this question first.
+    assert fetched
+    assert fetched[0] == ["https://example.org/guidance/diabetes"]

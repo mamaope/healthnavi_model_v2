@@ -38,10 +38,12 @@ class EvidenceSearchService:
         providers: Sequence[BaseEvidenceProvider] | None = None,
         country_code: str | None = None,
         provider_mode: str = "default",
+        topic_hint: str | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.country_code = country_code or self.settings.deployment_country
         self.provider_mode = _normalize_provider_mode(provider_mode)
+        self.topic_hint = topic_hint
         self.providers = list(providers) if providers is not None else self._default_providers()
 
     def search(self, question: str, top_k: int = 8) -> SearchResult:
@@ -138,7 +140,13 @@ class EvidenceSearchService:
         if self.settings.enable_official_health_apis:
             providers.append(OfficialHealthAPIProvider(self.settings))
         if self.settings.enable_crawl4ai:
-            providers.append(Crawl4AIProvider(self.settings, country_code=self.country_code))
+            providers.append(
+                Crawl4AIProvider(
+                    self.settings,
+                    country_code=self.country_code,
+                    topic_hint=self.topic_hint,
+                )
+            )
         return providers
 
     def _effective_retrieval_timeout(self) -> float:

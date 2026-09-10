@@ -317,6 +317,7 @@ async def generate_model_service_response(
         configured_source_preference_terms,
     )
 
+    topic_hint = _question_topic_hint(question_plan)
     evidence_search_result = await _search_retrieval_queries(
         queries=retrieval_queries,
         top_k=search_top_k,
@@ -325,6 +326,7 @@ async def generate_model_service_response(
         source_preference_terms=source_preference_terms,
         answer_top_k=answer_top_k,
         coverage_required=requires_multi_branch_coverage,
+        topic_hint=topic_hint,
     )
     provider_errors = list(evidence_search_result.get("provider_errors") or [])
     evidence_timings = dict(evidence_search_result.get("timings_ms") or {})
@@ -334,6 +336,7 @@ async def generate_model_service_response(
         query=query,
         source_preference_terms=source_preference_terms,
         deep_search=deep_search,
+        topic_hint=topic_hint,
     )
     citations = _citations_from_evidence(evidence)
 
@@ -345,6 +348,7 @@ async def generate_model_service_response(
             deep_search=deep_search,
             answer_top_k=answer_top_k,
             latency_deadline=quick_latency_deadline,
+            topic_hint=topic_hint,
         )
         rescue_items = list(rescue_result.get("items") or [])
         if rescue_items:
@@ -356,6 +360,7 @@ async def generate_model_service_response(
                 query=query,
                 source_preference_terms=source_preference_terms,
                 deep_search=deep_search,
+                topic_hint=topic_hint,
             )
             citations = _citations_from_evidence(evidence)
 
@@ -745,6 +750,20 @@ Previous conversation summary:
 """.strip()
 
 
+def _question_topic_hint(question_plan: dict[str, Any]) -> str:
+    """What the question is about, for choosing which sources to crawl.
+
+    The planner already separates the condition from the population and the
+    requested output. A raw query string cannot: its rarest word is as likely to
+    be "first-line" as "hypertension", and matching on that sends the crawler to
+    whichever source happens to list the modifier as a topic.
+    """
+    condition = _text_from_unknown(question_plan.get("condition")) or ""
+    if condition.strip():
+        return _compact_text(condition, 120)
+    return _compact_text(_text_from_unknown(question_plan.get("clinical_question")) or "", 120)
+
+
 def _fallback_question_plan(query: str) -> dict[str, Any]:
     return {
         "clinical_question": " ".join(query.split()),
@@ -928,6 +947,7 @@ async def _search_retrieval_queries(
     answer_top_k: int | None = None,
     search_settings: EvidenceRetrievalSettings | None = None,
     coverage_required: bool = False,
+    topic_hint: str | None = None,
 ) -> dict[str, Any]:
     merged_items: list[dict[str, Any]] = []
     provider_errors: list[str] = []
@@ -944,6 +964,7 @@ async def _search_retrieval_queries(
                 deep_search=deep_search,
                 provider_mode=provider_mode,
                 search_settings=search_settings,
+                topic_hint=topic_hint,
             )
         return index, retrieval_query, result
 
@@ -1057,6 +1078,7 @@ async def _rescue_evidence_search(
     deep_search: bool,
     answer_top_k: int,
     latency_deadline: float | None = None,
+    topic_hint: str | None = None,
 ) -> dict[str, Any]:
     if not _evidence_rescue_enabled():
         return {"items": [], "provider_errors": [], "timings_ms": {}}
@@ -1089,6 +1111,7 @@ async def _rescue_evidence_search(
         deep_search=deep_search,
         provider_mode="web",
         search_settings=search_settings,
+        topic_hint=topic_hint,
     )
 
 
@@ -1994,6 +2017,7 @@ def _answer_candidates(
     query: str,
     source_preference_terms: tuple[str, ...],
     deep_search: bool,
+    topic_hint: str = "",
 ) -> list[dict[str, Any]]:
     """Choose the passages the answer model reads, without a second model call.
 
@@ -2011,10 +2035,15 @@ def _answer_candidates(
     filtered = _readmit_passages_from_relevant_documents(
         filtered,
         raw_evidence,
+        query=query,
         source_preference_terms=source_preference_terms,
     )
+    filtered = _keep_on_topic_passages(filtered, topic_hint)
     substantive = [item for item in filtered if _passage_is_substantive(item)]
-    ordered = sorted(substantive or filtered, key=_candidate_order_key)
+    ordered = sorted(
+        substantive or filtered,
+        key=lambda item: _candidate_order_key(item, source_preference_terms),
+    )
 
     limit = _context_sources_limit(deep_search)
     document_limit = _context_documents_limit(deep_search)
@@ -2128,24 +2157,55 @@ def _passage_is_substantive(item: dict[str, Any]) -> bool:
     return bool(re.search(r"[.!?](?:\s|$)", text) or re.search(r"(?:^|\s)[-•*\u2022]\s", text))
 
 
+def _keep_on_topic_passages(
+    items: list[dict[str, Any]],
+    topic_hint: str,
+) -> list[dict[str, Any]]:
+    """Drop passages that do not mention what the question is about.
+
+    Per-passage relevance is otherwise judged on any two words of the question,
+    and words like "treatment" or "adult" appear in every clinical document, so
+    a guideline on another condition passes. The subject identified upstream is
+    the one term that must actually be present. Falls back to the unfiltered set
+    rather than leaving the answer with nothing.
+    """
+    topic_terms = _normalized_query_terms(topic_hint) if topic_hint else ()
+    if not topic_terms or not items:
+        return items
+    on_topic = [
+        item
+        for item in items
+        if _item_query_term_coverage_for_terms(item, topic_terms) >= 1
+    ]
+    return on_topic or items
+
+
 def _readmit_passages_from_relevant_documents(
     accepted: list[dict[str, Any]],
     raw_evidence: list[dict[str, Any]],
     *,
+    query: str,
     source_preference_terms: tuple[str, ...],
 ) -> list[dict[str, Any]]:
     """Let other passages of an already-relevant document back into the pool.
 
     Relevance is judged per passage on the words it repeats, but the page of a
     guideline that carries the dose often does not repeat the condition name;
-    the chapter heading did that. Once any passage of a document has qualified,
-    the document is on topic, so its remaining passages are re-admitted and left
-    for ranking and the model to judge. Structural exclusions still apply: this
-    passes an empty query so only the query-dependent checks are skipped.
+    the chapter heading did that. Re-admission needs the question to name the
+    document, through its title or URL, rather than merely one passage matching:
+    without that a guideline on another disease pulls its whole contents in on
+    the strength of a single incidental mention. Structural exclusions still
+    apply, since this passes an empty query and skips only the query checks.
     """
     if not accepted:
         return accepted
-    relevant_documents = {_evidence_source_identity(item) for item in accepted}
+    relevant_documents = {
+        _evidence_source_identity(item)
+        for item in accepted
+        if _item_title_url_specificity(item, query) >= 1
+    }
+    if not relevant_documents:
+        return accepted
     structurally_valid = _filter_evidence_items(
         raw_evidence,
         query="",
@@ -2159,7 +2219,23 @@ def _readmit_passages_from_relevant_documents(
     return _merge_evidence_items(accepted, siblings)
 
 
-def _candidate_order_key(item: dict[str, Any]) -> tuple[int, int, int, float, float]:
+def _candidate_order_key(
+    item: dict[str, Any],
+    source_preference_terms: tuple[str, ...] = (),
+) -> tuple[int, int, float, int, int, float]:
+    """Order candidates by usefulness, then jurisdiction, then recency.
+
+    The sequence matters and each step earns its place:
+
+    1. Source authority, so guidance outranks an article database.
+    2. Evidence type, so a guideline outranks a review.
+    3. Whether the passage states doses, thresholds or durations. An older
+       document that gives the regimen beats a newer page that only names it.
+    4. Jurisdiction: between two equally useful passages the local one wins,
+       even when the other is newer, which is what a clinician here wants.
+    5. Recency, which then decides between editions of comparable guidance.
+    6. Retrieval score.
+    """
     policy_tier, type_tier = evidence_policy_sort_key(
         source=_source_key(item),
         evidence_type=str(item.get("evidence_type") or ""),
@@ -2169,10 +2245,46 @@ def _candidate_order_key(item: dict[str, Any]) -> tuple[int, int, int, float, fl
     return (
         policy_tier,
         type_tier,
-        _recency_band(item),
         -_candidate_specificity(item),
+        _jurisdiction_band(item, source_preference_terms),
+        _recency_band(item),
         -_float_or_zero(item.get("final_score")),
     )
+
+
+def _jurisdiction_band(
+    item: dict[str, Any],
+    source_preference_terms: tuple[str, ...],
+) -> int:
+    """0 when the document itself belongs to the preferred jurisdiction.
+
+    Matched against the document's identity only, never its body text. A study
+    that merely mentions Kampala is not Ugandan guidance, while a national
+    manual is, whatever server happens to host the PDF.
+    """
+    if not source_preference_terms:
+        return 1
+    local_terms = LOCAL_SOURCE_PREFERENCE_TERMS.intersection(source_preference_terms)
+    if not local_terms:
+        return 1
+    raw = item.get("raw") if isinstance(item.get("raw"), dict) else {}
+    identity = _normalize_search_text(
+        " ".join(
+            str(part)
+            for part in (
+                item.get("title"),
+                item.get("journal_or_publisher"),
+                item.get("url"),
+                item.get("full_text_url"),
+                raw.get("document_title"),
+                raw.get("publisher"),
+                raw.get("source_name"),
+                raw.get("source_url"),
+            )
+            if part
+        )
+    )
+    return 0 if any(term in identity for term in local_terms) else 1
 
 
 def _candidate_specificity(item: dict[str, Any]) -> float:
@@ -3276,6 +3388,7 @@ async def _search_local_evidence(
     deep_search: bool,
     provider_mode: str | None = None,
     search_settings: EvidenceRetrievalSettings | None = None,
+    topic_hint: str | None = None,
 ) -> dict[str, Any]:
     return await asyncio.to_thread(
         _run_local_evidence_search,
@@ -3285,6 +3398,7 @@ async def _search_local_evidence(
         provider_mode or _local_evidence_provider_mode(deep_search),
         deep_search,
         search_settings,
+        topic_hint,
     )
 
 
@@ -3295,6 +3409,7 @@ def _run_local_evidence_search(
     provider_mode: str,
     deep_search: bool,
     search_settings: EvidenceRetrievalSettings | None = None,
+    topic_hint: str | None = None,
 ) -> dict[str, Any]:
     effective_country_code = None if (country_code or "").upper() == "GLOBAL" else country_code
     try:
@@ -3302,6 +3417,7 @@ def _run_local_evidence_search(
             settings=search_settings or _search_settings_for_mode(deep_search),
             country_code=effective_country_code,
             provider_mode=provider_mode,
+            topic_hint=topic_hint,
         ).search(query, top_k=top_k)
     except Exception as exc:
         logger.error("Local evidence retrieval failed: %s", exc, exc_info=True)
@@ -3365,7 +3481,12 @@ def _local_evidence_provider_mode(deep_search: bool) -> str:
         if deep_search
         else "EMPIRICO_QUICK_EVIDENCE_PROVIDER_MODE"
     )
-    default = "web" if deep_search else "crawl"
+    # Both modes query every provider. The providers run concurrently behind one
+    # retrieval budget, so adding the article databases to quick search costs no
+    # wall-clock time, and it removes the failure where a slow or unlucky crawl
+    # left an answer with no references at all. Ranking, not availability, is
+    # what keeps guidance above article databases.
+    default = "web"
     raw = (
         os.getenv(mode_key)
         or os.getenv("EMPIRICO_EVIDENCE_PROVIDER_MODE")

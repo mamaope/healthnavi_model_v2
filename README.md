@@ -380,8 +380,6 @@ EMPIRICO_EVIDENCE_COUNTRY_CODE=UG
 EMPIRICO_SOURCE_PREFERENCE_HINTS=Uganda Ministry of Health Knowledge Management Portal Uganda Clinical Guidelines health.go.ug library.health.go.ug NDA UNIPH CPHL NHLDS Uganda WHO AFRO East Africa Africa
 EMPIRICO_SOURCE_PREFERENCE_TERMS=uganda,ugandan,health.go.ug,library.health.go.ug,nda.or.ug,uniph.go.ug,cphl.go.ug,qadash.cphl.go.ug,uci.or.ug,ulii.org,idi.mak.ac.ug,elearning.idi.co.ug,uganda clinical guidelines,ministry of health uganda,national drug authority uganda,uganda national institute of public health,uganda cancer institute,who afro,afro.who.int,east africa,africa
 EMPIRICO_EVIDENCE_PROVIDER_MODE=web
-EMPIRICO_QUICK_EVIDENCE_PROVIDER_MODE=crawl
-EMPIRICO_DEEP_EVIDENCE_PROVIDER_MODE=web
 EMPIRICO_ENABLE_EVIDENCE_RESCUE=true
 EMPIRICO_QUICK_RETRIEVAL_EARLY_STOP=true
 EMPIRICO_QUICK_RETRIEVAL_EARLY_STOP_WAIT_SECONDS=1.5
@@ -431,9 +429,24 @@ FRONTEND_URL=https://empirico.ai
 
 1. **Plan** (one small model call): the question is turned into 1-4 retrieval
    queries that keep the user's qualifiers (population, place, drug, setting).
-2. **Retrieve** locally: crawled guideline pages/PDFs (Uganda MoH, NDA, WHO,
-   CDC, NICE, ...), official health APIs, and in deep mode PubMed / Europe PMC /
-   Semantic Scholar. Quick mode is bounded by `EMPIRICO_QUICK_LATENCY_TARGET_SECONDS`.
+   The plan also names the **condition**, which is what the question is about.
+   A query string alone cannot say which of its words is the subject: in the
+   catalogue "first-line" is rarer than "hypertension", so matching on raw
+   terms sent a hypertension question to the tuberculosis source. The condition
+   is passed to retrieval as a topic hint and decides which sources are
+   crawled and which passages survive relevance filtering.
+2. **Retrieve** locally, all providers concurrently: crawled guideline
+   pages/PDFs (Uganda MoH, NDA, WHO, CDC, NICE, ...), official health APIs,
+   PubMed, Europe PMC and Semantic Scholar, bounded by
+   `EMPIRICO_QUICK_LATENCY_TARGET_SECONDS`. Two rules govern the crawl:
+   - The budget is split between sources that index the condition and the broad
+     national portals, alternating, so neither group can take every slot. Before
+     this, four generic portals were crawled for a diabetes question and no
+     diabetes source was visited.
+   - Each source is **searched for the question** before its pinned seed URLs
+     are fetched. A seed is a document someone pinned once, so it answers every
+     query with the same page: the NICE entry pins the hypertension guideline,
+     and a diabetes question was crawling it. Seeds now fill leftover budget.
 3. **Select candidates** deterministically, with no model call and no
    condition-specific rules:
    - Off-topic pages, statistics indicators, cover pages, running heads and
@@ -443,9 +456,17 @@ FRONTEND_URL=https://empirico.ai
      passages are re-admitted. The page carrying the dose often does not repeat
      the condition name; the chapter heading did that.
    - Passages are ordered by source authority (Uganda national > WHO and other
-     primary guidance > article databases), evidence type, how recent the
-     document is, whether it states doses, thresholds or durations rather than
-     only naming a pathway, then retrieval score.
+     primary guidance > article databases), then evidence type, then whether the
+     passage states doses, thresholds or durations rather than only naming a
+     pathway, then jurisdiction, then how recent the document is, then retrieval
+     score. That order is the trade-off: an older national manual that gives the
+     regimen outranks a newer page that only names it, a local document outranks
+     a foreign one of equal usefulness even when the foreign one is newer, and
+     recency then decides between comparable editions. Jurisdiction is matched
+     on the document's own title, publisher and URL, never on its body text, so
+     a study that merely mentions Kampala is not treated as national guidance.
+   - A reference labelled with a site name rather than a document name is
+     relabelled from the URL path when the path names the document.
    - The best passage of each document is taken before a second from any, and
      further passages are chosen by maximal marginal relevance so one guideline
      does not fill every slot with the same viewpoint.
@@ -487,7 +508,7 @@ instead of an answer; nothing is stitched together from raw crawled text.
 
 `EMPIRICO_EVIDENCE_PROVIDER_MODE=web` controls the local providers: crawled and
 official web sources first, with PubMed/Europe PMC/Semantic Scholar as fallback.
-Quick mode defaults to `EMPIRICO_QUICK_EVIDENCE_PROVIDER_MODE=crawl`; deep mode
+Quick mode defaults to `EMPIRICO_QUICK_EVIDENCE_PROVIDER_MODE=web`; deep mode
 defaults to `EMPIRICO_DEEP_EVIDENCE_PROVIDER_MODE=web`. Use `crawl` globally
 only when the deployment should refuse article-database fallback results.
 

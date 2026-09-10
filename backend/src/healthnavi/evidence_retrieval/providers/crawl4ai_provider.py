@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+from itertools import zip_longest
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from dataclasses import dataclass
@@ -121,10 +122,16 @@ class Crawl4AIProvider(BaseEvidenceProvider):
         settings: EvidenceRetrievalSettings,
         sources: list[CrawlSource] | None = None,
         country_code: str | None = None,
+        topic_hint: str | None = None,
     ) -> None:
         super().__init__(settings)
         self.sources = sources or load_crawl_sources(settings)
         self.country_code = _normalize_country_code(country_code or settings.deployment_country)
+        # What the question is actually about, as identified upstream. A query
+        # string alone cannot say which of its words is the subject: "first-line"
+        # is rarer in the catalogue than "hypertension", so matching on raw terms
+        # sends a hypertension question to the tuberculosis source.
+        self.topic_hint = (topic_hint or "").strip()
 
     def search(self, query: str, max_results: int) -> list[EvidenceItem]:
         if not self.settings.enable_crawl4ai:
@@ -205,6 +212,7 @@ class Crawl4AIProvider(BaseEvidenceProvider):
         eligible_sources = eligible_sources if eligible_sources is not None else self._eligible_sources()
         selection_terms = _source_selection_terms(query, eligible_sources)
         query_terms = _core_query_terms(query)
+        topic_terms = _meaningful_query_terms(self.topic_hint) if self.topic_hint else set()
         query_countries = _query_country_codes(query)
         preferred_country = _source_preference_country_for_query(query, self.country_code)
         selection_query = query
@@ -214,9 +222,12 @@ class Crawl4AIProvider(BaseEvidenceProvider):
             if query_countries and source_countries and source_countries.isdisjoint(query_countries):
                 continue
             source_match_terms = (
-                query_terms
-                if query_countries and source_countries
-                else selection_terms or query_terms
+                topic_terms
+                or (
+                    query_terms
+                    if query_countries and source_countries
+                    else selection_terms or query_terms
+                )
             )
             topic_text = " ".join(
                 (
@@ -230,10 +241,15 @@ class Crawl4AIProvider(BaseEvidenceProvider):
             if match_count <= 0 and not _source_is_catalog_broad(source):
                 continue
             if (
-                len(source_match_terms) > 1
+                not topic_terms
+                and len(source_match_terms) > 1
                 and match_count < 2
                 and not _source_is_catalog_broad(source)
             ):
+                # Without a topic hint, matching one word of a multi-word query is
+                # weak evidence: a hypertension question matches the tuberculosis
+                # source on "first-line" alone. A hint is already the subject
+                # itself, so one match of it is the strongest signal there is.
                 continue
             topic_signal = _source_topic_signal(source_match_terms, source)
             country_bonus = _source_country_preference_bonus(source, preferred_country)
@@ -249,7 +265,11 @@ class Crawl4AIProvider(BaseEvidenceProvider):
             scored.append((score, source))
 
         scored.sort(key=lambda item: item[0], reverse=True)
-        selected = [source for _, source in scored]
+        selected = _interleave_topical_sources(
+            [source for _, source in scored],
+            source_match_terms=topic_terms or selection_terms or query_terms,
+            max_sources=self.settings.crawl_max_sources,
+        )
         selected = _ensure_global_crawl_source(selected, self.settings.crawl_max_sources)
         return selected[: self.settings.crawl_max_sources]
 
@@ -434,42 +454,55 @@ class Crawl4AIProvider(BaseEvidenceProvider):
         if timeout <= 0.25:
             return []
 
+        page_budget = min(self.settings.crawl_max_pages, max_results + 4)
         seed_targets = _dedupe_targets(
             [*first_targets, *[target for _, target in scored_targets]]
-        )[: min(self.settings.crawl_max_pages, max_results + 4)]
-        items = _fetch_static_targets(
-            query,
-            seed_targets,
-            timeout,
-            self.settings,
-            focus_terms,
-            deadline,
-        )
-        if len(items) >= max_results or _remaining_seconds(deadline) <= 0.5:
-            items.sort(key=lambda item: item.relevance_score or 0.0, reverse=True)
-            return items[:max_results]
+        )[:page_budget]
 
-        open_slots = max(min(self.settings.crawl_max_pages, max_results + 6) - len(seed_targets), 0)
-        if open_slots <= 0:
-            items.sort(key=lambda item: item.relevance_score or 0.0, reverse=True)
-            return items[:max_results]
+        # Query-driven search first, fixed seeds second. A catalogue seed is a
+        # document someone pinned once, so it answers every query with the same
+        # page: the NICE entry pinned the hypertension guideline, and a diabetes
+        # question crawled it. Searching the source asks it what it holds on
+        # this question instead, and seeds then fill whatever budget is left.
+        items: list[EvidenceItem] = []
+        searched_targets: list[CrawlTarget] = []
+        if any(source.search_urls for source in sources):
+            searched_targets = _dedupe_targets(
+                self._discover_static_search_targets(
+                    query,
+                    sources,
+                    min(timeout, _remaining_seconds(deadline)),
+                )
+            )[:page_budget]
+            if searched_targets and _remaining_seconds(deadline) > 0.5:
+                items.extend(
+                    _fetch_static_targets(
+                        query,
+                        searched_targets,
+                        min(timeout, _remaining_seconds(deadline)),
+                        self.settings,
+                        focus_terms,
+                        deadline,
+                    )
+                )
 
-        discovered_targets = self._discover_static_search_targets(
-            query,
-            sources,
-            min(timeout, _remaining_seconds(deadline)),
-        )
-        targets = _dedupe_targets(discovered_targets)[:open_slots]
-        items.extend(
-            _fetch_static_targets(
-                query,
-                targets,
-                min(timeout, _remaining_seconds(deadline)),
-                self.settings,
-                focus_terms,
-                deadline,
-            )
-        )
+        if len(items) < max_results and _remaining_seconds(deadline) > 0.5:
+            open_slots = max(page_budget - len(searched_targets), 0)
+            remaining_seeds = _dedupe_targets(
+                [target for target in seed_targets if target not in searched_targets]
+            )[:open_slots] if open_slots else []
+            if remaining_seeds:
+                items.extend(
+                    _fetch_static_targets(
+                        query,
+                        remaining_seeds,
+                        min(timeout, _remaining_seconds(deadline)),
+                        self.settings,
+                        focus_terms,
+                        deadline,
+                    )
+                )
+
         items.sort(key=lambda item: item.relevance_score or 0.0, reverse=True)
         return items[:max_results]
 
@@ -2016,6 +2049,46 @@ def _content_matches_core_query(
         return True
     required_overlap = _required_query_overlap(core_terms)
     return _query_overlap_count(core_terms, tokens) >= required_overlap
+
+
+def _interleave_topical_sources(
+    ordered_sources: list[CrawlSource],
+    *,
+    source_match_terms: set[str],
+    max_sources: int,
+) -> list[CrawlSource]:
+    """Spend the crawl budget on both the topic and the jurisdiction.
+
+    Two kinds of source matter and they compete for the same few slots. A source
+    that indexes the condition is the only one likely to hold the regimen, while
+    the broad national portals are the ones carrying local guidance. Scoring
+    alone lets whichever group scores higher take every slot: before this, four
+    generic portals were crawled for a diabetes question and no diabetes source
+    was visited at all. Alternating the two groups guarantees each is reached,
+    keeping score order inside each group.
+    """
+    if max_sources <= 1 or not ordered_sources:
+        return ordered_sources
+
+    topical: list[CrawlSource] = []
+    other: list[CrawlSource] = []
+    for source in ordered_sources:
+        bucket = (
+            topical
+            if _source_topic_match_count(source_match_terms, source) > 0
+            else other
+        )
+        bucket.append(source)
+    if not topical or not other:
+        return ordered_sources
+
+    interleaved: list[CrawlSource] = []
+    for topical_source, other_source in zip_longest(topical, other):
+        if topical_source is not None:
+            interleaved.append(topical_source)
+        if other_source is not None:
+            interleaved.append(other_source)
+    return interleaved
 
 
 def _source_selection_terms(query: str, sources: list[CrawlSource]) -> set[str]:

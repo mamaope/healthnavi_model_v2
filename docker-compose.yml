@@ -36,7 +36,7 @@ services:
       - EMPIRICO_SOURCE_PREFERENCE_HINTS=${EMPIRICO_SOURCE_PREFERENCE_HINTS:-Uganda Ministry of Health Knowledge Management Portal Uganda Clinical Guidelines health.go.ug library.health.go.ug NDA UNIPH CPHL NHLDS Uganda WHO AFRO East Africa Africa}
       - EMPIRICO_SOURCE_PREFERENCE_TERMS=${EMPIRICO_SOURCE_PREFERENCE_TERMS:-uganda,ugandan,health.go.ug,library.health.go.ug,nda.or.ug,uniph.go.ug,cphl.go.ug,qadash.cphl.go.ug,uci.or.ug,ulii.org,idi.mak.ac.ug,elearning.idi.co.ug,uganda clinical guidelines,ministry of health uganda,national drug authority uganda,uganda national institute of public health,uganda cancer institute,who afro,afro.who.int,east africa,africa}
       - EMPIRICO_EVIDENCE_PROVIDER_MODE=${EMPIRICO_EVIDENCE_PROVIDER_MODE:-web}
-      - EMPIRICO_QUICK_EVIDENCE_PROVIDER_MODE=${EMPIRICO_QUICK_EVIDENCE_PROVIDER_MODE:-crawl}
+      - EMPIRICO_QUICK_EVIDENCE_PROVIDER_MODE=${EMPIRICO_QUICK_EVIDENCE_PROVIDER_MODE:-web}
       - EMPIRICO_DEEP_EVIDENCE_PROVIDER_MODE=${EMPIRICO_DEEP_EVIDENCE_PROVIDER_MODE:-web}
       - EMPIRICO_ENABLE_EVIDENCE_RESCUE=${EMPIRICO_ENABLE_EVIDENCE_RESCUE:-true}
       - EMPIRICO_QUICK_RETRIEVAL_EARLY_STOP=${EMPIRICO_QUICK_RETRIEVAL_EARLY_STOP:-true}
